@@ -37,7 +37,7 @@ Every decision belongs to the pipeline that made it. There is no separate decisi
 
 Some decisions constrain work beyond their own pipeline. Mark those with a `Binding:` line naming who has to obey, directly under the heading:
 
-    ### D4 - Postgres is the source of truth; Restate holds execution state only
+    ### D4 — Postgres owns business records; Restate holds execution state only
 
     Binding: every pipeline that adds a workflow.
 
