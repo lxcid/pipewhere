@@ -66,7 +66,7 @@ What would overturn this: a measured read path where the PostgreSQL round trip i
 
 ### D5 — RustFS is the default S3-compatible object store
 
-MinIO's community repository is archived and no longer maintained. The operator selected RustFS as the replacement because it keeps a MinIO-shaped operating model and a broad S3 surface while supporting both single-node and distributed deployments. Garage also appears to satisfy Pipewhere's current object operations; features beyond that contract are not part of the justification for RustFS.
+The operator selected RustFS because it provides a broad S3-compatible surface and supports both single-node and distributed deployments. That fits Pipewhere's path from a local Compose instance to a hosted deployment without changing object stores.
 
 RustFS is young. Version 1.0 was released in September 2026, so feature claims are not enough evidence on their own. Before the object-store boundary is considered verified, Pipewhere must exercise the operations it relies on: object create, read, delete, and list; multipart upload; presigned upload and download; browser CORS; and any Restate snapshot write and restore path.
 
