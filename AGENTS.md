@@ -3,6 +3,7 @@
 This file holds instructions for coding agents working in this repository.
 
 <!-- devloop:design-judgment v1 sha:0731ae6f -->
+
 ## Design Judgment
 
 **Default to the minimal necessary complexity.** Prefer the smallest design that satisfies the current product need, fits the existing architecture, and leaves a clear path to extend later. Be suspicious of abstractions, invariants, retries, background machinery, or schema constraints that mostly exist to make the design feel complete rather than to solve a present problem.
@@ -30,6 +31,7 @@ Tolerate or defer a case when the four factors together show that the fix costs 
 <!-- /devloop:design-judgment -->
 
 <!-- devloop:debugging-discipline v2 sha:568414f5 -->
+
 ## Debugging Discipline
 
 **A failed fix is evidence your mental model is incomplete, not yet evidence the design is wrong.** Retry smaller and more carefully. The failure mode to watch for is **escalating commitment under uncertainty**: repeated failed guesses can make a rewrite feel justified, when the fix usually exists at a smaller scope you have not located yet.
@@ -38,18 +40,22 @@ Tolerate or defer a case when the four factors together show that the fix costs 
 - **Enumerate every input that could produce the symptom before concluding any one is _the_ cause.** Stopping one doesn't stop the others. For event-driven code this means listing the full family that can fire, not the first one that looks plausible.
 - **Symptom-based theories are hypotheses, not conclusions.** Before editing, name what you think is happening and what would falsify it. If the fix fails, treat the hypothesis as incomplete or unproven — narrow with a log, source-reading, or a smaller repro before editing again.
 - **"Simple" or "minimal" means the smallest sufficient fix with the feature's requirements held constant.** Replacing a broken inline editor with a cruder prompt removes the interaction instead of fixing it. Starting over or switching libraries does not establish that you understood or fixed the cause. Redesign when evidence says the design is wrong, not merely because repeated attempts failed.
+
 <!-- /devloop:debugging-discipline -->
 
 <!-- devloop:test-design v1 sha:18cde2ed -->
+
 ## Test Design
 
 - **TDD for behavior changes.** Smallest meaningful failing test first; tests are part of the design.
 - **Test at the lowest useful level** with the real contract for that surface: state transitions for domain logic, request/response for HTTP handlers, auth boundaries for identity, user-visible state changes for UI. Cover unhappy paths (authorization failures, stale versions, malformed input, expiry, retries, idempotency, boundaries).
 - **Avoid over-stubbing.** A test that passes while real integration fails is worse than no test. When a unit test needs heavy mocking, prefer a narrower pure-helper test, a handler-level test with real local collaborators, or a smoke check.
 - **Skipping tests is an explicit engineering call** — justify it with the reason, what verification you ran instead, and what test to add if the surface grows.
+
 <!-- /devloop:test-design -->
 
 <!-- devloop:writing-style v2 sha:ae3d3905 -->
+
 ## Writing Style
 
 ### Comments
@@ -73,9 +79,11 @@ Write docs, issue bodies, and PR/issue comments for a human reviewer, not for de
 ### Shell output
 
 - Single space between args; never pad to align value columns. Padded whitespace reads as a typo and costs reader doubt.
+
 <!-- /devloop:writing-style -->
 
 <!-- devloop:commit-conventions v2 sha:761ae1a5 -->
+
 ## Commits
 
 Use [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) for **all** commits, including bot-emitted: `<type>(<scope>): <subject>`.
@@ -96,9 +104,11 @@ Scopes are this repository's own top-level units. Use a combined `chore(a,b): �
 - One logical change per commit. Mechanical changes such as a reformat go in their own commit.
 - Never `--amend` unless explicitly asked; create a new commit. Hook failure means the commit didn't happen, so an amend would modify the _previous_ commit and may destroy work.
 - Never `--no-verify` to skip hooks. If a commit or hook fails, inspect and report the failure, then fix its cause before retrying.
+
 <!-- /devloop:commit-conventions -->
 
 <!-- devloop:handoff-contract v1 sha:f0253f90 -->
+
 ## Handoff
 
 Every task ends with a handoff. Reporting what changed is the easy half; the obligations below are the half that gets dropped, and each one exists because the operator cannot recover it from the diff.
