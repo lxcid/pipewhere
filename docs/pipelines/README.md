@@ -41,14 +41,22 @@ Some decisions constrain work beyond their own pipeline. Mark those with a `Bind
 
     Binding: every pipeline that adds a workflow.
 
+    A later pipeline is in violation if reading business state requires
+    querying Restate, or if a workflow writes a row the application layer
+    did not.
+
+    What would overturn this: a read path where the Postgres round-trip is
+    measurably too slow and Restate's keyed state is the natural place for a
+    hot copy.
+
 The test for whether a decision is binding is concrete: name the pipeline that could violate it without noticing. If you cannot name one, it is not binding, and the line is left off. Most decisions are local to their own work.
 
 A binding decision states plainly what counts as a violation, and carries a `What would overturn this` paragraph naming the evidence that would change the answer - not "if it stops working".
 
-The binding set is derived, never maintained:
+The binding set is derived, never maintained, and is listed in the order decisions appear:
 
 ```bash
-awk '/^### /{h=substr($0,5)} /^Binding:/{print FILENAME"\t"h}' docs/pipelines/*/spec.md | sed 's|docs/pipelines/||; s|/spec.md||' | sort
+awk '/^### /{h=substr($0,5)} /^Binding:/{print FILENAME"\t"h}' docs/pipelines/*/spec.md | sed 's|docs/pipelines/||; s|/spec.md||'
 ```
 
 ### `plan.md` - when the build is more than a couple of steps
@@ -75,6 +83,8 @@ Frontmatter holds document metadata, so only fields describing the pipeline as a
 | `done`        | shipped, and the outcome verified               |
 | `abandoned`   | closed without shipping; the intent records why |
 
+The operator moves `draft` to `approved`, and confirms `done` and `abandoned`. Whoever is building moves `approved` to `in-progress`, and says so in the handoff. A status left unmoved is a wrong index, since both indexes read only this field.
+
 There is no index file. The index is derived:
 
 ```bash
@@ -87,7 +97,9 @@ The question asked most often has its own line:
 grep -l '^status: in-progress' docs/pipelines/*/intent.md
 ```
 
-A maintained index is a second copy of a fact that already exists in the intents. Both commands sort explicitly, because a bare glob does not come back in order once there are more than a few pipelines.
+A maintained index is a second copy of a fact that already exists in the intents.
+
+The status index sorts explicitly because some `grep` implementations search files in parallel and return them out of order. A plain glob is already sorted, so on a stock `grep` the sort changes nothing.
 
 ## Closing a pipeline
 
@@ -99,13 +111,13 @@ Findings from operating the system open a new pipeline. Closed pipelines stay cl
 
 - **The intent as a versioned artifact** that states the problem separately from the solution. This is what agents lose fastest and what costs the most to reconstruct.
 - **Artifacts committed to version control**, so the commit history is the audit trail of what was asked, what was produced, and what was approved.
-- **Explicit approval gates recorded as state** rather than remembered.
+- **Explicit approval gates** rather than remembered ones. The playbook records approval as the merge of the intent; the `status` field is this repository's addition, so a draft can sit in the tree before it is approved.
 - **Operational findings re-entering as new intents.**
 
 ## What we dropped, and why
 
 - **Separate originator, product owner, engineer, and release manager roles.** There is one human. Role-based gates collapse into a single approval gate held by the operator.
-- **A spec and a plan for every change.** Three documents before the first line of code is right for work carrying real risk and wrong for most work. The intent is required; the spec and plan are written when they earn it.
+- **A spec and a plan by default.** Three documents before the first line of code is right for work carrying real risk and wrong for most work. The intent is required; the spec and plan are written when they earn it.
 - **Design and Build as separate stages with separate approvals.** Here they are one conversation. The gates are on the intent going in and the verification coming out.
 - **A shared `/intent/` folder holding intents apart from their work.** Splitting one unit of work across two trees makes a reader reassemble it. One directory holds the whole pipeline.
 - **Autonomous maintenance loops that act on detected breaches.** Nothing is in production, and an agent acting on its own detection needs a control band we have no data to set. Detection can come later; autonomous action is not adopted.
