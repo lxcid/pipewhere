@@ -6,22 +6,26 @@ status: in-progress
 
 ## Problem
 
-Pipewhere has no substrate. There is no way to run it, and therefore no way to find out whether the architecture we are describing actually holds together.
+The infrastructure has to carry one operator on one box and a hosted service with many workspaces, and it gets chosen once. Those two cases pull against each other. The usual answers to scale — a queue, a cache, a worker tier, a cluster, a managed service per concern — each add something an operator has to run, expose, back up, upgrade and debug at 2am. Every one of them improves the large deployment by degrading the small one.
 
-The deeper problem is ordering. Self-hosting is a primary product constraint, not a packaging step at the end. Every service in the topology is something an operator runs, exposes, backs up, upgrades, and debugs at 2am. Choosing the domain model first and discovering the operational shape later means meeting operational constraints when they are most expensive to honour, or quietly failing to meet them at all.
+Both common failures follow from treating that as unavoidable. Pick for scale and the self-hosted install inherits machinery it never needed. Pick for the single box and the topology gets rewritten the first time load arrives. What is wanted instead is a set of components where the same shape runs on a laptop and scales out, so growing changes where things run rather than what the operator has to understand.
 
-Restate makes this sharper. It is a second stateful store next to Postgres. Whether that costs an operator one backup or two is an architectural decision, and it has to be made before the code assumes an answer.
+Deferring the choice does not avoid it. Topology is the most expensive thing to change later: the deployment documentation, the configuration surface, the runbook, and every decision about where state lives all assume it. Choosing the domain model first and discovering the operational shape afterwards means meeting these constraints when they cost the most to honour, or quietly failing to meet them.
+
+Restate makes the tension concrete. It is what scales the execution layer out, and it is a second stateful store beside Postgres. Whether that costs an operator one backup or two is an architectural decision, and the answer has to exist before code assumes one.
 
 ## Proposed outcome
 
-One command brings up a working Pipewhere.
+One command brings up a working Pipewhere, and the same shape scales out without becoming a different system.
 
 - `docker compose up` starts the dependency stack and the application together.
 - The application migrates its own schema, registers itself with Restate, and answers a readiness check that fails when a dependency is missing.
 - No manual registration step. No CLI for an operator to install. No hand-written bootstrap sequence in a quickstart.
 - The topology is documented, including which stores need backing up and what is lost if each one disappears.
+- Every component scales in place rather than being swapped out. Postgres becomes managed Postgres, a single Restate node becomes a cluster, MinIO becomes S3 or R2, one application process becomes several. The operator learns one system either way.
+- Nothing the large deployment wants is forced on the small one. Valkey is the test case: worth having as a cache under load, never required for durable correctness.
 
-Success is an operator who has never seen this repository going from clone to a running instance without reading anything but the README.
+Success has two tests. An operator who has never seen this repository goes from clone to a running instance reading only the README. And moving from that instance to a hosted deployment changes configuration, not architecture.
 
 ## Affected users and systems
 
@@ -34,6 +38,7 @@ Success is an operator who has never seen this repository going from clone to a 
 
 - Stack is fixed: Rust, Next.js, Restate, Postgres, S3-compatible storage.
 - Self-hosting is a primary constraint. The number of services an operator runs is a product metric.
+- Scale is equally primary. The same topology serves one operator and many workspaces; scaling may move components, but it may not add ones the small install has to run.
 - Valkey is optional and must never be required for durable correctness.
 - Licensed under Elastic License 2.0. Source-available, self-hosting permitted, offering Pipewhere as a managed service is not.
 - Postgres is the source of truth for business state.
