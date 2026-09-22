@@ -48,7 +48,7 @@ This settles the earlier static-export question. The product requires an indepen
 
 What would overturn this: the edge target cannot support a required Next.js feature, or operating a separate web runtime provides no measurable product or deployment benefit.
 
-### D4 — PostgreSQL is the source of truth; Restate holds execution state only
+### D4 — Postgres is the source of truth; Restate holds execution state only
 
 Binding: every pipeline that adds a workflow.
 
@@ -71,6 +71,15 @@ What would overturn this: those contract checks fail, upgrades cannot preserve s
 ## Verified implementation constraints
 
 These findings were established while exploring the earlier topology and remain relevant to implementation:
+
+| Component | Version observed | Standing |
+| --- | --- | --- |
+| PostgreSQL image | 18.6 | Started and queried on 2026-09-22 |
+| Restate server | 1.7.10 | Health and admin APIs queried on 2026-09-22 |
+| Restate Rust SDK | 0.12.1 | Evaluated against server 1.7.10; not a permanent pin |
+| Rust toolchain | 1.95.0 | Installed locally; the project has not selected a version |
+| Node / pnpm | 26.10.0 / 11.27.1 | Pinned by the repository toolchain |
+| RustFS | 1.0.0 | Selected, but contract and upgrade behavior remain unverified |
 
 - PostgreSQL 18 stores data in a major-version subdirectory. Its volume mounts at `/var/lib/postgresql`, not `/var/lib/postgresql/data`, so a future `pg_upgrade --link` does not cross a mount boundary.
 - Registering the same Restate deployment URI again is not idempotent. Any automatic registration design must handle replacement explicitly rather than treating a repeated request as a harmless no-op.
