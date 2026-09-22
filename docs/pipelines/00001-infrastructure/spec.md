@@ -36,9 +36,13 @@ Auth is a Hono service built with Better Auth. It owns identities, interactive s
 
 Auth exchanges a session or long-lived credential for a signed JWT access token that expires within 15 minutes. It publishes the verification keys as JWKS. API validates the signature, issuer, audience, and expiry locally, then reads the opaque principal identifier and coarse scopes from the claims. API does not call Auth on each request.
 
+An interactive session carries its user's subject. Each long-lived client credential is a separate principal and carries its own subject. If Better Auth cannot model that relationship directly, Auth represents the credential as a service identity. Users and client credentials gain workspace access through the same business-schema membership rows.
+
 API owns resource-level authorization. It maps the principal identifier to workspaces in the business schema and decides whether the represented scopes permit the requested action on that resource. Auth determines identity and which coarse scopes a credential may request; it does not query product resources.
 
-Web does not become a privileged backend. Web, REST, MCP, and CLI clients all obtain the same access-token shape and call the same API. Revoking a session or long-lived credential prevents new tokens, but an issued token remains valid until it expires. That bounded delay is accepted in exchange for removing an Auth network hop from every API request.
+Web does not become a privileged backend. Web, REST, MCP, and CLI clients all obtain the same access-token shape and call the same API. Revoking a session or long-lived credential in Auth prevents new tokens, but an issued token remains valid until it expires. Revoking a client credential's workspace membership blocks its next API request because API checks membership every time. The bounded token lifetime is accepted in exchange for removing an Auth network hop from every request.
+
+Before the auth boundary is considered verified, Pipewhere must exercise session-to-token exchange, credential-to-token exchange with the credential's own subject, membership revocation while a token is still valid, and API verification across a signing-key rotation.
 
 What would overturn this: Better Auth cannot issue the required claims, local verification proves unreliable, or a 15-minute revocation delay is unacceptable. The fallback is token introspection through Auth, accepting the per-request network dependency explicitly.
 
@@ -68,22 +72,23 @@ What would overturn this: a measured read path where the PostgreSQL round trip i
 
 The operator selected RustFS because it provides a broad S3-compatible surface and supports both single-node and distributed deployments. That fits Pipewhere's path from a local Compose instance to a hosted deployment without changing object stores.
 
-RustFS is young. Version 1.0 was released in September 2026, so feature claims are not enough evidence on their own. Before the object-store boundary is considered verified, Pipewhere must exercise the operations it relies on: object create, read, delete, and list; multipart upload; presigned upload and download; browser CORS; and any Restate snapshot write and restore path.
+RustFS is young. Version 1.0 was released in September 2026, so feature claims are not enough evidence on their own. Before the object-store boundary is considered verified, Pipewhere must exercise the operations it relies on: object create, read, delete, and list; multipart upload; presigned upload and download; browser CORS; any Restate snapshot write and restore path; and moving stored objects from a single-node instance into the distributed topology.
 
 What would overturn this: those contract checks fail, upgrades cannot preserve stored data safely, or the single-node deployment cannot move to the hosted topology without an operator-visible migration burden greater than using another S3-compatible store.
 
-## Verified implementation constraints
+## Implementation constraints and evidence
 
-Established on 2026-09-22:
+Verified on 2026-09-22:
 
-| Component        | Version observed | Standing                                             |
-| ---------------- | ---------------- | ---------------------------------------------------- |
-| PostgreSQL image | 18.6             | Started and queried on 2026-09-22                    |
-| Restate server   | 1.7.10           | Health and admin APIs queried on 2026-09-22          |
-| Restate Rust SDK | 0.12.1           | Evaluated against server 1.7.10; not a permanent pin |
+| Component        | Version observed | Standing                                    |
+| ---------------- | ---------------- | ------------------------------------------- |
+| PostgreSQL image | 18.6             | Started and queried on 2026-09-22           |
+| Restate server   | 1.7.10           | Health and admin APIs queried on 2026-09-22 |
 
 - PostgreSQL 18 stores data in a major-version subdirectory. Its volume mounts at `/var/lib/postgresql`, not `/var/lib/postgresql/data`, so a future `pg_upgrade --link` does not cross a mount boundary.
-- Registering the same Restate deployment URI again is not idempotent. Any automatic registration design must handle replacement explicitly rather than treating a repeated request as a harmless no-op.
-- Restate server and Rust SDK versions must be pinned independently. The server can be stable while the pre-1.0 SDK changes its Rust API.
+
+Still to verify: whether registering the same deployment URI twice is idempotent in Restate 1.7.10. The build must reproduce this before choosing an automatic registration design.
+
+Restate server and Rust SDK versions must be pinned independently. The server can be stable while the pre-1.0 SDK changes its Rust API.
 
 These constraints do not settle boot order, port assignment, or snapshot configuration. The build decides those details for the seven-process topology.
