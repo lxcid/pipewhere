@@ -90,12 +90,12 @@ grep -m1 -H '^status:' docs/pipelines/*/intent.md | sed 's|docs/pipelines/||; s|
 The question asked most often has its own line:
 
 ```bash
-grep -l '^status: in-progress' docs/pipelines/*/intent.md
+grep -l '^status: in-progress' docs/pipelines/*/intent.md | sort
 ```
 
 A maintained index is a second copy of a fact that already exists in the intents.
 
-The status index sorts explicitly because some `grep` implementations search files in parallel and return them out of order. A plain glob is already sorted, so on a stock `grep` the sort changes nothing.
+Both status commands sort explicitly because some `grep` implementations search files in parallel and return them out of order. A plain glob is already sorted, so on a stock `grep` the sort changes nothing.
 
 ## Closing a pipeline
 
