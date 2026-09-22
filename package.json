@@ -1,0 +1,12 @@
+{
+  "name": "@pipewhere/monorepo",
+  "private": true,
+  "scripts": {
+    "fmt": "oxfmt",
+    "fmt:check": "oxfmt --check"
+  },
+  "devDependencies": {
+    "oxfmt": "0.68.0"
+  },
+  "packageManager": "pnpm@11.27.1"
+}

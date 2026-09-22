@@ -1,0 +1,15 @@
+# Rust
+/target/
+
+# Node
+node_modules/
+.next/
+out/
+
+# moon
+.moon/cache/
+.moon/docker/
+
+# Local environment
+.env
+.env.local

@@ -1,0 +1,5 @@
+# Tool versions come from .prototools. moon inherits them by default.
+
+node: {}
+
+pnpm: {}
