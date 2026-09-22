@@ -41,13 +41,9 @@ Some decisions constrain work beyond their own pipeline. Mark those with a `Bind
 
     Binding: every pipeline that adds a workflow.
 
-    A later pipeline is in violation if reading business state requires
-    querying Restate, or if a workflow writes a row the application layer
-    did not.
+    A later pipeline is in violation if reading business state requires querying Restate, or if a workflow writes a row the application layer did not.
 
-    What would overturn this: a read path where the Postgres round-trip is
-    measurably too slow and Restate's keyed state is the natural place for a
-    hot copy.
+    What would overturn this: a read path where the Postgres round-trip is measurably too slow and Restate's keyed state is the natural place for a hot copy.
 
 The test for whether a decision is binding is concrete: name the pipeline that could violate it without noticing. If you cannot name one, it is not binding, and the line is left off. Most decisions are local to their own work.
 
@@ -83,7 +79,7 @@ Frontmatter holds document metadata, so only fields describing the pipeline as a
 | `done`        | shipped, and the outcome verified               |
 | `abandoned`   | closed without shipping; the intent records why |
 
-The operator moves `draft` to `approved`, and confirms `done` and `abandoned`. Whoever is building moves `approved` to `in-progress`, and says so in the handoff. A status left unmoved is a wrong index, since both indexes read only this field.
+The operator moves `draft` to `approved`, and confirms `done` and `abandoned`. Whoever is building moves `approved` to `in-progress`, and says so in the handoff. A status left unmoved is a wrong index, since both status commands read only this field.
 
 There is no index file. The index is derived:
 
