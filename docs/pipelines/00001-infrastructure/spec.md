@@ -165,7 +165,7 @@ What would overturn this: those contract checks fail, upgrades cannot preserve s
 
 Binding: every pipeline that adds a table with its own id, including Auth's tables.
 
-Every generated id has the form `prefix_suffix`, for example `usr_01j8zq3k7w5d9m2x4c6v8b0n1r`:
+Every generated id has the form `prefix_suffix`, for example `usr_01m36mep00e3ca12pwd1gkjwex`:
 
 - The prefix is 3 to 5 lowercase letters, and names the entity.
 - The suffix is a UUIDv7, written as 26 characters of Crockford base32, in lowercase.
@@ -173,7 +173,10 @@ Every generated id has the form `prefix_suffix`, for example `usr_01j8zq3k7w5d9m
 
 This is the TypeID format.
 
-Ids are stored as text, with a check constraint on the prefix and the format. Better Auth already stores its ids as text. It generates them through its id generator, which is told the table it is generating for. A table keyed by its parent has no id of its own.
+Ids are stored as text. A table keyed by its parent has no id of its own.
+
+- **Pipewhere's tables** check the prefix and the format with a check constraint.
+- **Better Auth's tables** get no check constraint, so Auth never alters a table Better Auth migrates. Better Auth generates their ids through Auth's id generator, which is told the table it is generating for. The generator throws for a table with no listed prefix. A Better Auth plugin that adds a table fails loudly until its prefix is listed.
 
 Each pipeline lists the prefixes it adds in a table in its own spec, written with the trailing underscore. A prefix is never reused. The full list is derived, never maintained. This prints any prefix claimed twice, and nothing when every prefix is unique:
 
@@ -195,11 +198,11 @@ Auth's prefixes:
 | `key_` | API key                         |
 | `jwk_` | signing key                     |
 
-The operator chose the prefix and the 32-character limit. The prefix makes an id readable in logs, URLs, and events. It also lets one field hold ids of different kinds, such as a token's `sub`, which holds a user id or an API key id. Base32 keeps the id within 32 characters, where a hex UUID alone would already take 32. A UUIDv7 sorts by creation time to the millisecond, so new rows land at the end of their index. Within one millisecond, order is not guaranteed. It is also a standard UUID, so the fallback below needs no conversion.
+The operator chose the prefix and the 32-character limit. The prefix makes an id readable in logs, URLs, and events. It also lets one field hold ids of different kinds, such as a token's `sub`, which holds a user id or an API key id. Base32 keeps the id within 32 characters, where a hex UUID alone would already take 32. A UUIDv7 sorts by creation time to the millisecond, so new rows land at the end of their index. Within one millisecond, order is not guaranteed. It is also a standard UUID, so under the fallback below each id decodes to the same UUID, and no id is reassigned.
 
 A later pipeline is in violation if it adds a table whose id is a bare UUID or an integer sequence, uses a prefix it does not list, or reuses one.
 
-What would overturn this: text ids costing measurable storage or index time. The fallback is a native `uuid` column, with the prefix added at the API boundary.
+What would overturn this: text ids costing measurable storage or index time. The fallback is a native `uuid` column for Pipewhere's own ids, with the prefix added at the API boundary. Columns that reference Auth's ids stay text. Auth's ids keep their prefix, which D2's check of `sub` relies on.
 
 ## Implementation constraints and evidence
 
@@ -228,6 +231,7 @@ Read in Better Auth's source at commit `3d0efa3`, dated 2026-09-22, for D2. Auth
 - Better Auth deletes a key on request, when it expires, and when a usage-limited key has no uses left and no refill.
 - Better Auth sets a session's active organization when its user creates an organization or accepts an invitation. It writes it through its session update, which runs database hooks, and a hook can replace the value written.
 - Better Auth's organization endpoints fall back to the active organization when a call names none. With neither, they fail with `NO_ACTIVE_ORGANIZATION`.
+- Better Auth calls the configured id generator with the table's name, for every table's id. This is what D6's generator relies on.
 
 Still to verify: whether registering the same deployment URI twice is idempotent in Restate 1.7.10. The build must reproduce this before choosing an automatic registration design.
 
