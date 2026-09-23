@@ -86,6 +86,46 @@ RustFS is young. Version 1.0 was released in September 2026, so feature claims a
 
 What would overturn this: those contract checks fail, upgrades cannot preserve stored data safely, or the single-node deployment cannot move to the hosted topology without an operator-visible migration burden greater than using another S3-compatible store.
 
+### D6 — Every id is a short prefix and a UUIDv7
+
+Binding: every pipeline that adds a table with its own id, including Auth's tables.
+
+Every generated id has the form `prefix_suffix`, for example `usr_01j8zq3k7w5d9m2x4c6v8b0n1r`:
+
+- The prefix is 3 to 5 lowercase letters, and names the entity.
+- The suffix is a UUIDv7, written as 26 characters of Crockford base32, in lowercase.
+- An id is therefore at most 32 characters.
+
+This is the TypeID format.
+
+Ids are stored as text, with a check constraint on the prefix and the format. Better Auth already stores its ids as text. It generates them through its id generator, which is told the table it is generating for. A table keyed by its parent has no id of its own.
+
+Each pipeline lists the prefixes it adds in a table in its own spec, written with the trailing underscore. A prefix is never reused. The full list is derived, never maintained. This prints any prefix claimed twice, and nothing when every prefix is unique:
+
+```bash
+grep -ho '^| `[a-z]\{3,5\}_`' docs/pipelines/*/spec.md | sort | uniq -d
+```
+
+Auth's prefixes:
+
+| Prefix | Entity                          |
+| ------ | ------------------------------- |
+| `usr_` | user                            |
+| `ses_` | session                         |
+| `acc_` | sign-in method linked to a user |
+| `ver_` | verification token              |
+| `org_` | organization                    |
+| `mem_` | member                          |
+| `inv_` | invitation                      |
+| `key_` | API key                         |
+| `jwk_` | signing key                     |
+
+The operator chose the prefix and the 32-character limit. The prefix makes an id readable in logs, URLs, and events. It also lets one field hold ids of different kinds, such as a token's `sub`, which holds a user id or an API key id. Base32 keeps the id within 32 characters, where a hex UUID alone would already take 32. A UUIDv7 sorts by creation time to the millisecond, so new rows land at the end of their index. Within one millisecond, order is not guaranteed. It is also a standard UUID, so the fallback below needs no conversion.
+
+A later pipeline is in violation if it adds a table whose id is a bare UUID or an integer sequence, uses a prefix it does not list, or reuses one.
+
+What would overturn this: text ids costing measurable storage or index time. The fallback is a native `uuid` column, with the prefix added at the API boundary.
+
 ## Implementation constraints and evidence
 
 Verified on 2026-09-22:
