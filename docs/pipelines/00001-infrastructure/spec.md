@@ -47,7 +47,7 @@ API can read no other column. Better Auth keeps session tokens, password hashes,
 
 API never writes to `auth`. Every change to an organization, member, role, invitation, or key goes through Auth, so Better Auth's own rules apply to it.
 
-The limit holds in both directions. Auth and API connect as separate database roles, and Auth's role has no access to the `pipewhere` schema. A leaked credential for either service reads only what that service needs.
+The limit holds in both directions. Auth and API connect as separate database roles, and Auth's role has no access to the `pipewhere` schema. Worker connects as API's role. It runs the same application layer against the same tables, per D4, so a role of its own would need the same grants and would separate nothing. A leaked credential reads only what its services need.
 
 API reads Better Auth's tables as Better Auth defines them, so upgrading Better Auth can change what API reads. API's tests run against a database with Auth's migrations applied. An upgrade that changes a column API reads fails them before it ships.
 
