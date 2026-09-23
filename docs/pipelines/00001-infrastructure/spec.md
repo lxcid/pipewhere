@@ -43,7 +43,7 @@ The operator chose to have tables in `pipewhere` hold foreign keys into `auth`, 
 Auth grants API's database role only what it needs, column by column:
 
 - read access to organizations, to members with their role, and to API keys with their organization, permissions, enabled flag, and expiry
-- references to organization and API key ids, so that `pipewhere` tables can hold foreign keys to them
+- references to organization ids, so that `pipewhere` tables can hold foreign keys to them
 
 API can read no other column. Better Auth keeps session tokens, password hashes, and sign-in providers' tokens in the `auth` schema, and API never sees them. A column a Better Auth upgrade adds stays hidden from API until Auth grants it.
 
@@ -53,10 +53,10 @@ The limit holds in both directions. Auth and API connect as separate database ro
 
 API reads Better Auth's tables as Better Auth defines them, so upgrading Better Auth can change what API reads. API's tests run against a database with Auth's migrations applied. They rerun whenever Auth's migrations or Better Auth's version change, so an upgrade that changes a column API reads fails them before it ships.
 
-A foreign key also changes what Auth can delete:
+Foreign keys into `auth` follow what Better Auth deletes:
 
 - A foreign key to an organization never cascades. It refuses to delete the organization while rows in `pipewhere` reference it. With organization deletion off, this is a backstop that fails loudly instead of removing or orphaning business records.
-- Better Auth deletes API keys on request, when they expire, and when a usage-limited key runs out. Only a row that exists solely for one key holds a foreign key to it, and that foreign key cascades. A row that records which key acted keeps the id with no foreign key, so Better Auth's cleanup never deletes a business record.
+- Better Auth deletes API keys on request, when they expire, and when a usage-limited key runs out. A row that records which key acted keeps the key's id with no foreign key, so it survives the delete.
 
 Auth exchanges a session or an API key for a signed JWT access token that expires within 15 minutes. It publishes the verification keys as JWKS. API validates the signature, issuer, audience, and expiry locally, then reads `sub`. API does not call Auth on each request.
 
@@ -107,7 +107,6 @@ A later pipeline is in violation if it adds:
 - an organization-scoped action that reads or writes before API checks the caller against the organization the request names
 - a table whose rows belong to an organization directly, without a foreign key from its organization id to that organization
 - a cascading foreign key to an organization
-- a foreign key to an API key from a row that must outlive the key
 
 Before the auth boundary is considered verified, Pipewhere must exercise:
 
@@ -230,7 +229,7 @@ Run against a throwaway PostgreSQL 18 container on 2026-09-23, for D2:
 - A role granted some columns of a table reads them, and is refused every other column and `SELECT *`. A column added later stays hidden from it.
 - A foreign key cannot point at a view.
 - A foreign key needs only `REFERENCES` on the referenced id. The referencing role still cannot read the table.
-- A plain foreign key refuses the referenced row's delete. A cascading one lets Auth's role delete it and removes the referencing row, although Auth's role has no rights on `pipewhere`.
+- A plain foreign key refuses the referenced row's delete.
 
 Read in Better Auth's source at commit `3d0efa3`, dated 2026-09-22, for D2. Auth pins no Better Auth version yet, so the build rechecks these against the version it pins:
 
