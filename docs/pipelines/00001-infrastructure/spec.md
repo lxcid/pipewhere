@@ -187,7 +187,7 @@ Ids are stored as text. A table keyed by its parent has no id of its own.
 - **Pipewhere's tables** check the prefix and the format with a check constraint.
 - **Better Auth's tables** get no check constraint, so Auth never alters a table Better Auth migrates. Better Auth generates their ids through Auth's id generator, which is told the table it is generating for. The generator throws for a table with no listed prefix. A Better Auth plugin that adds a table fails loudly until its prefix is listed.
 
-A prefix is never reused. Once the id generators exist, a test over their table-to-prefix mappings fails when two tables share a prefix.
+A prefix is never reused. Once the id generators exist, one test reads the table-to-prefix mappings of both Auth's and API's generators, and fails when two tables share a prefix. A test per generator would miss a prefix shared between them.
 
 Auth's prefixes:
 
