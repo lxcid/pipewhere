@@ -36,8 +36,6 @@ Binding: every pipeline that adds an organization-scoped API action, a table who
 
 Auth is a Hono service built with Better Auth. It owns identities, interactive sessions, API keys, and access-token issuance. Through Better Auth's organization plugin, it also owns organizations, their members, members' roles, and invitations. An organization is what the intent calls a workspace. Its tables live in an `auth` schema in PostgreSQL. Auth owns and runs migrations for that schema. Pipewhere does not build an authentication system of its own.
 
-Every id Auth generates follows D6.
-
 API's tables live in a `pipewhere` schema, and API owns and runs its migrations. A privileged setup step creates both schemas and both database roles before either service migrates.
 
 The operator chose to have tables in `pipewhere` hold foreign keys into `auth`, so the database itself refuses a row for an organization that does not exist. Auth's migrations therefore run first. API's migrations fail if Auth's have not run.
@@ -63,13 +61,11 @@ A foreign key also changes what Auth can delete:
 Auth exchanges a session or an API key for a signed JWT access token that expires within 15 minutes. It publishes the verification keys as JWKS. API validates the signature, issuer, audience, and expiry locally, then reads `sub`. API does not call Auth on each request.
 
 - **Sessions.** A session token carries its user's id in `sub`.
-- **API keys.** An API key is owned by one organization, not by the member who created it. Auth configures Better Auth's API key plugin with `references: "organization"`, so no key is owned by a user. Removing the member who created a key leaves it working. Its token carries the key's id in `sub`.
+- **API keys.** An API key is owned by one organization, not by the member who created it. Auth configures Better Auth's API key plugin with `references: "organization"`, so no key is owned by a user. Removing the member who created a key leaves it working, and nothing records who that was. Its token carries the key's id in `sub`.
 
 The prefix of `sub` says which kind of token it is: `usr_` for a session, `key_` for an API key.
 
 A token carries only `sub` and the standard claims: issuer, audience, issue time, and expiry. It holds no organization, role, or permission, so API always reads those from Auth's tables.
-
-Nothing records which member created a key. When a member who could manage keys leaves, the members who still can review the organization's keys.
 
 Better Auth's organization plugin keeps an active organization on each session. Pipewhere does not use it. Each request names the organization it acts in. The operator chose this so that:
 
@@ -85,12 +81,7 @@ Joining an organization needs a verified email. The operator chose this over let
 
 A team deployment therefore needs email delivery, or a sign-in provider that reports the email as verified, before a teammate can join. A single operator needs neither.
 
-Organization deletion is off. Auth sets Better Auth's `disableOrganizationDeletion`:
-
-- Better Auth's delete removes an organization's members and invitations, but not its API keys. A key's owner is a plain reference Better Auth does not constrain, so the keys would be stranded outside any organization.
-- The organization's rows in `pipewhere` would also have to go, or block the delete.
-
-Deleting an organization waits for a pipeline that needs it. That pipeline defines one lifecycle covering business rows and keys together. A cleanup hook alone could leave a partial delete when a later step fails.
+Organization deletion is off, through Better Auth's `disableOrganizationDeletion`. Better Auth's delete would leave the organization's API keys behind, since a key's owner is an unconstrained reference, and the organization's `pipewhere` rows would block it. A pipeline that needs deletion defines one lifecycle for business rows and keys.
 
 API owns resource-level authorization. On every request it checks, in Auth's tables, that the caller may act in the organization the request names:
 
@@ -103,13 +94,11 @@ A request that fails this check gets one of three responses, checked in this ord
 - **Not found:** the caller cannot act in the organization at all. The user is not a member, or another organization owns the key. An organization that does not exist gets the same response.
 - **Forbidden:** the caller can act in the organization, but its role or the key's permissions do not allow the action.
 
-A forbidden response reveals nothing about an organization the caller does not belong to, because membership is checked first. An unauthorized response tells a key's holder only what the token exchange already would.
+A forbidden response reveals nothing about an organization the caller does not belong to, because membership is checked first.
 
 Removing a member, changing a role, revoking a key, or changing a key's permissions therefore takes effect on the next request, even while a token is still valid.
 
 Revoking a session prevents new tokens, but an issued session token stays valid until it expires. The membership check still applies to it.
-
-Auth determines identity, organization membership, roles, and key permissions. API decides what those permit on a resource. Auth does not query product resources.
 
 Web does not become a privileged backend. Web, REST, MCP, and CLI clients all obtain the same access-token shape and call the same API.
 
