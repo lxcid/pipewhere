@@ -32,7 +32,7 @@ What would overturn this: the complete stack cannot remain responsive on an entr
 
 ### D2 — Auth issues access tokens and owns organizations; API authorizes business resources
 
-Binding: every pipeline that adds a foreign key into `auth`.
+Binding: every pipeline that adds an organization-scoped API action, a table whose rows belong to an organization, or a foreign key into `auth`.
 
 Auth is a Hono service built with Better Auth. It owns identities, interactive sessions, API keys, and access-token issuance. Through Better Auth's organization plugin, it also owns organizations, their members, members' roles, and invitations. An organization is what the intent calls a workspace. Its tables live in an `auth` schema in PostgreSQL. Auth owns and runs migrations for that schema. Pipewhere does not build an authentication system of its own.
 
@@ -59,8 +59,6 @@ A foreign key also changes what Auth can delete:
 
 - A foreign key to an organization never cascades. It refuses to delete the organization while rows in `pipewhere` reference it. With organization deletion off, this is a backstop that fails loudly instead of removing or orphaning business records.
 - Better Auth deletes API keys on request, when they expire, and when a usage-limited key runs out. Only a row that exists solely for one key holds a foreign key to it, and that foreign key cascades. A row that records which key acted keeps the id with no foreign key, so Better Auth's cleanup never deletes a business record.
-
-A later pipeline is in violation if it points a cascading foreign key at an organization, or points a foreign key at an API key from a row that must outlive the key.
 
 Auth exchanges a session or an API key for a signed JWT access token that expires within 15 minutes. It publishes the verification keys as JWKS. API validates the signature, issuer, audience, and expiry locally, then reads `sub`. API does not call Auth on each request.
 
@@ -114,6 +112,13 @@ Revoking a session prevents new tokens, but an issued session token stays valid 
 Auth determines identity, organization membership, roles, and key permissions. API decides what those permit on a resource. Auth does not query product resources.
 
 Web does not become a privileged backend. Web, REST, MCP, and CLI clients all obtain the same access-token shape and call the same API.
+
+A later pipeline is in violation if it adds:
+
+- an organization-scoped action that reads or writes before API checks the caller against the organization the request names
+- a table whose rows belong to an organization directly, without a foreign key from its organization id to that organization
+- a cascading foreign key to an organization
+- a foreign key to an API key from a row that must outlive the key
 
 Before the auth boundary is considered verified, Pipewhere must exercise:
 
