@@ -98,7 +98,7 @@ A forbidden response reveals nothing about an organization the caller does not b
 
 Removing a member, changing a role, revoking a key, or changing a key's permissions therefore takes effect on the next request, even while a token is still valid.
 
-Revoking a session prevents new tokens, but an issued session token stays valid until it expires. The membership check still applies to it.
+Revoking a session prevents new tokens, but an issued session token stays valid until it expires. That window is the cost of API verifying tokens itself, without calling Auth or reading its sessions. The membership check still applies to it.
 
 Web does not become a privileged backend. Web, REST, MCP, and CLI clients all obtain the same access-token shape and call the same API.
 
