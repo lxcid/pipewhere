@@ -125,10 +125,10 @@ Before the auth boundary is considered verified, Pipewhere must exercise:
 
 What would overturn this:
 
-- Better Auth cannot issue the required claims, or local verification proves unreliable. The fallback is token introspection through Auth, accepting the per-request network dependency explicitly.
-- The per-request check proves too slow. The fallback is a membership cache with a stated maximum age, accepting that delay explicitly.
-- The 15-minute window after a session is revoked proves unacceptable. The fallback is a session-id claim that API checks against Auth's session table. API would be granted each session's id and expiry, not its token.
-- Better Auth upgrades change the columns API reads often enough that fixing API each time costs more than a stable layer. The fallback is read-only views for reads, with the foreign keys kept on the tables.
+- Better Auth cannot issue the required claims, or local verification proves unreliable.
+- The per-request check proves too slow.
+- The 15-minute window after a session is revoked proves unacceptable.
+- Better Auth upgrades change the columns API reads often enough that fixing API after each one becomes a recurring cost.
 
 ### D3 — Web is an independent, edge-deployable Next.js service
 
@@ -203,11 +203,11 @@ Auth's prefixes:
 | `key_` | API key                         |
 | `jwk_` | signing key                     |
 
-The operator chose the prefix and the 32-character limit. The prefix makes an id readable in logs, URLs, and events. It also lets one field hold ids of different kinds, such as a token's `sub`, which holds a user id or an API key id. Base32 keeps the id within 32 characters, where a hex UUID alone would already take 32. A UUIDv7 sorts by creation time to the millisecond, so new rows land at the end of their index. Within one millisecond, order is not guaranteed. It is also a standard UUID, so under the fallback below each id decodes to the same UUID, and no id is reassigned.
+The operator chose the prefix and the 32-character limit. The prefix makes an id readable in logs, URLs, and events. It also lets one field hold ids of different kinds, such as a token's `sub`, which holds a user id or an API key id. Base32 keeps the id within 32 characters, where a hex UUID alone would already take 32. A UUIDv7 sorts by creation time to the millisecond, so new rows land at the end of their index. Within one millisecond, order is not guaranteed.
 
 A later pipeline is in violation if it adds a table whose id is a bare UUID or an integer sequence, or reuses a prefix.
 
-What would overturn this: text ids costing measurable storage or index time. The fallback is a native `uuid` column for Pipewhere's own ids, with the prefix added at the API boundary. Columns that reference Auth's ids stay text. Auth's ids keep their prefix, which D2's check of `sub` relies on.
+What would overturn this: text ids costing measurable storage or index time.
 
 ## Implementation constraints and evidence
 
