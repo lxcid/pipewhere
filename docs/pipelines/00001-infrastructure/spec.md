@@ -119,6 +119,7 @@ Before the auth boundary is considered verified, Pipewhere must exercise:
 - an invitee whose email is not verified being refused when accepting an invitation
 - deleting an organization through Auth being refused
 - removing a member, changing a role, revoking a key, and changing a key's permissions while a token is still valid, each taking effect on the next request
+- a key created by a removed member still working on the next request
 - API's database role reading only the columns Auth grants it, and being refused on the rest
 - Auth's database role being refused on the `pipewhere` schema
 - API verification across a signing-key rotation
