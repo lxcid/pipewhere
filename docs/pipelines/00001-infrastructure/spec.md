@@ -32,6 +32,8 @@ What would overturn this: the complete stack cannot remain responsive on an entr
 
 ### D2 — Auth issues access tokens and owns organizations; API authorizes business resources
 
+Binding: every pipeline that adds a foreign key into `auth`.
+
 Auth is a Hono service built with Better Auth. It owns identities, interactive sessions, API keys, and access-token issuance. Through Better Auth's organization plugin, it also owns organizations, their members, members' roles, and invitations. An organization is what the intent calls a workspace. Its tables live in an `auth` schema in PostgreSQL. Auth owns and runs migrations for that schema. Pipewhere does not build an authentication system of its own.
 
 Every id Auth generates follows D6.
@@ -53,8 +55,10 @@ API reads Better Auth's tables as Better Auth defines them, so upgrading Better 
 
 A foreign key also changes what Auth can delete:
 
-- A foreign key to an organization refuses to delete it while rows in `pipewhere` reference it. The delete fails loudly instead of leaving those rows orphaned.
-- Better Auth deletes API keys, both on request and when they expire. A foreign key to a key therefore cascades, so Auth's delete also removes the rows that point at it. Otherwise Better Auth's own delete would fail.
+- A foreign key to an organization never cascades. It refuses to delete the organization while rows in `pipewhere` reference it, so the delete fails loudly instead of removing or orphaning business records.
+- Better Auth deletes API keys on request, when they expire, and when a usage-limited key runs out. Only a row that exists solely for one key holds a foreign key to it, and that foreign key cascades. A row that records which key acted keeps the id with no foreign key, so Better Auth's cleanup never deletes a business record.
+
+A later pipeline is in violation if it writes to `auth`, points a cascading foreign key at an organization, or points a foreign key at an API key from a row that must outlive the key.
 
 Auth exchanges a session or an API key for a signed JWT access token that expires within 15 minutes. It publishes the verification keys as JWKS. API validates the signature, issuer, audience, and expiry locally, then reads `sub`. API does not call Auth on each request.
 
