@@ -37,13 +37,15 @@ Every decision belongs to the pipeline that made it. There is no separate decisi
 
 Some decisions constrain work beyond their own pipeline. Mark those with a `Binding:` line naming who has to obey, directly under the heading:
 
-    ### D4 — Postgres owns business records; Restate holds execution state only
+    ### Dn — Decision title
 
-    Binding: every pipeline that adds a workflow.
+    Binding: the later pipeline that must obey.
 
-    A later pipeline is in violation if reading business state requires querying Restate, or if a workflow writes a row the application layer did not.
+    A later pipeline is in violation if [concrete behavior].
 
-    What would overturn this: a read path where the Postgres round-trip is measurably too slow and Restate's keyed state is the natural place for a hot copy.
+    What would overturn this: [evidence that would change the decision].
+
+See [infrastructure D4](00001-infrastructure/spec.md) for a concrete binding decision.
 
 The test for whether a decision is binding is concrete: name the pipeline that could violate it without noticing. If you cannot name one, it is not binding, and the line is left off. Most decisions are local to their own work.
 
