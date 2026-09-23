@@ -51,6 +51,13 @@ API can read no other column. Better Auth keeps session tokens, password hashes,
 
 API never writes to `auth`. Every change to an organization, member, role, invitation, or key goes through Auth, so Better Auth's own rules apply to it.
 
+Joining an organization needs a verified email. The operator chose this over letting an unverified invitee join. Auth sets Better Auth's `requireEmailVerificationOnInvitation` to `true` explicitly:
+
+- D6's id generator would otherwise switch it on silently.
+- D6 puts invitation ids in logs and URLs, where they are not secrets. A verified email is what proves the invitee owns the invited address.
+
+A team deployment therefore needs email delivery, or a sign-in provider that reports the email as verified, before a teammate can join. A single operator needs neither.
+
 The limit holds in both directions. Auth and API connect as separate database roles, and Auth's role has no access to the `pipewhere` schema. Worker connects as API's role. It runs the same application layer against the same tables, per D4, so a role of its own would need the same grants and would separate nothing. A leaked credential reads only what its services need.
 
 API reads Better Auth's tables as Better Auth defines them, so upgrading Better Auth can change what API reads. API's tests run against a database with Auth's migrations applied. They rerun whenever Auth's migrations or Better Auth's version change, so an upgrade that changes a column API reads fails them before it ships.
@@ -109,6 +116,7 @@ Before the auth boundary is considered verified, Pipewhere must exercise:
 - a request naming an organization the user is not a member of, or one that does not own the key, reported as not found
 - a member whose role does not permit an action, and a key whose permissions do not, each reported as forbidden
 - a call to Better Auth's organization endpoints that names no organization failing, after its user has created or joined an organization
+- an invitee whose email is not verified being refused when accepting an invitation
 - removing a member, changing a role, revoking a key, and changing a key's permissions while a token is still valid, each taking effect on the next request
 - API's database role reading only the columns Auth grants it, and being refused on the rest
 - Auth's database role being refused on the `pipewhere` schema
@@ -232,6 +240,7 @@ Read in Better Auth's source at commit `3d0efa3`, dated 2026-09-22, for D2. Auth
 - Better Auth sets a session's active organization when its user creates an organization or accepts an invitation. It writes it through its session update, which runs database hooks, and a hook can replace the value written.
 - Better Auth's organization endpoints fall back to the active organization when a call names none. With neither, they fail with `NO_ACTIVE_ORGANIZATION`.
 - Better Auth calls the configured id generator with the table's name, for every table's id. This is what D6's generator relies on.
+- Better Auth requires a verified email to accept, reject, or read an invitation by id when `requireEmailVerificationOnInvitation` is unset and the id generator is a custom function. It treats such ids as possibly predictable.
 
 Still to verify: whether registering the same deployment URI twice is idempotent in Restate 1.7.10. The build must reproduce this before choosing an automatic registration design.
 
