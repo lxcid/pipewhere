@@ -231,17 +231,11 @@ Run against a throwaway PostgreSQL 18 container on 2026-09-23, for D2:
 - A foreign key needs only `REFERENCES` on the referenced id. The referencing role still cannot read the table.
 - A plain foreign key refuses the referenced row's delete.
 
-Read in Better Auth's source at commit `3d0efa3`, dated 2026-09-22, for D2. Auth pins no Better Auth version yet, so the build rechecks these against the version it pins:
+Read in Better Auth's source at commit `3d0efa3`, dated 2026-09-22: every statement about Better Auth in D2 and D6, and the constraints below. Auth pins no Better Auth version yet, so the build rechecks them against the version it pins.
 
-- Better Auth builds a session only from an API key a user owns. For a key an organization owns, it fails with `INVALID_REFERENCE_ID_FROM_API_KEY`. Auth's key-to-token exchange is therefore its own endpoint, which verifies the key and signs the token.
-- Better Auth accepts a key's permissions only from server code. Auth sets them in its own endpoint.
-- Better Auth's key rate limits and usage counts apply when a key is verified. They count token exchanges, not API requests, so one exchange buys up to 15 minutes of requests.
-- Better Auth's JWT plugin copies the whole user record into the claims unless the payload is defined. Auth defines it, so a token carries only `sub` and the standard claims.
-- Better Auth deletes a key on request, when it expires, and when a usage-limited key has no uses left and no refill.
-- Better Auth's organization delete removes the organization's members and invitations, and not its API keys. A key's owner is a plain `referenceId`, with no foreign key. `disableOrganizationDeletion` refuses the delete.
-- Better Auth sets a session's active organization when its user creates an organization or accepts an invitation. It writes it through its session update, which runs database hooks, and a hook can replace the value written.
-- Better Auth calls the configured id generator with the table's name, for every table's id. This is what D6's generator relies on.
-- Better Auth requires a verified email to accept, reject, or read an invitation by id when `requireEmailVerificationOnInvitation` is unset and the id generator is a custom function. It treats such ids as possibly predictable.
+- Better Auth builds a session only from an API key a user owns, so Auth's key-to-token exchange is its own endpoint, which verifies the key and signs the token.
+- Better Auth accepts a key's permissions only from server code, so Auth sets them in its own endpoint.
+- Better Auth's JWT plugin copies the whole user record into the claims unless Auth defines the payload.
 
 Still to verify: whether registering the same deployment URI twice is idempotent in Restate 1.7.10. The build must reproduce this before choosing an automatic registration design.
 
