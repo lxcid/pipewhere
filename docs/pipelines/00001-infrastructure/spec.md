@@ -67,7 +67,7 @@ A foreign key also changes what Auth can delete:
 - A foreign key to an organization never cascades. It refuses to delete the organization while rows in `pipewhere` reference it, so the delete fails loudly instead of removing or orphaning business records.
 - Better Auth deletes API keys on request, when they expire, and when a usage-limited key runs out. Only a row that exists solely for one key holds a foreign key to it, and that foreign key cascades. A row that records which key acted keeps the id with no foreign key, so Better Auth's cleanup never deletes a business record.
 
-A later pipeline is in violation if it writes to `auth`, points a cascading foreign key at an organization, or points a foreign key at an API key from a row that must outlive the key.
+A later pipeline is in violation if it points a cascading foreign key at an organization, or points a foreign key at an API key from a row that must outlive the key.
 
 Auth exchanges a session or an API key for a signed JWT access token that expires within 15 minutes. It publishes the verification keys as JWKS. API validates the signature, issuer, audience, and expiry locally, then reads `sub`. API does not call Auth on each request.
 
@@ -78,7 +78,7 @@ The prefix of `sub` says which kind of token it is: `usr_` for a session, `key_`
 
 A token carries only `sub` and the standard claims: issuer, audience, issue time, and expiry. It holds no organization, role, or permission, so API always reads those from Auth's tables.
 
-Nothing records which member created a key. When a member leaves, the organization's remaining owners and admins review its keys themselves.
+Nothing records which member created a key. When a member who could manage keys leaves, the members who still can review the organization's keys.
 
 Better Auth's organization plugin keeps an active organization on each session. Pipewhere does not use it. Each request names the organization it acts in. The operator chose this so that:
 
