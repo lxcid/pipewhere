@@ -30,21 +30,77 @@ This costs more operationally than combining services into fewer processes. Smal
 
 What would overturn this: the complete stack cannot remain responsive on an entry-level MacBook Pro, or operating seven processes proves materially harder than the independent deployment boundaries are worth. API and Worker are the first consolidation candidate because both are Rust services and can share an application layer without changing client contracts.
 
-### D2 — Auth issues access tokens; API authorizes business resources
+### D2 — Auth issues access tokens and owns organizations; API authorizes business resources
 
-Auth is a Hono service built with Better Auth. It owns identities, interactive sessions, long-lived client credentials, and access-token issuance. Its tables live in an `auth` schema in PostgreSQL. Auth owns and runs migrations for that schema; API never reads it.
+Auth is a Hono service built with Better Auth. It owns identities, interactive sessions, API keys, and access-token issuance. Through Better Auth's organization plugin, it also owns organizations, their members, members' roles, and invitations. An organization is what the intent calls a workspace. Its tables live in an `auth` schema in PostgreSQL. Auth owns and runs migrations for that schema. Pipewhere does not build an authentication system of its own.
 
-Auth exchanges a session or long-lived credential for a signed JWT access token that expires within 15 minutes. It publishes the verification keys as JWKS. API validates the signature, issuer, audience, and expiry locally, then reads the opaque principal identifier and coarse scopes from the claims. API does not call Auth on each request.
+Every id Auth generates follows D6.
 
-An interactive session carries its user's subject in both `sub` and `owner_sub`. Each long-lived client credential is a separate principal and carries its own subject. Its creator remains its owner, and Auth includes that user's subject as an immutable `owner_sub` claim in the credential's access token. If Better Auth cannot model that relationship directly, Auth represents the credential as a service identity linked to its creator. Users and client credentials gain workspace access through the same business-schema membership rows.
+API's tables live in a `pipewhere` schema, and API owns and runs its migrations. The operator chose to have tables in `pipewhere` hold foreign keys into `auth`, so the database itself refuses a row for an organization that does not exist. Auth's migrations therefore run first. API's migrations fail if Auth's have not run.
 
-API owns resource-level authorization. It requires active workspace membership for both `sub` and `owner_sub` on every request and rejects tokens missing either claim. It decides whether the represented scopes permit the requested action on that resource. Auth determines identity and which coarse scopes a credential may request; it does not query product resources.
+Auth grants API's database role only what it needs, column by column:
 
-Web does not become a privileged backend. Web, REST, MCP, and CLI clients all obtain the same access-token shape and call the same API. Revoking a session or long-lived credential in Auth prevents new tokens, but an issued token remains valid until it expires. Removing either the credential's or its owner's workspace membership blocks its next API request because API checks both every time. The bounded token lifetime is accepted in exchange for removing an Auth network hop from every request.
+- read access to organizations, to members with their role, and to API keys with their organization, permissions, enabled flag, and expiry
+- references to organization and API key ids, so that `pipewhere` tables can hold foreign keys to them
 
-Before the auth boundary is considered verified, Pipewhere must exercise session-to-token exchange with equal `sub` and `owner_sub` claims, credential-to-token exchange with distinct claims, rejection of tokens missing either claim, removal of either membership while a token is still valid, and API verification across a signing-key rotation.
+API can read no other column. Better Auth keeps session tokens, password hashes, and sign-in providers' tokens in the `auth` schema, and API never sees them. A column a Better Auth upgrade adds stays hidden from API until Auth grants it.
 
-What would overturn this: Better Auth cannot issue the required claims, local verification proves unreliable, or a 15-minute revocation delay is unacceptable. The fallback is token introspection through Auth, accepting the per-request network dependency explicitly.
+API never writes to `auth`. Every change to an organization, member, role, invitation, or key goes through Auth, so Better Auth's own rules apply to it.
+
+The limit holds in both directions. Auth and API connect as separate database roles, and Auth's role has no access to the `pipewhere` schema. A leaked credential for either service reads only what that service needs.
+
+API reads Better Auth's tables as Better Auth defines them, so upgrading Better Auth can change what API reads. API's tests run against a database with Auth's migrations applied. An upgrade that changes a column API reads fails them before it ships.
+
+A foreign key also changes what Auth can delete:
+
+- A foreign key to an organization refuses to delete it while rows in `pipewhere` reference it. The delete fails loudly instead of leaving those rows orphaned.
+- Better Auth deletes API keys, both on request and when they expire. A foreign key to a key therefore cascades, so Auth's delete also removes the rows that point at it. Otherwise Better Auth's own delete would fail.
+
+Auth exchanges a session or an API key for a signed JWT access token that expires within 15 minutes. It publishes the verification keys as JWKS. API validates the signature, issuer, audience, and expiry locally, then reads `sub`. API does not call Auth on each request.
+
+- **Sessions.** A session token carries its user's id in `sub`.
+- **API keys.** An API key is owned by one organization, not by the member who created it. Removing that member leaves the key working. Its token carries the key's id in `sub`.
+
+The prefix of `sub` says which kind of token it is: `usr_` for a session, `key_` for an API key.
+
+Better Auth's organization plugin keeps an active organization on each session. Pipewhere does not use it. A token names no organization, and each request names the organization it acts in. The operator chose this so that:
+
+- A request means the same thing whichever organization its user last opened.
+- One user can work in two organizations at once.
+
+Better Auth's organization endpoints fall back to the active organization when a call names none. Every call Pipewhere makes to them names one.
+
+API owns resource-level authorization. On every request it rejects a token missing `sub`. It then checks, in Auth's tables, that the caller may act in the organization the request names:
+
+- For a session: the user is a member of that organization, and their current role permits the action.
+- For an API key: the key still exists, is enabled, has not expired, and is owned by that organization. Its current permissions permit the action.
+
+A caller that fails this check gets the same not-found response as for an organization that does not exist.
+
+Removing a member, changing a role, revoking a key, or changing a key's permissions therefore takes effect on the next request, even while a token is still valid.
+
+Revoking a session prevents new tokens, but an issued session token stays valid until it expires. The membership check still applies to it.
+
+Auth determines identity, organization membership, roles, and key permissions. API decides what those permit on a resource. Auth does not query product resources.
+
+Web does not become a privileged backend. Web, REST, MCP, and CLI clients all obtain the same access-token shape and call the same API.
+
+Before the auth boundary is considered verified, Pipewhere must exercise:
+
+- session-to-token exchange, with the user's `usr_` id in `sub`
+- API-key-to-token exchange, with the key's id in `sub`
+- rejection of a token missing `sub`
+- a request naming an organization the user is not a member of, or one that does not own the key, reported as not found
+- removing a member, changing a role, revoking a key, and changing a key's permissions while a token is still valid, each taking effect on the next request
+- API's database role reading only the columns Auth grants it, and being refused on the rest
+- Auth's database role being refused on the `pipewhere` schema
+- API verification across a signing-key rotation
+
+What would overturn this:
+
+- Better Auth cannot issue the required claims, or local verification proves unreliable. The fallback is token introspection through Auth, accepting the per-request network dependency explicitly.
+- The per-request check proves too slow. The fallback is a membership cache with a stated maximum age, accepting that delay explicitly.
+- Better Auth upgrades change the columns API reads often enough that fixing API each time costs more than a stable layer. The fallback is read-only views for reads, with the foreign keys kept on the tables.
 
 ### D3 — Web is an independent, edge-deployable Next.js service
 
