@@ -187,11 +187,7 @@ Ids are stored as text. A table keyed by its parent has no id of its own.
 - **Pipewhere's tables** check the prefix and the format with a check constraint.
 - **Better Auth's tables** get no check constraint, so Auth never alters a table Better Auth migrates. Better Auth generates their ids through Auth's id generator, which is told the table it is generating for. The generator throws for a table with no listed prefix. A Better Auth plugin that adds a table fails loudly until its prefix is listed.
 
-Each pipeline lists the prefixes it adds in a table in its own spec, written with the trailing underscore. A prefix is never reused. The full list is derived, never maintained. This prints any prefix claimed twice, and nothing when every prefix is unique:
-
-```bash
-grep -ho '^| `[a-z]\{3,5\}_`' docs/pipelines/*/spec.md | sort | uniq -d
-```
+A prefix is never reused. Once the id generators exist, a test over their table-to-prefix mappings fails when two tables share a prefix.
 
 Auth's prefixes:
 
@@ -209,7 +205,7 @@ Auth's prefixes:
 
 The operator chose the prefix and the 32-character limit. The prefix makes an id readable in logs, URLs, and events. It also lets one field hold ids of different kinds, such as a token's `sub`, which holds a user id or an API key id. Base32 keeps the id within 32 characters, where a hex UUID alone would already take 32. A UUIDv7 sorts by creation time to the millisecond, so new rows land at the end of their index. Within one millisecond, order is not guaranteed. It is also a standard UUID, so under the fallback below each id decodes to the same UUID, and no id is reassigned.
 
-A later pipeline is in violation if it adds a table whose id is a bare UUID or an integer sequence, uses a prefix it does not list, or reuses one.
+A later pipeline is in violation if it adds a table whose id is a bare UUID or an integer sequence, or reuses a prefix.
 
 What would overturn this: text ids costing measurable storage or index time. The fallback is a native `uuid` column for Pipewhere's own ids, with the prefix added at the API boundary. Columns that reference Auth's ids stay text. Auth's ids keep their prefix, which D2's check of `sub` relies on.
 
