@@ -51,13 +51,6 @@ API can read no other column. Better Auth keeps session tokens, password hashes,
 
 API never writes to `auth`. Every change to an organization, member, role, invitation, or key goes through Auth, so Better Auth's own rules apply to it.
 
-Joining an organization needs a verified email. The operator chose this over letting an unverified invitee join. Auth sets Better Auth's `requireEmailVerificationOnInvitation` to `true` explicitly:
-
-- D6's id generator would otherwise switch it on silently.
-- D6 puts invitation ids in logs and URLs, where they are not secrets. A verified email is what proves the invitee owns the invited address.
-
-A team deployment therefore needs email delivery, or a sign-in provider that reports the email as verified, before a teammate can join. A single operator needs neither.
-
 The limit holds in both directions. Auth and API connect as separate database roles, and Auth's role has no access to the `pipewhere` schema. Worker connects as API's role. It runs the same application layer against the same tables, per D4, so a role of its own would need the same grants and would separate nothing. A leaked credential reads only what its services need.
 
 API reads Better Auth's tables as Better Auth defines them, so upgrading Better Auth can change what API reads. API's tests run against a database with Auth's migrations applied. They rerun whenever Auth's migrations or Better Auth's version change, so an upgrade that changes a column API reads fails them before it ships.
@@ -86,6 +79,13 @@ Better Auth's organization plugin keeps an active organization on each session. 
 - One user can work in two organizations at once.
 
 Better Auth's organization endpoints fall back to the active organization when a call names none. Better Auth also sets it itself, when a user creates or joins an organization. Auth therefore keeps every session's active organization empty, through a session database hook. A call that names no organization then fails with Better Auth's no-active-organization error, instead of acting on whichever organization the user last created or joined.
+
+Joining an organization needs a verified email. The operator chose this over letting an unverified invitee join. Auth sets Better Auth's `requireEmailVerificationOnInvitation` to `true` explicitly:
+
+- D6's id generator would otherwise switch it on silently.
+- D6 puts invitation ids in logs and URLs, where they are not secrets. A verified email is what proves the invitee owns the invited address.
+
+A team deployment therefore needs email delivery, or a sign-in provider that reports the email as verified, before a teammate can join. A single operator needs neither.
 
 API owns resource-level authorization. On every request it checks, in Auth's tables, that the caller may act in the organization the request names:
 
