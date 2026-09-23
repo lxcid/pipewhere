@@ -57,7 +57,7 @@ API reads Better Auth's tables as Better Auth defines them, so upgrading Better 
 
 A foreign key also changes what Auth can delete:
 
-- A foreign key to an organization never cascades. It refuses to delete the organization while rows in `pipewhere` reference it, so the delete fails loudly instead of removing or orphaning business records.
+- A foreign key to an organization never cascades. It refuses to delete the organization while rows in `pipewhere` reference it. With organization deletion off, this is a backstop that fails loudly instead of removing or orphaning business records.
 - Better Auth deletes API keys on request, when they expire, and when a usage-limited key runs out. Only a row that exists solely for one key holds a foreign key to it, and that foreign key cascades. A row that records which key acted keeps the id with no foreign key, so Better Auth's cleanup never deletes a business record.
 
 A later pipeline is in violation if it points a cascading foreign key at an organization, or points a foreign key at an API key from a row that must outlive the key.
@@ -86,6 +86,13 @@ Joining an organization needs a verified email. The operator chose this over let
 - D6 puts invitation ids in logs and URLs, where they are not secrets. A verified email is what proves the invitee owns the invited address.
 
 A team deployment therefore needs email delivery, or a sign-in provider that reports the email as verified, before a teammate can join. A single operator needs neither.
+
+Organization deletion is off. Auth sets Better Auth's `disableOrganizationDeletion`:
+
+- Better Auth's delete removes an organization's members and invitations, but not its API keys. A key's owner is a plain reference Better Auth does not constrain, so the keys would be stranded outside any organization.
+- The organization's rows in `pipewhere` would also have to go, or block the delete.
+
+Deleting an organization waits for a pipeline that needs it. That pipeline defines one lifecycle covering business rows and keys together. A cleanup hook alone could leave a partial delete when a later step fails.
 
 API owns resource-level authorization. On every request it checks, in Auth's tables, that the caller may act in the organization the request names:
 
@@ -117,6 +124,7 @@ Before the auth boundary is considered verified, Pipewhere must exercise:
 - a member whose role does not permit an action, and a key whose permissions do not, each reported as forbidden
 - a call to Better Auth's organization endpoints that names no organization failing, after its user has created or joined an organization
 - an invitee whose email is not verified being refused when accepting an invitation
+- deleting an organization through Auth being refused
 - removing a member, changing a role, revoking a key, and changing a key's permissions while a token is still valid, each taking effect on the next request
 - API's database role reading only the columns Auth grants it, and being refused on the rest
 - Auth's database role being refused on the `pipewhere` schema
@@ -237,6 +245,7 @@ Read in Better Auth's source at commit `3d0efa3`, dated 2026-09-22, for D2. Auth
 - Better Auth's key rate limits and usage counts apply when a key is verified. They count token exchanges, not API requests, so one exchange buys up to 15 minutes of requests.
 - Better Auth's JWT plugin copies the whole user record into the claims unless the payload is defined. Auth defines it, so a token carries only `sub` and the standard claims.
 - Better Auth deletes a key on request, when it expires, and when a usage-limited key has no uses left and no refill.
+- Better Auth's organization delete removes the organization's members and invitations, and not its API keys. A key's owner is a plain `referenceId`, with no foreign key. `disableOrganizationDeletion` refuses the delete.
 - Better Auth sets a session's active organization when its user creates an organization or accepts an invitation. It writes it through its session update, which runs database hooks, and a hook can replace the value written.
 - Better Auth's organization endpoints fall back to the active organization when a call names none. With neither, they fail with `NO_ACTIVE_ORGANIZATION`.
 - Better Auth calls the configured id generator with the table's name, for every table's id. This is what D6's generator relies on.
