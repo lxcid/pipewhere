@@ -76,7 +76,7 @@ Better Auth's organization plugin keeps an active organization on each session. 
 - A request means the same thing whichever organization its user last opened.
 - One user can work in two organizations at once.
 
-Better Auth's organization endpoints fall back to the active organization when a call names none. Better Auth also sets it itself, when a user creates or joins an organization. Auth therefore keeps every session's active organization empty, through a session database hook. A call that names no organization then never acts on the organization the user last created or joined. The member, invitation, and organization changes clients use fail with `NO_ACTIVE_ORGANIZATION`. Some reads, such as getting an organization, return nothing instead.
+Better Auth's organization endpoints fall back to the active organization when a call names none, and Better Auth sets it itself when a user creates or joins an organization. Auth therefore keeps every session's active organization empty, through a session database hook, so a call that names no organization never acts on the one the user last created or joined.
 
 Joining an organization needs a verified email. The operator chose this over letting an unverified invitee join. Auth sets Better Auth's `requireEmailVerificationOnInvitation` to `true` explicitly:
 
@@ -127,7 +127,7 @@ Before the auth boundary is considered verified, Pipewhere must exercise:
 - a token whose `sub` is missing or has neither prefix, and a disabled or expired key, each reported as unauthorized
 - a request naming an organization the user is not a member of, or one that does not own the key, reported as not found
 - a member whose role does not permit an action, and a key whose permissions do not, each reported as forbidden
-- after a user creates an organization or accepts an invitation, a call to Better Auth that names no organization never acting on either: each organization change clients use fails, and a read returns nothing
+- after a user creates an organization or accepts an invitation, a call to Better Auth that names no organization acting on neither
 - an invitee whose email is not verified being refused when accepting an invitation
 - deleting an organization through Auth being refused
 - removing a member, changing a role, revoking a key, and changing a key's permissions while a token is still valid, each taking effect on the next request
@@ -252,7 +252,6 @@ Read in Better Auth's source at commit `3d0efa3`, dated 2026-09-22, for D2. Auth
 - Better Auth deletes a key on request, when it expires, and when a usage-limited key has no uses left and no refill.
 - Better Auth's organization delete removes the organization's members and invitations, and not its API keys. A key's owner is a plain `referenceId`, with no foreign key. `disableOrganizationDeletion` refuses the delete.
 - Better Auth sets a session's active organization when its user creates an organization or accepts an invitation. It writes it through its session update, which runs database hooks, and a hook can replace the value written.
-- Better Auth's organization endpoints fall back to the active organization when a call names none. With neither, its changes fail with `NO_ACTIVE_ORGANIZATION`, and some reads, such as getting an organization, return `null` with status 200.
 - Better Auth calls the configured id generator with the table's name, for every table's id. This is what D6's generator relies on.
 - Better Auth requires a verified email to accept, reject, or read an invitation by id when `requireEmailVerificationOnInvitation` is unset and the id generator is a custom function. It treats such ids as possibly predictable.
 
