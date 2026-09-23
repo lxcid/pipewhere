@@ -223,7 +223,6 @@ Verified on 2026-09-22:
 Run against a throwaway PostgreSQL 18 container on 2026-09-23, for D2:
 
 - A role granted some columns of a table reads them, and is refused every other column and `SELECT *`. A column added later stays hidden from it.
-- A foreign key cannot point at a view.
 - A foreign key needs only `REFERENCES` on the referenced id. The referencing role still cannot read the table.
 - A plain foreign key refuses the referenced row's delete.
 
