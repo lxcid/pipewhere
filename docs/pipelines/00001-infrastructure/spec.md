@@ -63,7 +63,7 @@ A foreign key also changes what Auth can delete:
 Auth exchanges a session or an API key for a signed JWT access token that expires within 15 minutes. It publishes the verification keys as JWKS. API validates the signature, issuer, audience, and expiry locally, then reads `sub`. API does not call Auth on each request.
 
 - **Sessions.** A session token carries its user's id in `sub`.
-- **API keys.** An API key is owned by one organization, not by the member who created it. Removing that member leaves the key working. Its token carries the key's id in `sub`.
+- **API keys.** An API key is owned by one organization, not by the member who created it. Auth configures Better Auth's API key plugin with `references: "organization"`, so no key is owned by a user. Removing the member who created a key leaves it working. Its token carries the key's id in `sub`.
 
 The prefix of `sub` says which kind of token it is: `usr_` for a session, `key_` for an API key.
 
