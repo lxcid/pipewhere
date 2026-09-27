@@ -370,11 +370,15 @@ Binding: every pipeline that adds a client, including the CLI, the MCP server, a
 
 Proposed: awaiting operator approval.
 
-Requests that create or retry publications require an `Idempotency-Key`. A key is scoped to the organization and the calling actor. A successful key is retained with the publications it created or retried, with no time-based expiry:
+Requests that create or retry publications require an `Idempotency-Key` containing at least 128 random bits. A key is unique within the organization, across actors and replacement API keys. A successful key is retained with the publications it created or retried, with no time-based expiry:
 
 - The same key with the same request returns the stored response.
 - The same key with a different request is rejected.
-- The same key while the first request is still running returns a conflict.
+- The same key while the first request is still running waits for its result or returns a conflict. It never starts the operation again.
+
+The key, request hash, stored response, and publication changes commit in one transaction. Either the result and its publications exist together, or neither does. The organization-wide unique key serializes concurrent attempts without a separately committed "in progress" marker.
+
+API checks the current caller's authorization for the requested action and its result before returning a stored response. An actor cannot learn another actor's result merely by guessing a key. The organization scope lets an automation retry safely after its API key is replaced; D20 treats the replacement as a new actor, but not as a new request.
 
 A later pipeline is in violation if its client retries one of these requests with a new key. A new key turns the client's own retry into a second publication.
 
