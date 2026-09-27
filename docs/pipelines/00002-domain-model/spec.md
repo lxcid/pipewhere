@@ -42,7 +42,7 @@ Each name is defined where it is decided: queues, pinned and queued publications
 
 "Account" is not an entity either. It means only a provider's own user account. A channel is not always one account: one provider login can manage several destinations, such as several Facebook Pages.
 
-Per infrastructure D6, new entity ids use `chan_` for channels, `slot_` for posting slots, `cont_` for content, `med_` for media, and `pub_` for publications. Other tables use parent keys and have no separate id.
+Per infrastructure D6, new entity ids use `chan_` for channels, `slot_` for posting slots, `cont_` for content, `med_` for media, and `pub_` for publications. Other tables use parent or natural keys and have no separate id.
 
 Interfaces use these names verbatim in API fields, MCP tool names and arguments, CLI commands, and UI labels. The API's published schema carries the names, and the other interfaces take them from it.
 
@@ -62,7 +62,7 @@ A create request may carry text instead of a content id. It then creates the con
 
 Content can be deleted only while no publication references it.
 
-The operator chose per-channel copies over a shared post with per-channel overrides. A shared post would let an edit to content rewrite what is already scheduled, which the intent rules out. It would also make `content:write` a permission that changes what goes public, around the review in D19. The cost: when two channels need the same change, the operator makes it twice.
+Per-channel copies avoid a shared post with per-channel overrides. A shared post would let an edit to content rewrite what is already scheduled, which the intent rules out. It would also make `content:write` a permission that changes what goes public, around the review in D19. The cost: when two channels need the same change, the operator makes it twice.
 
 ### D3 — Publishing now is scheduling at now
 
@@ -92,7 +92,7 @@ A queued publication's time is projected, not stored. The projection walks the c
 
 Reads use the projection, including "what is scheduled this week". Five minutes before the queue head's projected slot, the scheduler pins it at that slot: it writes `publish_at` and clears its rank while it remains `scheduled`. From then on, reads and the scheduler use its stored time. A posting-slot change after this claim does not move it.
 
-The operator chose a queue that moves over times fixed on entry, because a projected queue moves without re-timing rows.
+A projected queue moves without re-timing rows. Fixed times on entry would require rewriting them when slots or earlier publications change.
 
 What it costs: a queued publication's projected time can change without anyone touching it. The API marks such publications as queued, and an agent re-reads before relying on the time.
 
@@ -109,14 +109,16 @@ Before the deadline, the scheduler may start the publication, and the workflow m
 
 A pinned publication whose channel is not `active` at its time fails at once with `channel_reconnect_required`. Reconnecting the channel does not retry it.
 
-A queued publication that has not started has no time yet, so it cannot be late. Its queue waits instead:
+The same rule applies to a queue head after the scheduler pins it five minutes before its slot. A channel that becomes inactive in that window fails the pinned publication; the unclaimed remainder of its queue still waits.
+
+A queued publication that has not been pinned to a slot has no stored time, so it cannot be late. Its queue waits instead:
 
 - If the system is down, the queue resumes at the first slot after it returns.
 - If the channel is not `active`, its queue holds and has no projected times. It resumes at the first slot after the channel reconnects.
 
 A failed publication never stops its queue. The next queued publication still fires at its slot.
 
-The operator chose 15 minutes. It absorbs a worker restart or a brief provider outage. A post that goes out much later can be worse than one that does not go out: a missed post is recoverable by publishing it, and a stale one is not recoverable at all.
+The proposed 15 minutes absorbs a worker restart or a brief provider outage. A post that goes out much later can be worse than one that does not go out: a missed post is recoverable by publishing it, and a stale one is not recoverable at all.
 
 ### D6 — States encode retry safety
 
@@ -159,7 +161,7 @@ Proposed: awaiting operator approval.
 Each channel has a scheduler: a Restate virtual object keyed by the channel id. Restate runs one of its calls at a time.
 
 - It keeps one pending wake-up. That is the earlier of the next pinned `publish_at` and, when the queue is not empty and the channel is `active`, five minutes before the queue head's projected slot.
-- The pending queue wake-up carries the head's id, rank, and projected slot instant. On waking, the scheduler re-reads PostgreSQL. If that head, rank, slot, channel status, and lack of a pinned conflict still hold, it pins the head to the remembered slot. It does not project from the wake-up time and skip the slot it woke for. If any condition changed, it recomputes. It then starts every pinned publication whose `publish_at` has come.
+- The pending queue wake-up carries the head's id, rank, and projected slot instant. On waking, the scheduler re-reads PostgreSQL. It pins the head only if the id and rank still match, the channel is active, the remembered instant still belongs to its current posting slots and timezone, no pinned publication holds it, and the instant has not passed. It does not project from the wake-up time and skip a still-valid slot it woke for. If any condition fails, it recomputes from the current time. It then starts every pinned publication whose `publish_at` has come.
 - It then computes its next wake-up and schedules it.
 - It starts a publication's workflow and never waits for it. A slow preparation cannot delay the rest of the channel's publications.
 
@@ -168,7 +170,7 @@ Every committed change to a channel's publications, posting slots, or status sen
 - `recompute` is safe to repeat. The scheduler keeps a generation number in its Restate state, and a wake-up from an older generation does nothing.
 - A client's retry with the same idempotency key sends `recompute` again.
 - If a `recompute` is lost after its change commits, the channel's schedule stays stale until the channel's next change, its next wake-up, or the recovery command in D10. A pinned publication it missed fails with `grace_period_exceeded` once its deadline has passed, per D5. A queued publication moves to a later slot.
-- A timezone change in Auth also leaves the schedule stale until the next wake-up or recovery. If it moves a queued slot earlier than the pending wake-up, that slot can be missed. The operator runs the D10 recovery command after changing the timezone to refresh the schedulers. This accepted gap avoids a cross-service scheduling path for a rare edit.
+- A timezone change in Auth does not send `recompute`. The old wake-up checks the remembered slot against the new timezone and recomputes if it changed. An earlier slot may already have passed, so the queue resumes at its next slot. To catch a newly earlier slot, a deployment operator can run D10 recovery before that slot's five-minute claim point. The full command also takes over `preparing` work and re-arms credential refresh; an organization admin cannot invoke it through API. Otherwise the queue corrects itself at the next wake-up. This accepted gap avoids a cross-service scheduling path for a rare edit.
 
 The scheduler's Restate state is its generation and its pending wake-up. Pinned times, ranks, and slots stay in PostgreSQL, per infrastructure D4.
 
@@ -257,7 +259,7 @@ A Mastodon account id is unique only within its instance, so the instance host i
 
 At most one organization holds a channel at a time. A unique index on the three, over channels that are not `disconnected`, enforces it. Connecting a channel that another organization holds is rejected.
 
-The operator decided that one channel cannot be connected to several organizations. Two organizations holding one channel would mean two sets of credentials, and two schedules that can collide on the same public timeline. Nothing in V0 needs it.
+One channel cannot be connected to several organizations. Two organizations holding one channel would mean two sets of credentials, and two schedules that can collide on the same public timeline. Nothing in V0 needs it.
 
 - **`active`**: the channel can publish.
 - **`reconnect_required`**: a provider call returned an authorization failure, or a credential refresh failed definitively. `status_message` says which. Scheduling to the channel is rejected until it reconnects.
@@ -368,13 +370,15 @@ Binding: every pipeline that adds a client, including the CLI, the MCP server, a
 
 Proposed: awaiting operator approval.
 
-Requests that create or retry publications require an `Idempotency-Key`. A key is scoped to the organization and the calling actor, and kept for 24 hours:
+Requests that create or retry publications require an `Idempotency-Key`. A key is scoped to the organization and the calling actor. A successful key is retained with the publications it created or retried, with no time-based expiry:
 
 - The same key with the same request returns the stored response.
 - The same key with a different request is rejected.
 - The same key while the first request is still running returns a conflict.
 
 A later pipeline is in violation if its client retries one of these requests with a new key. A new key turns the client's own retry into a second publication.
+
+A later deletion feature must retain the key's result even if it removes a publication from ordinary reads. Expiring the key while its request can be retried would restore the duplicate path.
 
 There is no content-level duplicate check. Both providers accept repeated text, and a deliberate repeat is legitimate.
 
@@ -413,7 +417,7 @@ A publication goes to `pending_approval`, or stays there, when an actor whose mo
 - changes its body or media while it is `scheduled` or `pending_approval`
 - retries it after it failed
 
-The publication records that actor in `submitted_by`. It keeps its requested timing mode: `pinned` with a `publish_at`, or `queued` without a rank. The mode must be recorded explicitly so approval can distinguish queued work from a missing time. Unapproved work never takes a queue slot.
+The publication records that actor in `submitted_by`. A pending publication with `publish_at` is meant to be pinned; one without it is meant for the queue. Neither has a queue rank, so unapproved work never takes a slot.
 
 Approving needs `publication:approve`:
 
@@ -434,7 +438,7 @@ Agents, CI jobs, automations, and integrations act through API keys owned by the
 - A service actor's permissions are its key's permissions, set in Auth, per D14.
 - Disabling or deleting the key in Auth stops the service actor on the next request, per infrastructure D2.
 
-The operator chose this over a service actor table that API keys are bound to. That table would keep one identity when a key is replaced. It would also add a binding step when a key is created, and a key that authenticates as nothing until it is bound.
+This avoids a service actor table that API keys are bound to. Such a table would keep one identity when a key is replaced, but would also add a binding step when a key is created, and a key that authenticates as nothing until it is bound.
 
 What it costs: Better Auth cannot rotate a key in place, so a replacement key is a new actor. Its approval mode starts over as `required`, until an admin sets it again.
 
