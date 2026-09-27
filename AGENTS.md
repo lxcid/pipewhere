@@ -2,6 +2,8 @@
 
 This file holds instructions for coding agents working in this repository.
 
+<!-- devloop:pipelines v1 sha:e97a5def -->
+
 ## Pipelines
 
 Work in this repository is organised into pipelines under `docs/pipelines/`. Each one holds a unit of work end to end: `intent.md` states the problem, `spec.md` records the decisions, `plan.md` tracks the build.
@@ -9,11 +11,16 @@ Work in this repository is organised into pipelines under `docs/pipelines/`. Eac
 Before implementing anything, read `docs/pipelines/README.md` and the `intent.md` of the pipeline you are working in.
 
 - Do not start work on a pipeline unless its intent is `approved` or `in-progress`. The operator approves intents; approval is the gate, and closed pipelines stay closed.
-- Do not edit an `intent.md` to match what was built. It states the problem, and it keeps stating the problem after the solution changes.
+- Do not edit an `intent.md` to match what was built. It states the problem, and it keeps stating the problem after the solution changes. If the build shows the intent is wrong, stop and bring the evidence to the operator.
+- Your goal is the outcome in the intent, not the steps in the plan. Verify against the intent before handing off; the operator confirms `done`.
 - Record decisions in the pipeline's `spec.md`. There is no separate decision tree.
-- Before implementing, list the binding decisions from earlier pipelines with the command in the README's spec section. They constrain your work even though another pipeline made them.
+- Answer every open question in the intent with a decision that names it before handing off. Never add your own questions to the intent: decide questions about how to do the work, and ask the operator about what the work is.
+- Put `Proposed: awaiting operator approval.` under each decision you take, and remove it when the operator approves the decision, including approval given in conversation. Do not reverse or materially change a decision without that line. Bring the evidence to the operator instead. You may depart from a spec's preference by recording a decision that says why.
+- Before implementing, list the binding decisions from other pipelines with the command in the README's spec section, and read each listed decision. They constrain your work even though another pipeline made them. Only an approved `Overturns:` decision lifts one; follow a proposed binding as if it were approved.
 - Mark a decision `Binding:` only when you can name the later pipeline that could violate it without noticing.
-- Keep `plan.md` current as you build, and mark what was verified by which command separately from what is merely asserted.
+- The plan is yours. Revise it whenever the build shows it is wrong, keep `plan.md` current as you build, and mark what was verified by which command separately from what is merely asserted.
+
+<!-- /devloop:pipelines -->
 
 <!-- devloop:design-judgment v1 sha:0731ae6f -->
 
@@ -67,7 +74,7 @@ Tolerate or defer a case when the four factors together show that the fix costs 
 
 <!-- /devloop:test-design -->
 
-<!-- devloop:writing-style v2 sha:ae3d3905 -->
+<!-- devloop:writing-style v3 sha:cbf3be9a -->
 
 ## Writing Style
 
@@ -88,6 +95,8 @@ Write docs, issue bodies, and PR/issue comments for a human reviewer, not for de
 - Don't stack qualifications into em-dash chains or nested parentheticals. Give each qualification its own sentence, or promote the set to a list.
 - When prose enumerates cases, obligations, or layers, use a list. A reader should check items off, not parse them out of a paragraph.
 - Status headers state a document's current standing only. Revision narration ("revised after review pass N…") is churn; git history already carries it.
+- **Distill evidence once it settles.** Building, reviewing, and fixing pile up evidence: attempts, measurements, versions, error text. When a rule, constraint, or decision settles, replace that trail with the generalization it supports. Keep evidence needed to review a proposed decision. Keep a specific only when a reader acts on it or needs it to check the claim: a minimum version to install stays, the versions that failed along the way go. High signal means fewer claims, not denser prose. The trail stays in commit messages and PR history.
+- **Instruction files are paid for on every run.** Skills, agent roles, and `AGENTS.md` load whenever they apply. Keep them to instructions, and put reasoning in specs or design docs. Keep a reason beside its instruction only when an agent would misapply or undo the instruction without it.
 
 ### Shell output
 
