@@ -32,17 +32,18 @@ A domain model small enough to hold in one's head, that answers the operational 
 - Which posts failed, and why?
 - Retry what failed, without re-posting what succeeded.
 - Which channels cannot publish right now?
+- What is waiting for my review?
 
 Every entity in the model traces to one of those questions. Anything that does not is deferred, with the condition that would bring it back written down.
 
 The model is done when:
 
-- Each entity and state has one name, and it means the same thing in REST, MCP, CLI, and web.
+- The REST API schema defines one name for each entity and state. Later MCP, CLI, and web interfaces use that vocabulary.
 - For any post on any channel, the operator can read what will go out, or what went out.
 - The record of what went out never changes after it is published.
 - An unknown outcome is shown as unknown. It is never reported as a failure or as a success.
 - No automatic path publishes the same post to the same channel twice. That covers retries of a provider call, recovery after a restart, and a client retrying its request.
-- A post a channel cannot accept is rejected when it is scheduled, whichever client scheduled it.
+- A post that exceeds the channel's known text, count, media type, or size limits is rejected when scheduled, whichever client scheduled it. A provider may still reject it later if its limits changed or were not available to Pipewhere.
 - Why a post failed is answerable through the API, without raw server logs.
 - One operator can run Pipewhere alone, and a team can share it with different permissions, on the same model.
 
@@ -53,6 +54,7 @@ Not part of this problem:
 - Replies, comments, and a social inbox.
 - Editing or deleting a post on the network after it is published.
 - Dependencies between posts, including multi-part threads.
+- Implementing MCP, CLI, and web interfaces. Their later pipelines follow the shared API vocabulary.
 
 ## Affected users and systems
 

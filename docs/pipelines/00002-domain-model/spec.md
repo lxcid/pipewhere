@@ -2,7 +2,7 @@
 
 ## Context
 
-V0 publishes to Mastodon and Threads. The intent's nine operational questions are the acceptance test. Every entity below traces to one of them, or to a constraint the intent names.
+V0 publishes to Mastodon and Threads. The intent's operational questions are the acceptance test. Every entity below traces to one of them, or to a constraint the intent names.
 
 Three earlier decisions bind this pipeline:
 
@@ -22,13 +22,15 @@ Three earlier decisions bind this pipeline:
 | `publication`, `publication_media` | Now, at a time, next slot, change or cancel, scheduled this week, did this go out. |
 | `publication_attempt` | "Which posts failed, and why?" Retry without re-posting. |
 | `idempotency_key` | A retried request has to be safe. |
-| `actor_policy` | "Not every actor should publish unreviewed." |
+| `actor_policy` | "What is waiting for my review?" |
 
 ## Decisions
 
 ### D1 — One vocabulary across every interface
 
 Binding: every pipeline that adds an interface, including the MCP server, the CLI, and the web UI.
+
+Proposed: awaiting operator approval.
 
 Each name is defined where it is decided: queues, pinned and queued publications, and projected times in D4, states in D6, attempts in D16, roles in D14, approval modes in D19, and actors and service actors in D20. Three names are defined only here:
 
@@ -40,6 +42,8 @@ Each name is defined where it is decided: queues, pinned and queued publications
 
 "Account" is not an entity either. It means only a provider's own user account. A channel is not always one account: one provider login can manage several destinations, such as several Facebook Pages.
 
+Per infrastructure D6, new entity ids use `chan_` for channels, `slot_` for posting slots, `cont_` for content, `med_` for media, and `pub_` for publications. Other tables use parent keys and have no separate id.
+
 Interfaces use these names verbatim in API fields, MCP tool names and arguments, CLI commands, and UI labels. The API's published schema carries the names, and the other interfaces take them from it.
 
 A later pipeline is in violation if it exposes an entity or state under another name, or presents two states as one. The costliest case is showing `outcome_unknown` as `failed` or as `published`.
@@ -47,6 +51,8 @@ A later pipeline is in violation if it exposes an entity or state under another 
 What would overturn this: evidence that operators or agents consistently misread one of these names. The remedy is a rename in every interface at once, recorded here. A local alias in one interface is still a violation.
 
 ### D2 — A publication is a snapshot for one channel
+
+Proposed: awaiting operator approval.
 
 A publication's body and media list are copied when it is created. They come from content, and a create request may override either one per channel. Editing content never touches an existing publication, and editing a publication changes only that publication. Once a publication is `published`, its body, media, remote id, and remote URL never change.
 
@@ -60,16 +66,20 @@ The operator chose per-channel copies over a shared post with per-channel overri
 
 ### D3 — Publishing now is scheduling at now
 
+Proposed: awaiting operator approval.
+
 There is no separate immediate path. Publishing now creates a publication in `scheduled`, pinned to the server's current time, and the same scheduler starts it. One path means one set of failure modes to reason about and to test.
 
 ### D4 — Each channel has one queue, ordered by rank
 
+Proposed: awaiting operator approval.
+
 Every `scheduled` publication is either pinned or queued, never both:
 
 - **Pinned** publications have a `publish_at`. Publishing now, or choosing a time, pins a publication.
-- **Queued** publications have a `queue_rank` instead, and no stored time. The rank is a fractional index that orders the channel's queue.
+- **Queued** publications have a `queue_rank` instead, and no stored time. The rank orders the channel's queue.
 
-Adding to the queue puts a publication at the back, which answers "add this to the next posting slot". Moving it gives it a rank between two neighbours. Pinning a queued publication takes it out of the queue. Re-adding a pinned or failed publication puts it at the back.
+Adding to the queue puts a publication at the back, which answers "add this to the next posting slot". Moving it changes its rank. Pinning a queued publication takes it out of the queue. Re-adding a pinned or failed publication puts it at the back.
 
 Every queue operation changes only the publication it moves. Changing the posting slots changes no publication. Ranks are generated under the channel row lock, so concurrent adds never share one.
 
@@ -78,22 +88,24 @@ A queued publication's time is projected, not stored. The projection walks the c
 - It skips any slot instant that a pinned publication on the same channel already holds.
 - It gives each remaining slot to the next queued publication in rank order.
 - A local slot time that does not exist on a daylight-saving transition day is skipped. A local time that occurs twice resolves to its first occurrence.
-- It looks 52 weeks ahead. A queued publication beyond that has no projected time yet.
+- A queue with no posting slots has no projected time.
 
-Reads use the projection, including "what is scheduled this week". The channel scheduler in D7 uses the same projection to decide what fires. When a queued publication fires, its slot instant is written to `publish_at` and its rank is cleared.
+Reads use the projection, including "what is scheduled this week". Five minutes before the queue head's projected slot, the scheduler pins it at that slot: it writes `publish_at` and clears its rank while it remains `scheduled`. From then on, reads and the scheduler use its stored time. A posting-slot change after this claim does not move it.
 
 The operator chose a queue that moves over times fixed on entry, because a projected queue moves without re-timing rows.
 
 What it costs: a queued publication's projected time can change without anyone touching it. The API marks such publications as queued, and an agent re-reads before relying on the time.
 
-### D5 — A publication may publish within 15 minutes of its time, and never later
+### D5 — No provider commit starts more than 15 minutes after its time
+
+Proposed: awaiting operator approval.
 
 A publication has a delivery deadline 15 minutes after its `publish_at`:
 
 - A pinned publication's `publish_at` is the time it was given.
-- A queued publication gets its `publish_at` when the scheduler starts it at a slot, per D4.
+- A queued publication gets its `publish_at` when the scheduler pins it five minutes before a slot, per D4.
 
-Before the deadline, the scheduler may start the publication, and the workflow may retry transient failures, per D9. After it, nothing starts or retries automatically. The publication moves to `failed` with `grace_period_exceeded`, and it never publishes later on its own.
+Before the deadline, the scheduler may start the publication, and the workflow may retry failures known not to have sent anything, per D9. After it, no new provider commit starts or retries automatically. A publication that has not begun a commit moves to `failed` with `grace_period_exceeded`. A commit already in flight may finish after the deadline; its actual result remains `published`, `failed`, or `outcome_unknown`, never a deadline-based guess.
 
 A pinned publication whose channel is not `active` at its time fails at once with `channel_reconnect_required`. Reconnecting the channel does not retry it.
 
@@ -108,12 +120,14 @@ The operator chose 15 minutes. It absorbs a worker restart or a brief provider o
 
 ### D6 — States encode retry safety
 
+Proposed: awaiting operator approval.
+
 - `pending_approval`: waiting for review, per D19. It keeps its intended timing and holds no queue slot. Editable and cancellable.
 - `scheduled`: waiting, either pinned to `publish_at` or queued. Editable and cancellable.
 - `preparing`: media fetched from the object store and handed to the provider. Nothing is public yet. Cancellable, not editable. A crash here is always safe to retry.
 - `publishing`: the provider commit may be in flight. Neither editable nor cancellable. A crash here may or may not have produced a remote post.
 - `published`: terminal. The remote id is recorded, and the remote URL when the provider gives one.
-- `failed`: the provider definitely did not publish, the attempt ended before the commit, or the D5 deadline passed. Terminal until someone explicitly retries it.
+- `failed`: the provider definitely did not publish, or the attempt ended before a commit could start. A deadline alone cannot fail an in-flight commit. Terminal until someone explicitly retries it.
 - `outcome_unknown`: nobody knows whether a remote post exists. Never retried automatically, per D9.
 - `cancelled`: terminal.
 
@@ -124,13 +138,13 @@ The table lists every transition. Any other is rejected.
 | `pending_approval` | `scheduled` | client with `publication:approve`, per D19 |
 | `pending_approval` | `cancelled` | client, rejecting or cancelling |
 | `scheduled` | `pending_approval` | client, a change to body or media by an actor whose approval mode is `required` |
-| `scheduled` | `preparing` | channel scheduler, when a pinned time or the queue head's slot arrives |
+| `scheduled` | `preparing` | channel scheduler, when the stored `publish_at` arrives |
 | `scheduled`, `preparing` | `cancelled` | client |
 | `preparing` | `publishing` | worker, the commit claim |
 | `preparing` | `failed` | worker: the deadline passed, a pinned publication's channel is not active, media is missing, or the provider permanently rejected preparation |
 | `publishing` | `published` | worker |
 | `publishing` | `preparing` | worker, after a send that definitely did not happen, before the deadline |
-| `publishing` | `failed` | worker, when the adapter classifies the failure as permanent, or the deadline passes |
+| `publishing` | `failed` | worker, only after the adapter establishes that the provider definitely did not publish; a deadline alone is insufficient |
 | `publishing` | `outcome_unknown` | worker, when the outcome is unknown or the commit guard trips; recovery, per D10 |
 | `failed` | `scheduled` or `pending_approval` | client retry, pinned or queued. It needs approval again if the retrying actor's mode is `required`. |
 | `outcome_unknown` | `published` | client, with the remote URL |
@@ -140,10 +154,12 @@ The split between `preparing` and `publishing` separates a crash that is safe to
 
 ### D7 — A channel scheduler decides when; conditional updates decide who
 
+Proposed: awaiting operator approval.
+
 Each channel has a scheduler: a Restate virtual object keyed by the channel id. Restate runs one of its calls at a time.
 
-- It keeps one pending wake-up. That is the earlier of the next pinned `publish_at` and, when the queue is not empty and the channel is `active`, the queue head's projected slot.
-- On waking, it re-reads PostgreSQL and starts what is due: every pinned publication whose time has come, and the queue head if its slot has come.
+- It keeps one pending wake-up. That is the earlier of the next pinned `publish_at` and, when the queue is not empty and the channel is `active`, five minutes before the queue head's projected slot.
+- The pending queue wake-up carries the head's id, rank, and projected slot instant. On waking, the scheduler re-reads PostgreSQL. If that head, rank, slot, channel status, and lack of a pinned conflict still hold, it pins the head to the remembered slot. It does not project from the wake-up time and skip the slot it woke for. If any condition changed, it recomputes. It then starts every pinned publication whose `publish_at` has come.
 - It then computes its next wake-up and schedules it.
 - It starts a publication's workflow and never waits for it. A slow preparation cannot delay the rest of the channel's publications.
 
@@ -151,14 +167,15 @@ Every committed change to a channel's publications, posting slots, or status sen
 
 - `recompute` is safe to repeat. The scheduler keeps a generation number in its Restate state, and a wake-up from an older generation does nothing.
 - A client's retry with the same idempotency key sends `recompute` again.
-- If a `recompute` is lost after its change commits, the channel's schedule stays stale until the channel's next change, its next wake-up, or the recovery command in D10. A publication it missed then fails with `grace_period_exceeded` once its deadline has passed, per D5, instead of publishing late.
+- If a `recompute` is lost after its change commits, the channel's schedule stays stale until the channel's next change, its next wake-up, or the recovery command in D10. A pinned publication it missed fails with `grace_period_exceeded` once its deadline has passed, per D5. A queued publication moves to a later slot.
+- A timezone change in Auth also leaves the schedule stale until the next wake-up or recovery. If it moves a queued slot earlier than the pending wake-up, that slot can be missed. The operator runs the D10 recovery command after changing the timezone to refresh the schedulers. This accepted gap avoids a cross-service scheduling path for a rare edit.
 
 The scheduler's Restate state is its generation and its pending wake-up. Pinned times, ranks, and slots stay in PostgreSQL, per infrastructure D4.
 
 Every transition is a conditional update in PostgreSQL on the publication's current state:
 
-- Starting a publication moves it from `scheduled` to `preparing`, increments `attempt`, and inserts the attempt row, in one transaction.
-- For the queue head, that update also requires the rank the scheduler read. It writes the slot instant to `publish_at` and clears the rank. If a client moved or pinned the head in the meantime, the update fails, and the scheduler recomputes.
+- Claiming the queue head requires the rank the scheduler read. It writes the slot instant to `publish_at` and clears the rank while the publication remains `scheduled`. If a client moved or pinned the head in the meantime, the update fails, and the scheduler recomputes.
+- Starting a pinned publication moves it from `scheduled` to `preparing`, increments `attempt`, and inserts the attempt row, in one transaction.
 - `preparing` to `publishing` requires `attempt` to equal the number the workflow holds.
 
 A workflow that loses a claim stops. A client request that loses a race gets a conflict naming the current state. For example, a cancel that arrives after the commit claim is rejected with `publishing`.
@@ -169,6 +186,8 @@ One scheduler per channel replaces one timer per publication. With a queue whose
 
 ### D8 — The commit claim guards the provider call
 
+Proposed: awaiting operator approval.
+
 The provider call that creates the remote post runs inside one durable step. The step begins with the commit claim from D7. If the claim wins, the step calls the provider.
 
 If Restate replays the step, the claim finds the publication already `publishing` under the same attempt. The step then moves the publication to `outcome_unknown` and does not call the provider. If the attempt number differs, the invocation has been superseded, and it stops without writing.
@@ -178,11 +197,13 @@ Two crashes lead to this path:
 - A crash after the provider accepted, but before Restate recorded the result, gives `outcome_unknown`. It never gives a second provider call.
 - A crash after the claim, but before the provider call, also gives `outcome_unknown`, although nothing was sent. The operator resolves that false unknown. It is accepted as the price of never calling twice.
 
-This is the replay behaviour infrastructure D4 requires to be defined and tested. The test is in the plan.
+This is the replay behaviour infrastructure D4 requires to be defined and tested during implementation.
 
 ### D9 — An unknown publish outcome is never retried automatically
 
 Binding: every pipeline that adds a provider adapter, or any other provider call that creates public content.
+
+Proposed: awaiting operator approval.
 
 A duplicate public post is unrecoverable in the way that counts: deleting it does not unsee it. A missed post is recoverable by publishing it. The asymmetry decides the policy.
 
@@ -214,6 +235,8 @@ What would overturn this: every supported provider offering an idempotency handl
 
 ### D10 — Recovery re-drives from PostgreSQL
 
+Proposed: awaiting operator approval.
+
 Losing Restate's data loses in-flight invocations and pending timers. PostgreSQL still holds every publication. An operator-invoked recovery command re-drives work from PostgreSQL:
 
 1. It sends `recompute` to the scheduler of every channel with `scheduled` publications.
@@ -227,6 +250,8 @@ Publications re-driven after their D5 deadline fail with `grace_period_exceeded`
 Automatic periodic reconciliation is deferred until operating evidence shows that manual recovery is not enough.
 
 ### D11 — A channel is identified by provider, host, and remote id
+
+Proposed: awaiting operator approval.
 
 A Mastodon account id is unique only within its instance, so the instance host is part of the channel's identity. For Threads, the host is the fixed API host.
 
@@ -244,6 +269,8 @@ Reconnecting the same channel in the same organization reactivates its row, so i
 
 ### D12 — Credentials are encrypted and refreshed before expiry
 
+Proposed: awaiting operator approval.
+
 Provider credentials are encrypted with a key from deployment configuration. `credentials_key_id` names the key used, so keys can rotate without re-encrypting every row at once.
 
 Mastodon has no central app registry. Pipewhere registers itself with each instance the first time a channel on it connects, and reuses that registration. The registration belongs to the deployment, not to an organization, and its client secret is encrypted the same way. The Threads app is deployment configuration.
@@ -256,6 +283,8 @@ Threads access tokens expire. A durable timer per Threads channel refreshes the 
 Mastodon tokens are not refreshed. `credentials_expires_at` stays null unless the instance reports an expiry. An authorization failure at use moves the channel to `reconnect_required`.
 
 ### D13 — Capabilities are discovered per channel and checked when scheduling
+
+Proposed: awaiting operator approval.
 
 `capabilities` holds what the channel can accept:
 
@@ -273,6 +302,8 @@ A request with any invalid target creates nothing and reports every problem, per
 Capabilities can go stale if an instance lowers its limits. The provider then rejects the commit, which is definitely not sent, and the publication fails with `provider_rejected`. Reconnecting refreshes the capabilities.
 
 ### D14 — Roles, permissions, and where "now" ends
+
+Proposed: awaiting operator approval.
 
 Humans and service actors share one permission vocabulary:
 
@@ -307,6 +338,8 @@ A role says what a human may do. Whether their work needs review is approval pol
 
 ### D15 — Media is uploaded once and never changes
 
+Proposed: awaiting operator approval.
+
 Media is uploaded through API into the object store. The `media` row is written after the bytes are stored, and neither changes afterwards. Content and publications reference media with a position and alt text. A publication's list is its own snapshot. Media referenced by any publication cannot be deleted.
 
 - **Missing bytes:** if the bytes are missing when a publication prepares, it fails with `media_missing`, per infrastructure D4.
@@ -314,6 +347,8 @@ Media is uploaded through API into the object store. The `media` row is written 
 - **Threads:** Threads fetches media itself, from a URL. Pipewhere hands it a short-lived presigned URL, so the object store must be reachable from the internet. A deployment that has not configured a public object URL rejects media on Threads channels at validation. Text-only publications to Threads work either way.
 
 ### D16 — Attempts are the failure record
+
+Proposed: awaiting operator approval.
 
 Every run of the publish workflow writes one attempt, including a run that ends before any provider call. A `failed` or `outcome_unknown` publication is explained by its latest attempt. The publication carries no error columns of its own, so the reason exists once.
 
@@ -331,6 +366,8 @@ The error codes are part of the API contract:
 
 Binding: every pipeline that adds a client, including the CLI, the MCP server, and the web UI.
 
+Proposed: awaiting operator approval.
+
 Requests that create or retry publications require an `Idempotency-Key`. A key is scoped to the organization and the calling actor, and kept for 24 hours:
 
 - The same key with the same request returns the stored response.
@@ -347,12 +384,14 @@ What would overturn this: clients supplying the publication id themselves, which
 
 Binding: every pipeline that adds an API endpoint.
 
+Proposed: awaiting operator approval.
+
 Pipewhere has one tenancy level, the organization. A single operator is an organization with one member. A team is an organization with several. Every business row carries `organization_id`, directly or through its parent.
 
 - A signed-in user with no organization creates one and becomes its owner. Creating it sets its name and timezone. Nothing is created automatically, so an invited user does not collect an empty organization.
 - Better Auth's sub-teams and per-organization custom roles stay off.
 
-The organization holds every publishing setting. Its timezone resolves every channel's posting slots, per D4. A channel has no setting that overrides its organization's. The timezone is stored on the organization in Auth, and API reads it from Auth's organization table.
+The organization holds every publishing setting. Its timezone resolves every channel's posting slots, per D4. A channel has no setting that overrides its organization's. The timezone is stored on the organization in Auth, and API reads it from Auth's organization table. Auth creates the organization and requires its timezone at creation, so keeping that setting there avoids a second organization settings row. The cost is the stale scheduler window after an Auth timezone edit described in D7.
 
 Every request names one organization. REST names it in the path, as `/v1/orgs/{organization_id}/...`. After infrastructure D2's check, API filters every query and every write by it. A resource in another organization is reported as not found, the same as an organization the caller cannot act in.
 
@@ -361,6 +400,8 @@ A later pipeline is in violation if it reads or writes a row whose `organization
 What would overturn this: a customer who needs several brands under one bill or one set of admins. That would add a level above organizations.
 
 ### D19 — Approval is actor policy, and it comes before scheduling
+
+Proposed: awaiting operator approval.
 
 Every actor has an approval mode, `auto` or `required`, in `actor_policy`. No row means `auto` for a human and `required` for a service actor. Admins and owners set it.
 
@@ -372,7 +413,7 @@ A publication goes to `pending_approval`, or stays there, when an actor whose mo
 - changes its body or media while it is `scheduled` or `pending_approval`
 - retries it after it failed
 
-The publication records that actor in `submitted_by`. It keeps its intended timing: a pinned `publish_at`, or the queue. It holds no queue rank, so unapproved work never takes a slot.
+The publication records that actor in `submitted_by`. It keeps its requested timing mode: `pinned` with a `publish_at`, or `queued` without a rank. The mode must be recorded explicitly so approval can distinguish queued work from a missing time. Unapproved work never takes a queue slot.
 
 Approving needs `publication:approve`:
 
@@ -384,6 +425,8 @@ Approving needs `publication:approve`:
 Approval authorizes content. It never publishes overdue work. If a pinned publication's time is less than five minutes away, or has passed, approving it needs one more decision in the same request: publish now, a new time, or the queue. Choosing now needs `publication:publish_now`. Approving without a decision is rejected with `schedule_missed`. "Awaiting approval with its time passed" is derived, not a state.
 
 ### D20 — Service actors are an organization's API keys
+
+Proposed: awaiting operator approval.
 
 Agents, CI jobs, automations, and integrations act through API keys owned by the organization, per infrastructure D2. Pipewhere calls such a key a service actor. It has no table of its own.
 
@@ -419,7 +462,7 @@ What it costs: Better Auth cannot rotate a key in place, so a replacement key is
 
 ## Provider behaviour relied on
 
-None of this has been verified against a live provider. The plan verifies each item before the adapter that depends on it ships.
+None of this has been verified against a live provider. Each item must be checked before the adapter that depends on it ships.
 
 | Behaviour | Relied on by |
 | --- | --- |
