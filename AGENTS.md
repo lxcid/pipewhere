@@ -74,7 +74,7 @@ Tolerate or defer a case when the four factors together show that the fix costs 
 
 <!-- /devloop:test-design -->
 
-<!-- devloop:writing-style v3 sha:cbf3be9a -->
+<!-- devloop:writing-style v4 sha:3e941979 -->
 
 ## Writing Style
 
@@ -89,14 +89,24 @@ Tolerate or defer a case when the four factors together show that the fix costs 
 
 ### Documentation prose
 
-Write docs, issue bodies, and PR/issue comments for a human reviewer, not for density.
+Write docs, issue bodies, and PR/issue comments for both humans and agents. An agent's ability to infer the meaning does not establish that a human can follow it.
 
 - Short sentences, one idea each. Plain wording is not weaker wording: keep the exact claims, names, and invariants, and drop only the compression.
 - Don't stack qualifications into em-dash chains or nested parentheticals. Give each qualification its own sentence, or promote the set to a list.
 - When prose enumerates cases, obligations, or layers, use a list. A reader should check items off, not parse them out of a paragraph.
 - Status headers state a document's current standing only. Revision narration ("revised after review pass N…") is churn; git history already carries it.
-- **Distill evidence once it settles.** Building, reviewing, and fixing pile up evidence: attempts, measurements, versions, error text. When a rule, constraint, or decision settles, replace that trail with the generalization it supports. Keep evidence needed to review a proposed decision. Keep a specific only when a reader acts on it or needs it to check the claim: a minimum version to install stays, the versions that failed along the way go. High signal means fewer claims, not denser prose. The trail stays in commit messages and PR history.
-- **Instruction files are paid for on every run.** Skills, agent roles, and `AGENTS.md` load whenever they apply. Keep them to instructions, and put reasoning in specs or design docs. Keep a reason beside its instruction only when an agent would misapply or undo the instruction without it.
+- **Distill evidence once it settles.** Building, reviewing, and fixing pile up evidence: attempts, measurements, versions, error text. When a rule, constraint, or decision settles, replace that trail with the generalization it supports. Remove repetition, superseded conclusions, abandoned approaches, and details that no longer help the reader. Explain the remaining points clearly, keeping the context, reasoning, and examples needed to understand them. Do not shorten the prose by removing those explanations.
+- **Maintain references, not investigation diaries.** Before handing off, reread affected documentation as a whole. Update the authoritative explanation in place so readers can understand the current system without reconstructing the investigation. Check document structure as well as sentences: several concise reports can still leave readers with competing answers.
+- **Keep the evidence readers need.** Preserve the supporting details someone needs to assess a proposed decision or check whether a statement is correct and applies to their situation.
+  - Keep the sample inputs or test cases used to establish a result. Record the exact code or dependency versions tested, since results may change between versions.
+  - Explain how measurements were made so readers can reproduce them or judge whether a comparison was fair.
+  - State what remains unknown. For example, “Desktop performance was tested; mobile performance remains unmeasured.”
+  - Keep useful reasons for decisions, including why an approach was rejected. These help readers understand the choice and its trade-offs.
+  - Keep a detail when it helps a reader act correctly or check the conclusion. A minimum version to install stays. A list of failed versions can go when it no longer helps explain or verify the requirement. If those failures still establish the requirement or help diagnose a problem, preserve the evidence.
+  - Link to an existing source, such as a test report or measurement record, instead of copying its contents into every document.
+- **Give historical reports a reader purpose.** Investigation history belongs in commits and PR discussions. Create a separate historical report only when readers need that snapshot. Another review iteration alone is not a reason to add a dated report. Preserve historical records that the project explicitly requires.
+- **Respect approval boundaries.** Consolidation must not silently change operator-owned intent or approved decisions. If new evidence challenges either, bring it to the operator before rewriting it.
+- **Instruction files are paid for on every run.** Skills, agent roles, and `AGENTS.md` load whenever they apply. Keep them focused on instructions, and put broader investigation and design reasoning in specs or design docs. Keep a reason beside its instruction when a human needs it to understand the meaning or an agent needs it to apply the instruction correctly.
 
 ### Shell output
 
