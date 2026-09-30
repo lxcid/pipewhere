@@ -43,6 +43,10 @@ Five digits, zero-padded, starting at `00001`. Numbers are assigned when a pipel
 
 The slug is lowercase and hyphenated, and it names the work rather than the solution.
 
+## Review size
+
+Keep an approval unit small enough that the operator can decide it without reviewing future implementation choices. When one draft contains several independently useful outcomes, open separate draft intents and approve them as the work approaches. An intent names the problem and completion test for its unit; its spec records only decisions needed for that unit. Later questions stay with later pipelines. A split does not approve those later intents or carry proposed decisions into them as settled facts.
+
 ## The three files
 
 Ceremony scales with uncertainty and risk. The intent is the durable minimum. A spec or a plan is written when it reduces uncertainty, not as paperwork.
