@@ -9,7 +9,7 @@ Binding: 00003–00006, and later API, MCP, CLI, and web pipelines that expose p
 Proposed: awaiting operator approval.
 
 - An **organization** is the ownership boundary, managed by Auth.
-- A **channel** links one external account to one organization. It records that relationship, not the account itself. Several organizations may each link the same external account; their channels are separate.
+- A **channel** links one external account to one organization, per D7.
 - **Content** is private source writing, with no channel or time.
 - A **publication** is one snapshot of text for one channel. It is the unit of scheduling, state, and outcome.
 - A **publication attempt** records one execution and explains its failure or unknown outcome.
@@ -59,7 +59,7 @@ Publishing now uses the same path as a publication scheduled for the current tim
 
 A later pipeline violates this decision if it moves a publication through an unlisted transition, edits one outside `scheduled` or `failed`, or cancels one in `publishing`. The one exception is an approval state before `scheduled`. An approval pipeline may add it through its own decision, which lists that state's transitions and says whether it is editable. That decision does not need to overturn this one.
 
-What would overturn this: a provider whose commit cannot be isolated as one step after cancellable preparation, or evidence that operators need to edit a publication once preparation has started.
+What would overturn this: a provider whose commit cannot be isolated as one step after cancellable preparation, or evidence that operators need to edit a publication while it is `preparing` or `publishing`.
 
 ### D4 — An ambiguous commit never runs again automatically
 
@@ -100,3 +100,17 @@ No request reads or writes across organizations. A user who wants to see what is
 The API path is `/v1/orgs/{organization_id}/...`. A later endpoint violates this decision if it takes the ownership scope from a body field or from the resource being accessed instead of the request's authorized organization.
 
 What would overturn this: a need to share administration, billing, or business records across organizations, requiring another level above them.
+
+### D7 — A channel is a link to an external account
+
+Binding: 00004 and later pipelines that connect a provider account.
+
+A channel records that one organization links one external account. Pipewhere does not model the account behind the link. Several organizations may link the same external account. Each link is a separate channel, and no organization learns of another's.
+
+This keeps D6's boundary. Connecting a channel never looks at another organization's channels, so a personal and a company organization can both link one account without either seeing the other.
+
+Organizations that link the same account share that provider's per-account limits, such as Threads' daily publish cap. One organization's volume can then make another's publication fail with the provider's error. That publication becomes `failed`, and its operator can edit or retry it.
+
+A later pipeline violates this decision if connecting a channel checks or reveals another organization's links.
+
+What would overturn this: evidence that accounts shared across organizations cause provider-limit failures or duplicate posts that operators cannot diagnose from within their own organization.

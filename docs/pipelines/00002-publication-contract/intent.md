@@ -37,7 +37,7 @@ Operators reading publication outcomes; API clients retrying requests; the REST 
 - The first provider adapters will be Mastodon and Threads. Their live behavior and commit mechanics are decided and verified in their implementation pipelines.
 - Organization and channel identities must work in a local deployment and in a later hosted one.
 
-Queue slots, grace periods, media, channel capabilities and credentials, team permissions, approval policy, and the provider adapters are outside this contract. They need separate intents before implementation. The earlier draft proposals remain at commit `2dd8752` in PR #4 for those later reviews; they are not approved decisions.
+Queue slots, grace periods, media, channel capabilities and credentials, team permissions, approval policy, and the provider adapters are outside this contract. They need separate intents before implementation. The earlier draft proposals remain at commit `2dd8752` in PR #4, under `docs/pipelines/00002-domain-model/`, for those later reviews; they are not approved decisions.
 
 ## Open questions
 

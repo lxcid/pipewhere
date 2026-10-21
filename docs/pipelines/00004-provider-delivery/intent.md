@@ -19,7 +19,7 @@ Operators connecting channels and resolving failures; API, provider adapters, Po
 ## Constraints
 
 - Never automatically repeat an ambiguous commit, per [publication contract D4](../00002-publication-contract/spec.md).
-- A Mastodon account is identified by its instance and account id. A channel links one external account to one organization. Several organizations may link the same account; their channels are separate, and none learns of another's.
+- A Mastodon account is identified by its instance and account id. A channel links one external account to one organization. Several organizations may link the same account, per [publication contract D7](../00002-publication-contract/spec.md). Their channels are separate, and none learns of another's. Organizations that link the same Threads account share its daily cap.
 - Provider secrets must not be stored in plain text.
 
 ## Open questions
