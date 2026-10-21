@@ -210,6 +210,28 @@ A later pipeline is in violation if it adds a table whose id is a bare UUID or a
 
 What would overturn this: text ids costing measurable storage or index time.
 
+### D7 — Secrets have no defaults
+
+Proposed: awaiting operator approval.
+
+Every password and signing secret comes from `.env`, and Compose refuses to start while one is missing. The README generates them with `openssl rand` in its first step, so bring-up is one configuration step and then one command, `docker compose up`.
+
+A default secret would make the first local run one command shorter. It would also give every deployment that forgot to override it the same Better Auth secret, which signs sessions and encrypts the JWT signing keys. A hosted operator copying the local setup would not notice.
+
+What would overturn this: a bring-up that generates the secrets itself on first run, without a second copy of them outside `.env`.
+
+### D8 — Web's pages call Auth directly, so Web and Auth share a site
+
+Proposed: awaiting operator approval.
+
+Web's pages call Auth from the browser, with credentials, for sign-in, organizations, keys, and tokens. Auth allows Web's origin through CORS and Better Auth's trusted origins. Web has no route that forwards to Auth, so it holds no session and no secret, per D2.
+
+Auth's session cookie is `SameSite=Lax`. A browser sends it on these calls only when Web and Auth are the same site: `localhost` on two ports, or two subdomains of one domain such as `app.example.com` and `auth.example.com`. A hosted deployment that puts Web and Auth on unrelated domains signs nobody in.
+
+Web reads `AUTH_URL` per request, so one Web image serves any deployment.
+
+What would overturn this: a deployment that needs Web and Auth on unrelated domains. Web would then forward Auth's routes from its own origin.
+
 ## Implementation constraints and evidence
 
 Verified on 2026-09-22:
@@ -227,13 +249,19 @@ Run against a throwaway PostgreSQL 18 container on 2026-09-23, for D2:
 - A foreign key needs only `REFERENCES` on the referenced id. The referencing role still cannot read the table.
 - A plain foreign key refuses the referenced row's delete.
 
-Read in Better Auth's source at commit `3d0efa3`, dated 2026-09-22: every statement about Better Auth in D2 and D6, and the constraints below. Auth pins no Better Auth version yet, so the build rechecks them against the version it pins.
+Auth pins Better Auth 1.7.12 and `@better-auth/api-key` 1.7.12. Every statement about Better Auth in D2 and D6, and the constraints below, was read in their published packages on 2026-10-22. Auth's tests in `apps/auth/test` exercise the ones marked as tested. Recheck all of them when either version changes.
 
-- Better Auth builds a session only from an API key a user owns, so Auth's key-to-token exchange is its own endpoint, which verifies the key and signs the token.
+- Better Auth builds a session only from an API key a user owns, so Auth's key-to-token exchange is its own endpoint, `POST /api-key/token`, which verifies the key and signs the token. Tested.
 - Better Auth accepts a key's permissions only from server code, so Auth sets them in its own endpoint.
-- Better Auth's JWT plugin copies the whole user record into the claims unless Auth defines the payload.
+- Better Auth's JWT plugin copies the whole user record into the claims unless Auth defines the payload. Tested: a token carries only `sub`, `iss`, `aud`, `iat`, and `exp`.
+- The organization plugin sets the active organization through a session update, and user database hooks run after plugin hooks. Auth's session hook therefore has the last word. Tested by removing the hook: three tests fail.
+- The API key plugin allows 10 verifications a day per key by default. A client exchanging its key every 15 minutes needs 96, so Auth turns that limit off. Tested with 12 exchanges.
+- Better Auth's default roles let only an owner create an organization's keys. An admin is refused.
+- Constructing a Better Auth instance checks the schema and logs an error for each missing table. Auth's migration step therefore works from the options and never constructs an instance.
 
-Still to verify: whether registering the same deployment URI twice is idempotent in Restate 1.7.10. The build must reproduce this before choosing an automatic registration design.
+Compose pins Restate 1.7.13. Restate names its node after the hostname by default, and refuses its existing data when the name changes. A container's hostname changes whenever it is recreated, so Compose sets `RESTATE_NODE_NAME`. Tested by recreating the container on its existing volume.
+
+Still to verify: whether registering the same deployment URI twice is idempotent in the pinned Restate version. The build must reproduce this before choosing an automatic registration design.
 
 Restate server and Rust SDK versions must be pinned independently. The server can be stable while the pre-1.0 SDK changes its Rust API.
 
