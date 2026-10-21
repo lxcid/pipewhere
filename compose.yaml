@@ -1,0 +1,102 @@
+name: pipewhere
+
+services:
+  postgres:
+    image: postgres:18.6
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: pipewhere
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      # PostgreSQL 18 keeps its data in a major-version subdirectory of this
+      # mount, so a later pg_upgrade --link stays on one filesystem.
+      - postgres:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "pipewhere"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  postgres-setup:
+    image: postgres:18.6
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGUSER: postgres
+      PGDATABASE: pipewhere
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD:?set AUTH_DB_PASSWORD in .env}
+      API_DB_PASSWORD: ${API_DB_PASSWORD:?set API_DB_PASSWORD in .env}
+    volumes:
+      - ./infra/postgres/setup.sql:/setup.sql:ro
+    command:
+      - sh
+      - -c
+      - psql -v auth_password="$$AUTH_DB_PASSWORD" -v api_password="$$API_DB_PASSWORD" -f /setup.sql
+    restart: "no"
+
+  rustfs:
+    image: rustfs/rustfs:1.0.3
+    restart: unless-stopped
+    environment:
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:?set RUSTFS_ACCESS_KEY in .env}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:?set RUSTFS_SECRET_KEY in .env}
+      RUSTFS_CONSOLE_ENABLE: "true"
+    volumes:
+      - rustfs:/data
+
+  restate:
+    image: restatedev/restate:1.7.13
+    restart: unless-stopped
+    environment:
+      # Restate defaults the node name to the hostname, which changes whenever
+      # the container is recreated, and then refuses its existing data.
+      RESTATE_NODE_NAME: pipewhere
+    volumes:
+      - restate:/restate-data
+
+  auth-migrate:
+    build:
+      context: .
+      dockerfile: apps/auth/Dockerfile
+    depends_on:
+      postgres-setup:
+        condition: service_completed_successfully
+    environment: &auth-env
+      DATABASE_URL: postgres://pipewhere_auth:${AUTH_DB_PASSWORD}@postgres:5432/pipewhere
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET in .env}
+      AUTH_URL: ${AUTH_URL:?set AUTH_URL in .env}
+      WEB_URL: ${WEB_URL:?set WEB_URL in .env}
+    command: ["node", "src/migrate.ts"]
+    restart: "no"
+
+  auth:
+    build:
+      context: .
+      dockerfile: apps/auth/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      auth-migrate:
+        condition: service_completed_successfully
+    environment: *auth-env
+    ports:
+      - 127.0.0.1:3001:3001
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - auth
+    environment:
+      AUTH_URL: ${AUTH_URL:?set AUTH_URL in .env}
+    ports:
+      - 127.0.0.1:3000:3000
+
+volumes:
+  postgres:
+  rustfs:
+  restate:
