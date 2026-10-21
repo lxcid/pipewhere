@@ -9,7 +9,7 @@ Binding: 00003–00006, and later API, MCP, CLI, and web pipelines that expose p
 Proposed: awaiting operator approval.
 
 - An **organization** is the ownership boundary, managed by Auth.
-- A **channel** is one publishing destination in an organization.
+- A **channel** links one external account to one organization. It records that relationship, not the account itself. Several organizations may each link the same external account; their channels are separate.
 - **Content** is private source writing, with no channel or time.
 - A **publication** is one snapshot of text for one channel. It is the unit of scheduling, state, and outcome.
 - A **publication attempt** records one execution and explains its failure or unknown outcome.
@@ -38,7 +38,7 @@ Proposed: awaiting operator approval.
 | `preparing` | Preparing provider inputs; no public commit has started. Cancellable, but not editable. |
 | `publishing` | A provider commit may have started; neither editable nor cancellable. |
 | `published` | A remote post is confirmed. Terminal. |
-| `failed` | The provider definitely did not publish, or work stopped before commit. Explicit retry only. |
+| `failed` | The provider definitely did not publish, or work stopped before commit. Editable; leaves only by explicit retry. |
 | `outcome_unknown` | A remote post may exist. No automatic retry. |
 | `cancelled` | Stopped before commit. Terminal. |
 
@@ -53,9 +53,11 @@ After scheduling, the normal path is `scheduled` → `preparing` → `publishing
 
 Any unlisted transition is rejected.
 
+A failed publication is editable so that an operator can fix what the provider rejected and then retry it. Buffer, Publer, PostFast, and SmarterQueue all let an operator edit a failed post before retrying or rescheduling it. Without this, a content rejection could only be fixed by creating a new publication.
+
 Publishing now uses the same path as a publication scheduled for the current time. The scheduler, the time a retry is scheduled for, the delivery deadline, and which provider errors may run again belong to the scheduling and adapter pipelines.
 
-A later pipeline violates this decision if it moves a publication through an unlisted transition, edits one outside `scheduled`, or cancels one in `publishing`. The one exception is an approval state before `scheduled`. An approval pipeline may add it through its own decision, which lists that state's transitions and says whether it is editable. That decision does not need to overturn this one.
+A later pipeline violates this decision if it moves a publication through an unlisted transition, edits one outside `scheduled` or `failed`, or cancels one in `publishing`. The one exception is an approval state before `scheduled`. An approval pipeline may add it through its own decision, which lists that state's transitions and says whether it is editable. That decision does not need to overturn this one.
 
 What would overturn this: a provider whose commit cannot be isolated as one step after cancellable preparation, or evidence that operators need to edit a publication once preparation has started.
 

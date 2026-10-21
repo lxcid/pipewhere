@@ -6,7 +6,7 @@ status: draft
 
 ## Problem
 
-A queued publication's time depends on posting slots, earlier queued work, and the organization's timezone. These can change after it joins the queue. Daylight-saving changes create missing or repeated local times. If the worker is down or a channel cannot publish, a planned time can pass. Losing Restate's execution state must not lose the schedule stored in PostgreSQL or publish twice during recovery.
+A queued publication's time depends on posting slots, earlier queued work, and the timezone that resolves those slots. These can change after it joins the queue. Daylight-saving changes create missing or repeated local times. If the worker is down or a channel cannot publish, a planned time can pass. Losing Restate's execution state must not lose the schedule stored in PostgreSQL or publish twice during recovery.
 
 ## Proposed outcome
 
