@@ -60,6 +60,8 @@ Removing the session hook makes three organization tests fail, so they test the 
   - opening the company organization
   - creating a key and exchanging it for a token
 
+The README's steps, run word for word in a fresh clone of this branch, bring up the same stack. Auth answers `/health`, Web answers 200, and a sign-up succeeds. The run used `docker compose -p pipewhere-fresh` so it did not share volumes with the running stack.
+
 `docker stats --no-stream`, with the stack idle after that walkthrough: Web 57 MiB, Auth 60 MiB, PostgreSQL 50 MiB, RustFS 89 MiB, Restate 278 MiB. That is about 530 MiB for five of the seven processes.
 
 ## Not yet verified
@@ -67,5 +69,6 @@ Removing the session hook makes three organization tests fail, so they test the 
 - D2 checks that need API: unauthorized, not-found, and forbidden responses; membership, role, and key changes taking effect on the next request; and verification across a signing-key rotation.
 - D5's object-store checks. RustFS runs but nothing uses it yet.
 - The intent's MacBook test. The numbers above come from a 14-core machine, and API and Worker are missing. Whether the stack gets in the way of development work is for the operator to judge on an entry-level MacBook Pro.
-- A new operator following the README from a fresh clone, unaided.
+- A new operator following the README unaided. The builder followed it from a fresh clone, as described above, which is not the same test.
+- A cold first build. The fresh-clone run reused Docker's layer cache from earlier builds, so the time a new machine takes to build the images is unmeasured.
 - A key whose permissions do not allow an action. Auth has no endpoint that sets a key's permissions yet. API will need one before it can check them.
