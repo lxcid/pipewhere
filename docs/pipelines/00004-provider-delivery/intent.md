@@ -10,7 +10,7 @@ Mastodon and Threads create posts differently. Mastodon uses one publish call; T
 
 ## Proposed outcome
 
-Mastodon and Threads adapters publish through the [publication contract](../00002-domain-model/intent.md). Each commit has an attempt record, a clear failure reason, and a tested response to ambiguous outcomes. A channel has a stable identity and a readable status. Reconnecting it preserves its history. Credential storage, refresh, and manual recovery keep working across restarts.
+Mastodon and Threads adapters publish through the [publication contract](../00002-publication-contract/intent.md). Each commit has an attempt record, a clear failure reason, and a tested response to ambiguous outcomes. A channel has a stable identity and a readable status. Reconnecting it preserves its history. Credential storage, refresh, and manual recovery keep working across restarts.
 
 ## Affected users and systems
 
@@ -18,7 +18,7 @@ Operators connecting channels and resolving failures; API, provider adapters, Po
 
 ## Constraints
 
-- Never automatically repeat an ambiguous commit, per [publication contract D4](../00002-domain-model/spec.md).
+- Never automatically repeat an ambiguous commit, per [publication contract D4](../00002-publication-contract/spec.md).
 - A Mastodon account is identified by its instance and account id. A channel links one external account to one organization. Several organizations may link the same account; their channels are separate, and none learns of another's.
 - Provider secrets must not be stored in plain text.
 

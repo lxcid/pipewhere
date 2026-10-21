@@ -19,7 +19,7 @@ Operators, team members, agents and automations; Auth, API, and clients showing 
 ## Constraints
 
 - Auth owns organizations, members, roles, invitations, and API keys, per [infrastructure D2](../00001-infrastructure/spec.md).
-- The [publication contract](../00002-domain-model/intent.md) supplies the publication and organization boundaries. This pipeline may add a pre-scheduling approval state.
+- The [publication contract](../00002-publication-contract/intent.md) supplies the publication and organization boundaries. This pipeline may add a pre-scheduling approval state.
 - A single operator must not have to configure an approval policy to publish.
 
 ## Open questions

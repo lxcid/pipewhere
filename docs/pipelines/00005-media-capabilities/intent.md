@@ -18,7 +18,7 @@ Operators and clients preparing posts; API, object storage, Mastodon and Threads
 
 ## Constraints
 
-- The [publication contract](../00002-domain-model/intent.md) keeps each channel's publication independent.
+- The [publication contract](../00002-publication-contract/intent.md) keeps each channel's publication independent.
 - RustFS owns object bytes and PostgreSQL owns references, per [infrastructure D4](../00001-infrastructure/spec.md).
 - Provider limits may change or be unavailable; a later provider rejection remains possible.
 

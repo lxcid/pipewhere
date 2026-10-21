@@ -10,7 +10,7 @@ A queued publication's time depends on posting slots, earlier queued work, and t
 
 ## Proposed outcome
 
-An operator can publish now, pin a publication to a time, or add it to a channel's next posting slot. The API shows the current schedule and whether a time is fixed or projected. An operator can change a publication while it waits for its time, and cancel it before its provider commit starts. Late work follows an explicit deadline policy. A recovery command restores scheduling from PostgreSQL without repeating an ambiguous commit, per [publication contract D4](../00002-domain-model/spec.md).
+An operator can publish now, pin a publication to a time, or add it to a channel's next posting slot. The API shows the current schedule and whether a time is fixed or projected. An operator can change a publication while it waits for its time, and cancel it before its provider commit starts. Late work follows an explicit deadline policy. A recovery command restores scheduling from PostgreSQL without repeating an ambiguous commit, per [publication contract D4](../00002-publication-contract/spec.md).
 
 ## Affected users and systems
 
@@ -18,7 +18,7 @@ Operators and API clients scheduling work; the API, PostgreSQL, and Restate work
 
 ## Constraints
 
-- The [publication contract](../00002-domain-model/intent.md) supplies the states and retry boundary.
+- The [publication contract](../00002-publication-contract/intent.md) supplies the states and retry boundary.
 - PostgreSQL owns schedules; Restate holds execution state only, per [infrastructure D4](../00001-infrastructure/spec.md).
 - A fixed time must not silently move when posting slots change.
 
