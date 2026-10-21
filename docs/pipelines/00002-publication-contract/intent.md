@@ -17,9 +17,9 @@ Define the publication entities, states, and transitions in the REST API schema.
 The contract is ready for implementation when:
 
 - Each entity and state has one name and one meaning, including an attempt record that explains failures and unknown outcomes.
-- A publication holds its own body for one channel. Changing source content cannot change that publication.
+- Each channel's publication shows exactly what will go, or went, out to it. Changing source content cannot change that publication.
 - The allowed transitions distinguish work that is safe to repeat from a provider commit whose outcome may be unknown.
-- The published API contract requires a stable client retry key and forbids an automatic second provider commit after an ambiguous result.
+- The published API contract guarantees that repeating a client request returns the first result instead of creating another publication. It forbids an automatic second provider commit after an ambiguous result.
 - Every publication belongs to one organization. A single operator can use an organization without a team setup step.
 
 This pipeline defines the contract. Later pipelines implement scheduling, provider adapters, and interfaces against it.
