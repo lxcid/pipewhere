@@ -10,7 +10,7 @@ A queued publication's time depends on posting slots, earlier queued work, and t
 
 ## Proposed outcome
 
-An operator can publish now, pin a publication to a time, or add it to a channel's next posting slot. The API shows the current schedule and whether a time is fixed or projected. An operator can change or cancel a publication before its provider commit starts. Late work follows an explicit deadline policy. A recovery command restores scheduling from PostgreSQL without repeating an ambiguous commit, per [publication contract D4](../00002-domain-model/spec.md).
+An operator can publish now, pin a publication to a time, or add it to a channel's next posting slot. The API shows the current schedule and whether a time is fixed or projected. An operator can change a publication while it waits for its time, and cancel it before its provider commit starts. Late work follows an explicit deadline policy. A recovery command restores scheduling from PostgreSQL without repeating an ambiguous commit, per [publication contract D4](../00002-domain-model/spec.md).
 
 ## Affected users and systems
 

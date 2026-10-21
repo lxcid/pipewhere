@@ -28,6 +28,8 @@ This makes the scheduled and sent record readable without reconstructing old con
 
 ### D3 — States preserve the publish boundary
 
+Binding: 00003, 00004, 00006, and later pipelines that change a publication's state.
+
 Proposed: awaiting operator approval.
 
 | State | Meaning |
@@ -40,9 +42,22 @@ Proposed: awaiting operator approval.
 | `outcome_unknown` | A remote post may exist. No automatic retry. |
 | `cancelled` | Stopped before commit. Terminal. |
 
-After scheduling, the normal path is `scheduled` → `preparing` → `publishing` → `published`. `scheduled` or `preparing` may become `failed` or `cancelled` before commit. `publishing` may become `failed` only when nothing was sent, return to `preparing` only when a send definitely did not happen, or become `outcome_unknown` when the result is ambiguous. An explicit retry of `failed` creates another attempt. A person may resolve `outcome_unknown` to `published` with the remote reference or to `failed` after confirming nothing was posted. Any unlisted delivery transition is rejected. A later approval pipeline may add a state before `scheduled` through its own decision.
+After scheduling, the normal path is `scheduled` → `preparing` → `publishing` → `published`. The other transitions are:
 
-Publishing now uses the same path as a publication scheduled for the current time. The exact scheduler and delivery deadline belong to the scheduling pipeline.
+- `scheduled` or `preparing` → `failed` or `cancelled`, before commit.
+- `publishing` → `preparing`, when the provider definitely did not publish and the work may run again automatically, per D4.
+- `publishing` → `failed`, when the provider definitely did not publish and the work stops, such as a rejected request or revoked credentials.
+- `publishing` → `outcome_unknown`, when a remote post may exist.
+- `failed` → `scheduled`, on an explicit retry. Its next run creates another attempt.
+- `outcome_unknown` → `published`, when a person supplies the remote reference, or → `failed`, when a person confirms nothing was posted.
+
+Any unlisted transition is rejected. A later approval pipeline may add a state before `scheduled` through its own decision.
+
+Publishing now uses the same path as a publication scheduled for the current time. The scheduler, the time a retry is scheduled for, the delivery deadline, and which provider errors may run again belong to the scheduling and adapter pipelines.
+
+A later pipeline violates this decision if it moves a publication through an unlisted transition, edits one outside `scheduled`, or cancels one in `publishing`.
+
+What would overturn this: a provider whose commit cannot be isolated as one step after cancellable preparation, or evidence that operators need to edit a publication once preparation has started.
 
 ### D4 — An ambiguous commit never runs again automatically
 
@@ -66,7 +81,7 @@ Proposed: awaiting operator approval.
 
 Create and retry requests require an `Idempotency-Key` with at least 128 random bits. The key is unique within an organization across actors and replacement API keys. The same key and request return the stored result; the same key with different input is rejected. Concurrent use of one key produces one operation. The key, request hash, result, and publication changes commit together.
 
-Successful keys have no time-based expiry while their publication history exists. Before returning a stored result, API checks the current caller's authorization. A client retry with a new key violates this decision because it can create a second publication. A deliberate new request with a new key may publish identical text.
+Successful keys have no time-based expiry while their publication history exists. Before returning a stored result, API checks the current caller's authorization. A client retry with a new key violates this decision because it can create a second publication. An endpoint violates it if it creates or retries a publication without an `Idempotency-Key`, or commits the key separately from the publication change. A deliberate new request with a new key may publish identical text.
 
 What would overturn this: client-assigned publication ids that make create requests naturally idempotent.
 
@@ -76,19 +91,10 @@ Binding: 00003–00006 and later pipelines that add an organization-scoped API e
 
 Proposed: awaiting operator approval.
 
-One operator is an organization with one member; a team has several. Auth owns that membership. One user may belong to several organizations, such as a personal one and a company one. Each holds its own channels, content, and publications, and nothing is shared between them. Every business row belongs to an organization directly or through its parent. Every request names one organization, and API checks the caller against it before reading or writing business records, as infrastructure D2 requires. A resource from another organization appears not found.
+An operator working alone uses an organization with one member; a team shares one with several. Auth owns that membership. One user may belong to several organizations, such as a personal one and a company one. Each holds its own channels, content, and publications, and nothing is shared between them. Every business row belongs to an organization directly or through its parent. Every request names one organization, and API checks the caller against it before reading or writing business records, as infrastructure D2 requires. A resource from another organization appears not found.
+
+No request reads or writes across organizations. A user who wants to see what is scheduled in both a personal and a company organization makes one request to each.
 
 The API path is `/v1/orgs/{organization_id}/...`. A later endpoint violates this decision if it takes the ownership scope from a body field or from the resource being accessed instead of the request's authorized organization.
 
-What would overturn this: a need for several brands under one bill or one set of admins, requiring another level above organizations.
-
-## Next review units
-
-These are scopes for new draft intents, not decisions or approval of the removed proposals:
-
-1. [Scheduling and recovery](../00003-scheduling-recovery/intent.md): pinned times, queues, deadlines, and re-drive after Restate loss.
-2. [Provider delivery](../00004-provider-delivery/intent.md): Mastodon and Threads identity, credentials, and verified commit behavior.
-3. [Media and channel limits](../00005-media-capabilities/intent.md): stable media, validation, and provider processing.
-4. [Team publishing policy](../00006-team-review/intent.md): roles, service actors, and approval before scheduling.
-
-Each unit gets its own intent and spec only when work begins. Its decisions may refine this contract, but an approved change to D1, D4, D5, or D6 needs an explicit `Overturns:` decision and operator approval.
+What would overturn this: a need to share administration, billing, or business records across organizations, requiring another level above them.
