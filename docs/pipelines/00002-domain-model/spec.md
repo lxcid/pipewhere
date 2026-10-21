@@ -51,11 +51,11 @@ After scheduling, the normal path is `scheduled` → `preparing` → `publishing
 - `failed` → `scheduled`, on an explicit retry. Its next run creates another attempt.
 - `outcome_unknown` → `published`, when a person supplies the remote reference, or → `failed`, when a person confirms nothing was posted.
 
-Any unlisted transition is rejected. A later approval pipeline may add a state before `scheduled` through its own decision.
+Any unlisted transition is rejected.
 
 Publishing now uses the same path as a publication scheduled for the current time. The scheduler, the time a retry is scheduled for, the delivery deadline, and which provider errors may run again belong to the scheduling and adapter pipelines.
 
-A later pipeline violates this decision if it moves a publication through an unlisted transition, edits one outside `scheduled`, or cancels one in `publishing`.
+A later pipeline violates this decision if it moves a publication through an unlisted transition, edits one outside `scheduled`, or cancels one in `publishing`. The one exception is an approval state before `scheduled`. An approval pipeline may add it through its own decision, which lists that state's transitions and says whether it is editable. That decision does not need to overturn this one.
 
 What would overturn this: a provider whose commit cannot be isolated as one step after cancellable preparation, or evidence that operators need to edit a publication once preparation has started.
 
