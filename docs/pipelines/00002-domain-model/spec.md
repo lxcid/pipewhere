@@ -76,7 +76,7 @@ Binding: 00003–00006 and later pipelines that add an organization-scoped API e
 
 Proposed: awaiting operator approval.
 
-One operator is an organization with one member; a team has several. Auth owns that membership. Every business row belongs to an organization directly or through its parent. Every request names one organization, and API checks the caller against it before reading or writing business records, as infrastructure D2 requires. A resource from another organization appears not found.
+One operator is an organization with one member; a team has several. Auth owns that membership. One user may belong to several organizations, such as a personal one and a company one. Each holds its own channels, content, and publications, and nothing is shared between them. Every business row belongs to an organization directly or through its parent. Every request names one organization, and API checks the caller against it before reading or writing business records, as infrastructure D2 requires. A resource from another organization appears not found.
 
 The API path is `/v1/orgs/{organization_id}/...`. A later endpoint violates this decision if it takes the ownership scope from a body field or from the resource being accessed instead of the request's authorized organization.
 
