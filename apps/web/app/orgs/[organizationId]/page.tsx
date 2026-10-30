@@ -100,7 +100,7 @@ export default function OrganizationPage() {
 
 function ApiKeys({ organizationId }: { organizationId: string }) {
   const { client, authUrl } = useAuth();
-  const [keys, setKeys] = useState<ApiKey[]>([]);
+  const [keys, setKeys] = useState<ApiKey[] | null>(null);
   const [created, setCreated] = useState<{ id: string; key: string } | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [name, setName] = useState("");
@@ -113,7 +113,7 @@ function ApiKeys({ organizationId }: { organizationId: string }) {
   }, [client, organizationId]);
 
   useEffect(() => {
-    load();
+    run(load);
   }, [load]);
 
   function create(event: FormEvent<HTMLFormElement>) {
@@ -155,7 +155,7 @@ function ApiKeys({ organizationId }: { organizationId: string }) {
         A key belongs to the organization, not to whoever created it. It keeps working after its
         creator leaves.
       </p>
-      {keys.length ? (
+      {keys?.length ? (
         <ul className="list">
           {keys.map((key) => (
             <li key={key.id}>
@@ -170,7 +170,7 @@ function ApiKeys({ organizationId }: { organizationId: string }) {
           ))}
         </ul>
       ) : (
-        <p>No keys yet.</p>
+        keys && <p>No keys yet.</p>
       )}
       <form onSubmit={create} className="row">
         <input
