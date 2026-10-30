@@ -65,6 +65,15 @@ The README's steps, run word for word in a fresh clone of this branch, bring up 
 
 `docker stats --no-stream`, with the stack idle after that walkthrough: Web 57 MiB, Auth 60 MiB, PostgreSQL 50 MiB, RustFS 89 MiB, Restate 278 MiB. That is about 530 MiB for five of the seven processes.
 
+Review fixes then changed the PostgreSQL healthcheck, Auth's CORS and session reads, and Web's key list. Re-run on 2026-10-31 at `0c27734`, on the existing volumes:
+
+- `docker compose up -d --build`: every service starts, PostgreSQL reports healthy over TCP, and both one-off steps exit 0.
+- A CORS preflight from Web's origin allows only `content-type` and `x-api-key`.
+- A signed-in `get-session` carries no `set-auth-jwt` header, and `/api/auth/token` still issues a token. Run in-process against the test database.
+- In Chrome: signing up, creating an organization, which shows "No keys yet", and creating a key, which is listed after a reload.
+
+The fresh-clone README walk and the memory figures above were not re-run on this head.
+
 ## Not yet verified
 
 - D2 checks that need API: unauthorized, not-found, and forbidden responses; membership, role, and key changes taking effect on the next request; and verification across a signing-key rotation.
@@ -72,4 +81,5 @@ The README's steps, run word for word in a fresh clone of this branch, bring up 
 - The intent's MacBook test. The numbers above come from a 14-core machine, and API and Worker are missing. Whether the stack gets in the way of development work is for the operator to judge on an entry-level MacBook Pro.
 - A new operator following the README unaided. The builder followed it from a fresh clone, as described above, which is not the same test.
 - A cold first build. The fresh-clone run reused Docker's layer cache from earlier builds, so the time a new machine takes to build the images is unmeasured.
+- Web's key list for a member who may not list keys. It should show Auth's refusal, not "No keys yet". This was checked by reading the code, not in a browser.
 - A key whose permissions do not allow an action. Auth has no endpoint that sets a key's permissions yet. API will need one before it can check them.
