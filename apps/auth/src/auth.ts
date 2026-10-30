@@ -45,6 +45,8 @@ export function authOptions(pool: Pool, env: AuthEnv) {
         rateLimit: { enabled: false },
       }),
       jwt({
+        // Web asks for a token when it needs one, so get-session need not sign one each time.
+        disableSettingJwtHeader: true,
         jwt: {
           issuer: env.authUrl,
           audience: accessTokenAudience,

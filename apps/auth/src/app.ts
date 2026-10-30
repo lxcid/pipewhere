@@ -12,9 +12,8 @@ export function createApp(auth: Auth, env: AuthEnv) {
     cors({
       origin: env.webUrl,
       credentials: true,
-      allowHeaders: ["content-type", "authorization", "x-api-key"],
+      allowHeaders: ["content-type", "x-api-key"],
       allowMethods: ["GET", "POST", "OPTIONS"],
-      exposeHeaders: ["set-auth-jwt"],
     }),
   );
 
