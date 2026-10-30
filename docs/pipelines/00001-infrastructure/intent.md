@@ -1,5 +1,5 @@
 ---
-status: approved
+status: in-progress
 ---
 
 # Intent 00001 — Self-hostable infrastructure foundation

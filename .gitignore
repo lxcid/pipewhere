@@ -13,3 +13,5 @@ out/
 # Local environment
 .env
 .env.local
+next-env.d.ts
+*.tsbuildinfo
