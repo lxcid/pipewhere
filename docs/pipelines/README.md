@@ -1,4 +1,4 @@
-<!-- devloop:pipelines v1 sha:a96ff457 -->
+<!-- devloop:pipelines v2 sha:6b24c32a -->
 
 # Pipelines
 
@@ -55,7 +55,7 @@ An agent may draft it. The operator approves it. Approval is the gate: no spec, 
 
 Frontmatter carries `status` and nothing else. Sections: Problem, Proposed outcome, Affected users and systems, Constraints, Open questions. The proposed outcome says how to tell when the outcome is true, because that is what the build is verified against. Constraints include anything the operator rules out of scope.
 
-Open questions stay in the intent as written. They record what was unknown at approval, so they are not struck out once answered. Every one is answered before the builder hands off for acceptance, by a decision in the spec that names the question. "Out of scope here" and "deferred until X" are answers. If an answer changes the proposed outcome or the constraints, the operator changes those sections as well.
+Every open question is answered before the builder hands off for acceptance, by a decision in the spec that quotes the question word for word. The quote keeps the record of what was unknown at approval, so once its decision quotes it, the answered question may be removed from the intent. "Out of scope here" and "deferred until X" are answers. If an answer changes the proposed outcome or the constraints, the operator changes those sections as well.
 
 ### `spec.md` - when there are decisions
 
