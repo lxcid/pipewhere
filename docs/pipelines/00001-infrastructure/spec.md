@@ -214,7 +214,7 @@ What would overturn this: text ids costing measurable storage or index time.
 
 Proposed: awaiting operator approval.
 
-Every password and signing secret comes from `.env`, and Compose refuses to start while one is missing. The README generates them with `openssl rand` in its first step, so bring-up is one configuration step and then one command, `docker compose up`.
+Every password and signing secret comes from `.env`, and Compose refuses to start while one is missing. The README generates them with `openssl rand` in its first step, so bring-up is one configuration step and then one command, `docker compose up -d --build`.
 
 A default secret would make the first local run one command shorter. It would also give every deployment that forgot to override it the same Better Auth secret, which signs sessions and encrypts the JWT signing keys. A hosted operator copying the local setup would not notice.
 
@@ -234,7 +234,7 @@ What would overturn this: a deployment that needs Web and Auth on unrelated doma
 
 ## Implementation constraints and evidence
 
-Verified on 2026-09-22:
+Verified on 2026-09-22, before the build chose its versions. Compose now pins Restate 1.7.13; see below.
 
 | Component        | Version observed | Standing                                    |
 | ---------------- | ---------------- | ------------------------------------------- |
@@ -252,7 +252,7 @@ Run against a throwaway PostgreSQL 18 container on 2026-09-23, for D2:
 Auth pins Better Auth 1.7.12 and `@better-auth/api-key` 1.7.12. Every statement about Better Auth in D2 and D6, and the constraints below, was read in their published packages on 2026-10-22. Auth's tests in `apps/auth/test` exercise the ones marked as tested. Recheck all of them when either version changes.
 
 - Better Auth builds a session only from an API key a user owns, so Auth's key-to-token exchange is its own endpoint, `POST /api-key/token`, which verifies the key and signs the token. Tested.
-- Better Auth accepts a key's permissions only from server code, so Auth sets them in its own endpoint.
+- Better Auth accepts a key's permissions only from server code, so setting them needs an endpoint in Auth. None exists yet; the plan tracks it.
 - Better Auth's JWT plugin copies the whole user record into the claims unless Auth defines the payload. Tested: a token carries only `sub`, `iss`, `aud`, `iat`, and `exp`.
 - The organization plugin sets the active organization through a session update, and user database hooks run after plugin hooks. Auth's session hook therefore has the last word. Tested by removing the hook: three tests fail.
 - The API key plugin allows 10 verifications a day per key by default. A client exchanging its key every 15 minutes needs 96, so Auth turns that limit off. Tested with 12 exchanges.

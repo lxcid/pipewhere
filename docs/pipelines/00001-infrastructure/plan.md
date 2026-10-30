@@ -23,11 +23,12 @@ The build runs in slices. Each slice leaves the stack running from one command.
 
 Choices made in the build, within the spec:
 
-- Ports: Web on 3000 and Auth on 3001, published on localhost only. PostgreSQL, RustFS, and Restate are not published, since nothing outside Compose uses them yet. Port 5432 was already taken on the build machine.
+- Ports: Web on 3000 and Auth on 3001, published on localhost only. PostgreSQL, RustFS, and Restate are not published, since nothing outside Compose uses them yet.
 - Boot order: `postgres` healthy, then `postgres-setup` completes, then `auth-migrate` completes, then `auth`, then `web`.
 - Access tokens use issuer `AUTH_URL` and audience `pipewhere-api`.
-- API's role may read `organization` (`id`, `name`, `slug`), `member` (`id`, `organizationId`, `userId`, `role`), and `apikey` (`id`, `referenceId`, `permissions`, `enabled`, `expiresAt`). It may reference `organization.id`.
+- API's role may read only the columns `apiColumnGrants` lists in `apps/auth/src/migrate.ts`, and may reference `organization.id`.
 - Auth's tests use Node's built-in test runner, against a disposable PostgreSQL server started with `pnpm --filter @pipewhere/auth test:db`.
+- A refused key exchange makes Better Auth log an ERROR with a stack trace. Tolerated for now. The log comes from inside Better Auth, and its only lever is the global log level, which would also hide real errors. A client retrying a revoked key would fill the log, so revisit this when API's clients exist.
 
 ## Verified
 
@@ -42,7 +43,7 @@ Each item names the command that verified it, run on 2026-10-22 on an Apple Sili
 - after a user creates an organization or accepts an invitation, a call that names no organization acting on neither
 - an invitee whose email is not verified refused when accepting an invitation
 - deleting an organization through Auth refused
-- API's database role reading only the granted columns, and refused on the rest and on every write
+- API's database role reading the granted columns, and refused on other columns, on other tables, and on an UPDATE and a DELETE. It holds no write privilege, since nothing grants one.
 - Auth's database role refused on the `pipewhere` schema
 
 The same run covers D6's prefixes on every Auth table that holds rows, the generator throwing for an unlisted model, and migrations running twice without change.
