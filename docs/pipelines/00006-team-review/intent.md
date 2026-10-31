@@ -6,11 +6,11 @@ status: draft
 
 ## Problem
 
-One operator should be able to publish without extra steps. A team needs different powers for writing, publishing, connecting channels, and managing members. Agents and automations need their own credentials; some may fill queues on their own, while others need human review. Approval after a planned time must not silently publish stale work.
+One operator should be able to publish without extra steps. A team needs different powers for writing, publishing, connecting channels, and managing members. Agents and automations need their own credentials; some may fill queues on their own, while others need human review. Approval after a planned time must not silently publish stale work. A member who may invite others or change roles must not be able to give anyone more power than they hold.
 
 ## Proposed outcome
 
-An organization works with one member or several. Humans and service actors have explicit permissions. An administrator can require review for selected actors, see what is pending, and approve or reject it. An actor cannot approve its own submission. Approval that arrives too late requires a new timing choice. Removing a member or revoking an API key takes effect on the next request.
+An organization works with one member or several. Humans and service actors have explicit permissions. No member can grant a role, through an invitation or a role change, with more power than their own. An administrator can require review for selected actors, see what is pending, and approve or reject it. An actor cannot approve its own submission. Approval that arrives too late requires a new timing choice. Removing a member or revoking an API key takes effect on the next request.
 
 ## Affected users and systems
 
