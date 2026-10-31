@@ -212,8 +212,6 @@ What would overturn this: text ids costing measurable storage or index time.
 
 ### D7 — Secrets have no defaults
 
-Proposed: awaiting operator approval.
-
 Every password and signing secret comes from `.env`, and Compose refuses to start while one is missing. The README generates them with `openssl rand` in its first step, so bring-up is one configuration step and then one command, `docker compose up -d --build`.
 
 A default secret would make the first local run one command shorter. It would also give every deployment that forgot to override it the same Better Auth secret, which signs sessions and encrypts the JWT signing keys. A hosted operator copying the local setup would not notice.
@@ -221,8 +219,6 @@ A default secret would make the first local run one command shorter. It would al
 What would overturn this: a bring-up that generates the secrets itself on first run, without a second copy of them outside `.env`.
 
 ### D8 — Web's pages call Auth directly, so Web and Auth share a site
-
-Proposed: awaiting operator approval.
 
 Web's pages call Auth from the browser, with credentials, for sign-in, organizations, keys, and tokens. Auth allows Web's origin through CORS and Better Auth's trusted origins. Web has no route that forwards to Auth, so it holds no session and no secret, per D2.
 
