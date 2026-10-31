@@ -30,7 +30,7 @@ Operators connecting channels and resolving failures; API, the Mastodon adapter,
 
 - Never automatically repeat an ambiguous commit, per [publication contract D4](../00002-publication-contract/spec.md).
 - A Mastodon account is identified by its instance and account id. A channel links one external account to one organization. Several organizations may link the same account, per [publication contract D7](../00002-publication-contract/spec.md). Their channels are separate, and none learns of another's.
-- Channel and attempt records are provider-neutral. Provider-specific details stay inside the adapter, so [Threads delivery](../00008-threads-delivery/intent.md) adds an adapter rather than reshaping them.
+- Channel and attempt records share one provider-neutral shape, so [Threads delivery](../00008-threads-delivery/intent.md) adds an adapter rather than reshaping them. Provider data that must survive a restart, such as an instance's registered client, is still stored in PostgreSQL, per [infrastructure D4](../00001-infrastructure/spec.md). It belongs to the adapter, not to the shared records.
 - Provider secrets must not be stored in plain text.
 - Threads delivery is out of scope; intent 00008 owns it.
 

@@ -15,10 +15,12 @@ An agent needs its own credential, scoped to one organization and revocable on i
 An agent connected over MCP with an organization's API key can:
 
 - list channels and their status
-- create publications, and publish them now or pin a time
+- create publications for a time now or a pinned time
 - read each publication's state and its attempts
 
-Every create and retry carries an `Idempotency-Key` that the tool supplies, so a retried tool call returns the first result. Tool results use the API's names and states. Each publication records which actor created it. Revoking the key stops the agent on its next request.
+Whether those publications go out without a person reviewing them, before team review exists, is the open question below.
+
+A retried tool call carries the same `Idempotency-Key` as the call it repeats, so it returns the first result, per [publication contract D5](../00002-publication-contract/spec.md). The MCP server never generates a key on the agent's behalf, because a key made fresh for each call would turn every retry into a new publication. Tool results use the API's names and states. Each publication records which actor created it. Revoking the key stops the agent on its next request, per [infrastructure D2](../00001-infrastructure/spec.md).
 
 ## Affected users and systems
 

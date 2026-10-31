@@ -17,6 +17,7 @@ The outcome is true when:
 - The API shows each waiting publication's planned time.
 - An operator can see through the API which publications passed their planned time without starting, without reading worker logs.
 - When scheduled work stops running, the operator can tell from Pipewhere, not only from a missing post.
+- While a publication waits, the API shows when its channel cannot currently publish, and why.
 
 ## Affected users and systems
 
@@ -27,8 +28,9 @@ Operators and API clients scheduling work; the API, PostgreSQL, and Restate work
 - The [publication contract](../00002-publication-contract/intent.md) supplies the states and retry boundary.
 - PostgreSQL owns schedules; Restate holds execution state only, per [infrastructure D4](../00001-infrastructure/spec.md).
 - A pinned time never moves unless the operator changes it.
+- A channel's readable status comes from [intent 00004](../00004-provider-delivery/intent.md).
 - Posting slots are out of scope; [intent 00007](../00007-posting-slots/intent.md) owns them.
 
 ## Open questions
 
-None. The questions raised at drafting are answered in the [spec](spec.md).
+None. The questions about posting slots moved to intent 00007. The two that remained are answered in the [spec](spec.md).

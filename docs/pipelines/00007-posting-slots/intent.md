@@ -21,9 +21,9 @@ Operators and API clients queueing work; the API, PostgreSQL, and Restate worker
 - Builds on the timed publishing and recovery in [intent 00003](../00003-scheduling-recovery/intent.md).
 - PostgreSQL owns slots and schedules; Restate holds execution state only, per [infrastructure D4](../00001-infrastructure/spec.md).
 - A fixed time must not silently move when posting slots change.
+- A queued publication whose channel cannot publish fails at its projected time, per [00003 D3](../00003-scheduling-recovery/spec.md). A queue does not pause or resume with its channel.
 
 ## Open questions
 
 - Does a queued publication keep a fixed time when it enters the queue, or move when slots and earlier work change?
 - How are missing and repeated local slot times resolved?
-- What happens to an unclaimed queue when its channel cannot publish?

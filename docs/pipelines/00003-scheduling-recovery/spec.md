@@ -29,7 +29,7 @@ What would overturn this: operators routinely retrying late failures unchanged, 
 
 Proposed: awaiting operator approval.
 
-A publication records its tolerance when it is created. It takes the organization's default unless the request overrides it. Changing the organization's default affects new publications only. The API shows each waiting publication's deadline, and that deadline does not move unless the operator edits the publication.
+A publication records its tolerance when it is created. It takes the organization's default unless the request overrides it. Changing the organization's default affects new publications only. The deadline is the planned time plus that tolerance, and the API shows it for each waiting publication. For a pinned time, the deadline does not move unless the operator edits the publication. A projected time from posting slots, and so its deadline, can move; [intent 00007](../00007-posting-slots/intent.md) owns that.
 
 The deadline applies to the start of the provider commit, the move to `publishing`. The worker checks it in the same conditional update that claims the commit. Work still in `preparing` at the deadline therefore fails before anything public happens. A commit that started in time is never cut off.
 
@@ -56,3 +56,18 @@ A later pipeline is in violation if it:
 - hides a waiting publication's broken channel until the publication fails
 
 What would overturn this: operators routinely retrying every publication a broken channel failed, unchanged, after reconnecting. That would show holding the work, or resuming it on reconnect, serves them better.
+
+### D4 — D3's check reads the channel's status when the commit is claimed
+
+Proposed: awaiting operator approval.
+
+D3 fails a publication whose channel "cannot publish" at its planned time. This decision says what that means, so that a brief provider failure and a broken channel are not confused.
+
+- "Cannot publish" means the channel's status says it cannot publish. Examples are revoked access, a removed account, or a channel the operator disconnected. That status comes from [intent 00004](../00004-provider-delivery/intent.md).
+- The worker reads that status when it claims the publication's commit, in the same conditional update as D2's deadline check. In normal running, that moment is the planned time. After an outage, it is when the worker resumes, still within the deadline.
+- Pipewhere keeps no history of channel availability. A provider outage that no status recorded does not fail a publication after the fact.
+- A provider call that fails during the commit is not a channel status. It follows [publication contract D3 and D4](../00002-publication-contract/spec.md):
+  - A result known to have done nothing may run again before the deadline.
+  - An ambiguous result becomes `outcome_unknown`.
+
+This keeps D3's behaviour for a broken channel and lets D1's tolerance absorb a brief failure. Without it, the builders of 00004 and 00008 could not tell a transient error from a broken channel. Recovery would also need a record of the channel's state at a moment when nobody checked it.

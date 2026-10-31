@@ -16,9 +16,10 @@ In the web UI, an operator can:
 
 - connect and reconnect channels, and see each channel's status and the reason it cannot publish
 - write once and create publications for several channels, then edit each channel's copy
-- see each channel's problem that the API reports before anything is created
+- see, before anything is created, why the API refuses the text for any channel
 - publish now or pin a time
 - see each publication's state and planned time, and the attempts behind a failure or unknown outcome
+- see which publications passed their planned time without starting, and when scheduled work has stopped running, as [intent 00003](../00003-scheduling-recovery/intent.md) reports them
 - edit and retry a failed publication, and cancel a waiting one
 - resolve an unknown outcome by giving the post's URL or by confirming that nothing was posted
 

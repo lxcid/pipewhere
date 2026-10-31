@@ -12,6 +12,8 @@ A container reports `IN_PROGRESS`, `FINISHED`, `PUBLISHED`, `ERROR`, or `EXPIRED
 
 A profile may publish 250 posts through the API in a moving 24-hour window. `threads_publish` enforces the cap, and `threads_publishing_limit` reports current usage.
 
+Threads access tokens expire. A long-lived token is valid for 60 days and can be refreshed once it is at least 24 hours old. A token not refreshed within 60 days expires and can no longer be refreshed, per Meta's [long-lived token guide](https://developers.facebook.com/docs/threads/get-started/long-lived-tokens).
+
 An app without App Review approval for `threads_content_publish` can post only for its Threads testers. A self-hosting operator running their own Meta app is limited to tester accounts until that app passes review. They need to know this before they try to connect a channel.
 
 ## Proposed outcome
@@ -19,6 +21,7 @@ An app without App Review approval for `threads_content_publish` can post only f
 - A Threads adapter publishes through the [publication contract](../00002-publication-contract/intent.md) and the channel model from [intent 00004](../00004-provider-delivery/intent.md).
 - Container creation and processing happen before the commit. `threads_publish` is the commit.
 - A publication refused by the daily cap fails with a reason that names the cap.
+- Credential storage and refresh keep working across restarts. A connected channel's access does not lapse while the channel stays connected.
 - An operator can learn, before connecting, what Meta access their deployment needs to publish to their accounts.
 
 ## Affected users and systems
