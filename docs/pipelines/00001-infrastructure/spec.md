@@ -294,13 +294,15 @@ A refetch that still lacks the key starts a 10-second cooldown. During it, token
 
 Only one fetch runs at a time. Requests that miss while it runs wait for it and use its result, so a burst of forged key ids causes one fetch.
 
-A failed fetch does not start the cooldown. While Auth is unreachable, each request with an uncached key id tries once more, one at a time, and gets 503. Tokens whose keys are cached still verify.
-
 API drops a cached key only when it refetches, or when it restarts. A key Auth stops publishing therefore stays trusted until a token names a key API has not cached. To revoke a signing key at once, delete its `jwks` row and restart API.
 
 API accepts only EdDSA, which is what Better Auth signs with by default. It requires `exp`, `iss`, `aud`, and `sub`. It allows 60 seconds of clock skew on expiry, jsonwebtoken's default.
 
-When fetching the JWKS fails, or a request waits more than 5 seconds for its key, API answers 503 with `auth_unavailable`. The 5 seconds include any wait for another request's fetch, so requests queued behind a hanging Auth do not wait longer. It does not retry. An unreachable Auth is an operator problem, and a retry would only delay the answer.
+When a request's fetch fails, or the request waits more than 5 seconds for its key, API answers 503 with `auth_unavailable`. It does not retry. An unreachable Auth is an operator problem, and a retry would only delay the answer.
+
+- The 5 seconds include any wait for another request's fetch, so a request queued behind a hanging Auth answers within them, whether or not it gets to fetch.
+- A failed fetch does not start the cooldown. The next request with an uncached key id fetches again.
+- Tokens whose keys are cached still verify while Auth is unreachable.
 
 API takes two settings for Auth:
 
