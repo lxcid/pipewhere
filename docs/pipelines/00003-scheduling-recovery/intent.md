@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 ---
 
 # Intent 00003 — Scheduling and recovery
