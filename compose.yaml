@@ -58,6 +58,11 @@ services:
       RESTATE_NODE_NAME: pipewhere
     volumes:
       - restate:/restate-data
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:9070/health"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
 
   auth-migrate:
     build:
@@ -114,6 +119,32 @@ services:
     environment: *api-env
     ports:
       - 127.0.0.1:3002:3002
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "worker", "health"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  worker-register:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    depends_on:
+      restate:
+        condition: service_healthy
+      worker:
+        condition: service_healthy
+    environment:
+      RESTATE_ADMIN_URL: http://restate:9070
+      WORKER_URL: http://worker:9080
+    command: ["worker", "register"]
+    restart: "no"
 
   web:
     build:
