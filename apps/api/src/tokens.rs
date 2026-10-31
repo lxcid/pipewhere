@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use jsonwebtoken::jwk::JwkSet;
 use jsonwebtoken::{Algorithm, DecodingKey, Validation};
 use serde::Deserialize;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 
 pub const AUDIENCE: &str = "pipewhere-api";
 
@@ -30,6 +30,10 @@ pub struct TokenVerifier {
     validation: Validation,
     http: reqwest::Client,
     keys: RwLock<Keys>,
+    // Held across a fetch, so requests that miss together share one fetch
+    // instead of each calling Auth.
+    refresh: Mutex<()>,
+    miss_cooldown: Duration,
 }
 
 #[derive(Default)]
@@ -57,7 +61,14 @@ impl TokenVerifier {
             validation,
             http,
             keys: RwLock::default(),
+            refresh: Mutex::default(),
+            miss_cooldown: MISS_COOLDOWN,
         }
+    }
+
+    pub fn with_miss_cooldown(mut self, cooldown: Duration) -> Self {
+        self.miss_cooldown = cooldown;
+        self
     }
 
     pub async fn verify(&self, token: &str) -> Result<Claims, TokenError> {
@@ -70,17 +81,12 @@ impl TokenVerifier {
     }
 
     async fn key(&self, kid: &str) -> Result<Option<DecodingKey>, TokenError> {
-        {
-            let keys = self.keys.read().await;
-            if let Some(key) = keys.by_id.get(kid) {
-                return Ok(Some(key.clone()));
-            }
-            if keys
-                .last_miss
-                .is_some_and(|at| at.elapsed() < MISS_COOLDOWN)
-            {
-                return Ok(None);
-            }
+        if let Some(cached) = self.cached(kid).await {
+            return Ok(cached);
+        }
+        let _refresh = self.refresh.lock().await;
+        if let Some(cached) = self.cached(kid).await {
+            return Ok(cached);
         }
         let by_id = self.fetch().await?;
         let mut keys = self.keys.write().await;
@@ -90,6 +96,18 @@ impl TokenVerifier {
             keys.last_miss = Some(Instant::now());
         }
         Ok(key)
+    }
+
+    /// The key, `Some(None)` when a refetch is cooling down, or `None` when
+    /// API should fetch.
+    async fn cached(&self, kid: &str) -> Option<Option<DecodingKey>> {
+        let keys = self.keys.read().await;
+        if let Some(key) = keys.by_id.get(kid) {
+            return Some(Some(key.clone()));
+        }
+        keys.last_miss
+            .is_some_and(|at| at.elapsed() < self.miss_cooldown)
+            .then_some(None)
     }
 
     async fn fetch(&self) -> Result<HashMap<String, DecodingKey>, TokenError> {
