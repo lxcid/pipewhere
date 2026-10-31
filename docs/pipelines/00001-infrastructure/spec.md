@@ -232,6 +232,98 @@ Web reads `AUTH_URL` per request, so one Web image serves any deployment.
 
 What would overturn this: a deployment that needs Web and Auth on unrelated domains. Web would then forward Auth's routes from its own origin.
 
+### D9 — API's first organization-scoped action reads the organization and the caller's access
+
+No business resource exists in this pipeline. The operator chose one organization-scoped action, so D2's check runs end to end over HTTP before any business pipeline depends on it:
+
+    GET /v1/orgs/{organization_id}
+
+It returns the organization's id, name, and slug, and the actor making the request:
+
+- a user, with their id and their current role in that organization
+- an API key, with its id
+
+The path follows [publication contract D6](../00002-publication-contract/spec.md). Any member and any key the organization owns may read it, so it refuses nothing beyond D2's unauthorized and not-found responses.
+
+A client can use it to check that a token works and to see whose access it carries. It needs no column beyond those Auth already grants API.
+
+### D10 — Forbidden waits for the first action a role or key may not perform
+
+Binding: 00003, 00006, and any other pipeline that adds the first action some role or some key's permissions may not perform.
+
+D9's action is open to every member and every key of the organization. Which role may do what is team permissions, and [intent 00006](../00006-team-review/intent.md) owns that. The operator chose not to invent a permission vocabulary before a gated action exists. This pipeline therefore builds D2's unauthorized and not-found responses, and does not build forbidden.
+
+The D2 checks that need a gated action move to the pipeline that adds the first one:
+
+- a member whose role does not permit an action, reported as forbidden
+- a key whose permissions do not permit an action, reported as forbidden
+- changing a role, or a key's permissions, while a token is still valid, taking effect on the next request
+
+That pipeline also adds the Auth endpoint that sets a key's permissions. Better Auth accepts them only from server code.
+
+A later pipeline is in violation if it adds an action that some role or key may not perform, without all of these:
+
+- returning forbidden only after the membership check, in D2's order
+- tests for each check listed above
+
+What would overturn this: the operator needing D2 verified in full before 00001 closes, with no gated action yet in sight.
+
+### D11 — API runs its migrations as a one-off step; id checks arrive with the first table
+
+Binding: the first pipeline that adds a table to the `pipewhere` schema, which is expected to be 00003.
+
+API's binary has a `migrate` command. Compose runs it as `api-migrate`, after `auth-migrate` completes and before API starts. That settles the boot order and the schema's owner now, so the first table needs only a migration file. The step creates sqlx's migration ledger, `pipewhere._sqlx_migrations`, and no table.
+
+The operator chose to defer the rest of D6's machinery until a table needs it:
+
+- API's id generator, with its table-to-prefix mapping
+- the check constraint on each id's prefix and format
+- the test that reads both Auth's and API's mappings, and fails when two tables share a prefix
+
+An id generator with no table would be machinery without a user, and the prefix test would pass with nothing to compare.
+
+A later pipeline is in violation if it adds the first `pipewhere` table with its own id without all three.
+
+What would overturn this: a later pipeline needing ids outside a table, such as for events, before any table exists.
+
+### D12 — API verifies tokens against Auth's published keys and refetches them on an unknown key id
+
+Proposed: awaiting operator approval.
+
+API fetches Auth's JWKS when it first needs a key, and keeps it in memory. A token whose key id is not in memory makes API fetch the JWKS again, so a key Auth has just rotated in verifies at once.
+
+A refetch that still lacks the key starts a 10-second cooldown. During it, tokens naming unknown keys are refused without another fetch. Without the cooldown, a stream of forged key ids would turn every request into a call to Auth. A token signed by a key rotated in during a cooldown is refused until the cooldown ends.
+
+API accepts only EdDSA, which is what Better Auth signs with by default. It requires `exp`, `iss`, `aud`, and `sub`. It allows 60 seconds of clock skew on expiry, jsonwebtoken's default.
+
+When fetching the JWKS fails, or takes more than 5 seconds, API answers 503 with `auth_unavailable`. It does not retry. An unreachable Auth is an operator problem, and a retry would only delay the answer.
+
+API takes two settings for Auth:
+
+- `AUTH_URL` is the issuer it expects, which is the URL browsers use.
+- `AUTH_JWKS_URL` is where it fetches the keys.
+
+They differ in Compose. Inside the Compose network API reaches Auth as `http://auth:3001`, while the issuer is `http://localhost:3001`.
+
+What would overturn this: Auth rotating keys often enough that the cooldown refuses real tokens, or a need to revoke a signing key before the JWKS stops publishing it.
+
+### D13 — API's tests drive a real Auth process
+
+Proposed: awaiting operator approval.
+
+API's integration tests create a disposable database and run `setup.sql` and Auth's migrations against it. They start Auth's own server, and get every session and key token from it through its HTTP endpoints. Tokens with unusual claims come from Better Auth's `signJWT`, called from Node with Auth's options, so they are signed with Auth's real key.
+
+D2 requires API's tests to run against Auth's migrations, and to fail when a Better Auth upgrade changes what API reads. Driving the real Auth also covers what a stub would hide:
+
+- Better Auth's token format
+- its JWKS shape
+- its key rotation
+- what its member, role, and key endpoints write
+
+The cost is that `cargo test` needs Node, `psql`, Auth's installed dependencies, and the disposable PostgreSQL server Auth's tests use. `setup.sql` creates roles the whole server shares, so the tests run it one at a time.
+
+What would overturn this: Auth's startup making the suite too slow to run on every change, or a CI runner that cannot provide Node.
+
 ## Implementation constraints and evidence
 
 Verified on 2026-09-22, before the build chose its versions. Compose now pins Restate 1.7.13; see below.
@@ -252,12 +344,15 @@ Run against a throwaway PostgreSQL 18 container on 2026-09-23, for D2:
 Auth pins Better Auth 1.7.12 and `@better-auth/api-key` 1.7.12. Every statement about Better Auth in D2 and D6, and the constraints below, was read in their published packages on 2026-10-22. Auth's tests in `apps/auth/test` exercise the ones marked as tested. Recheck all of them when either version changes.
 
 - Better Auth builds a session only from an API key a user owns, so Auth's key-to-token exchange is its own endpoint, `POST /api-key/token`, which verifies the key and signs the token. Tested.
-- Better Auth accepts a key's permissions only from server code, so setting them needs an endpoint in Auth. None exists yet; the plan tracks it.
+- Better Auth accepts a key's permissions only from server code, so setting them needs an endpoint in Auth. None exists yet; D10 assigns it to the pipeline that adds the first gated action.
 - Better Auth's JWT plugin copies the whole user record into the claims unless Auth defines the payload. Tested: a token carries only `sub`, `iss`, `aud`, `iat`, and `exp`.
 - The organization plugin sets the active organization through a session update, and user database hooks run after plugin hooks. Auth's session hook therefore has the last word. Tested by removing the hook: three tests fail.
 - The API key plugin allows 10 verifications a day per key by default. A client exchanging its key every 15 minutes needs 96, so Auth turns that limit off. Tested with 12 exchanges.
 - Better Auth's default roles let only an owner create an organization's keys. An admin is refused.
 - Constructing a Better Auth instance checks the schema and logs an error for each missing table. Auth's migration step therefore works from the options and never constructs an instance.
+- The JWT plugin signs with Ed25519 under EdDSA, and puts the `jwks` row's id in each token's `kid` header. Tested by API.
+- The JWT plugin signs with the newest key that has not expired, and creates one when none is left. Auth sets no rotation interval, so keys never expire on their own. An operator rotates by expiring the current key. The JWKS keeps publishing an expired key for a 30-day grace period, so tokens it signed still verify. Tested by API, across a rotation.
+- `signJWT` lets its payload override the issuer, audience, and expiry. API's tests use this to sign tokens with bad claims.
 
 Compose pins Restate 1.7.13. Restate names its node after the hostname by default, and refuses its existing data when the name changes. A container's hostname changes whenever it is recreated, so Compose sets `RESTATE_NODE_NAME`. Tested by recreating the container on its existing volume.
 
