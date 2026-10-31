@@ -31,5 +31,4 @@ Operators and API clients scheduling work; the API, PostgreSQL, and Restate work
 
 ## Open questions
 
-- How late may a provider commit start after its planned time?
-- What happens to a waiting publication when its channel cannot publish?
+None. The questions raised at drafting are answered in the [spec](spec.md).
