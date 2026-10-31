@@ -70,6 +70,7 @@ D3 fails a publication whose channel "cannot publish" at its planned time. This 
 - Pipewhere keeps no history of channel availability. A provider outage that no status recorded does not fail a publication after the fact.
 - A provider call that fails during the commit is not a channel status. It follows [publication contract D3 and D4](../00002-publication-contract/spec.md):
   - A result known to have done nothing may run again before the deadline.
+  - A result known to have done nothing that should not run again, such as a rejected request or revoked credentials, becomes `failed` with the provider's reason.
   - An ambiguous result becomes `outcome_unknown`.
 
 This keeps D3's behaviour for a broken channel and lets D1's tolerance absorb a brief failure. Without it, the builders of 00004 and 00008 could not tell a transient error from a broken channel. Recovery would also need a record of the channel's state at a moment when nobody checked it.
@@ -83,7 +84,7 @@ Once the operator approves D4, D3's text can be folded together with it.
 
 A later pipeline is in violation if it:
 
-- fails a publication because of its channel on anything other than the channel's status read at the claim
-- sets a status that stops a channel publishing merely because one commit call failed
+- fails a publication before its commit because of its channel, on anything other than the channel's status read at the claim
+- sets a status that stops a channel publishing because of a failure that does not show the channel itself is broken, such as a timeout or a provider server error
 
 What would overturn this: provider failures that last longer than D1's tolerance, and recur too often for operators to retry by hand.
