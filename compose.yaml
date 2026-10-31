@@ -86,6 +86,35 @@ services:
     ports:
       - 127.0.0.1:3001:3001
 
+  api-migrate:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    depends_on:
+      # API's tables hold foreign keys into auth, so Auth's migrations run first.
+      auth-migrate:
+        condition: service_completed_successfully
+    environment: &api-env
+      DATABASE_URL: postgres://pipewhere_api:${API_DB_PASSWORD}@postgres:5432/pipewhere
+      AUTH_URL: ${AUTH_URL:?set AUTH_URL in .env}
+      AUTH_JWKS_URL: http://auth:3001/api/auth/jwks
+    command: ["api", "migrate"]
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      api-migrate:
+        condition: service_completed_successfully
+      auth:
+        condition: service_started
+    environment: *api-env
+    ports:
+      - 127.0.0.1:3002:3002
+
   web:
     build:
       context: .
