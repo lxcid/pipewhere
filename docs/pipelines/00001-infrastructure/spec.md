@@ -334,25 +334,39 @@ What would overturn this: Auth's startup making the suite too slow to run on eve
 
 Binding: 00003, and any other pipeline that adds the first Worker handler, or the first API call into one.
 
-Worker's binary has a `register` command. Compose runs it as `worker-register`, once Restate and Worker are healthy, on every `docker compose up`. It registers Worker's URI with Restate's admin API, with `force` set.
+Worker's binary has a `register` command. Compose runs it as `worker-register`, once Restate and Worker are healthy. It registers Worker's URI with Restate's admin API, with `force` set.
+
+It runs on every `docker compose up` that names no services, and on one that names `worker-register`. Compose starts a named service's dependencies, never the services that depend on it. So `docker compose up -d --build worker` rebuilds Worker without registering it, and the README says to name both. A restart of Worker's container also skips registration, but it runs the same image, so the handlers Restate holds stay current.
 
 Restate 1.7.13 accepts a registration of a URI it already holds, and keeps that deployment's handlers unchanged, even when Worker's handlers have changed. It answers 200 either way. Without `force`, a changed Worker would keep running under its old handler list, and a new handler would answer 404. With `force`, Restate replaces the handler list under the same deployment id. The evidence is under "Implementation constraints and evidence".
 
 The operator chose forcing on every start over the alternative: registering without `force` and failing when Restate's handlers differ from Worker's. That alternative stops every Worker change in development until someone forces the registration by hand.
 
-Forcing has two costs:
+Forcing has these costs:
 
 - An invocation in flight when Worker's code changes resumes on the new code. Restate's documentation warns that this can leave it in an unrecoverable error state, when the new code does not replay the old journal.
-- Nothing depends on `worker-register`, so `docker compose up` succeeds when it fails. A failed registration leaves Restate without Worker's current handlers.
+- Nothing depends on `worker-register`, so `docker compose up` succeeds when it fails. A failed registration leaves Restate without Worker's current handlers. D15 assigns this to the pipeline whose API first calls a handler.
+- For the same reason, `docker compose up --wait` exits 1 on every start, even a successful one. It treats a one-off that nothing depends on as failed when it exits, whatever its exit code.
 
-Neither cost touches this pipeline, because Worker has no handlers yet. The operator chose to add no handler, and no database connection, before a workflow needs them.
+None of these costs touches this pipeline, because Worker has no handlers yet. The operator chose to add no handler, and no database connection, before a workflow needs them.
 
-A later pipeline is in violation if it ships a Worker handler without both of these:
-
-- a stated way for its in-flight invocations to survive a Worker upgrade, with a test that changes the code under an invocation in flight. Restate's own answer is a new deployment URI per version, with the old Worker kept running until its invocations finish.
-- `api` depending on `worker-register` completing successfully, once API calls the handler, so a failed registration fails `docker compose up`.
+A later pipeline is in violation if it ships a Worker handler without a stated way for its in-flight invocations to survive a Worker upgrade, and a test that changes the code under an invocation in flight. Restate's own answer is a new deployment URI per version, with the old Worker kept running until its invocations finish.
 
 What would overturn this: a Restate version that updates a changed deployment without `force`, or the first workflow choosing versioned deployments.
+
+### D15 — API waits for Worker's registration once it calls a Worker handler
+
+Proposed: awaiting operator approval.
+
+Binding: 00003, and any other pipeline in which API first calls a Worker handler.
+
+Once API calls a Worker handler, `api` depends on `worker-register` completing successfully. A failed registration then stops API from starting, and `docker compose up` reports the failure, as it does for `api-migrate`. `docker compose up --wait` also succeeds again, since every one-off then has a service that depends on it. A targeted `docker compose up -d api` registers Worker too, because Compose starts a named service's dependencies.
+
+Until then, nothing in the stack calls Worker, so a failed registration changes nothing anyone can observe. Making API depend on it now would tie API's start to Restate and Worker for no present use.
+
+A later pipeline is in violation if API calls a Worker handler while `api` does not depend on `worker-register` completing successfully.
+
+What would overturn this: API calling Worker through something other than Restate's ingress, or registration moving out of Compose.
 
 ## Implementation constraints and evidence
 

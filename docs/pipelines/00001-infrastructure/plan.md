@@ -6,7 +6,7 @@ The build runs in slices. Each slice leaves the stack running from one command.
 
 1. **Infrastructure and Auth, with a first Web UI.** Built.
 2. **API.** Built. Local token verification, D2's per-request organization check, D9's first action, and D11's migration step. D10 defers forbidden, and D11 defers API's id generator, check constraint, and prefix test.
-3. **Worker.** Built. A Restate endpoint with no handlers, registered on every start per D14. The operator chose to add Worker's first handler, and its database connection, with the first workflow.
+3. **Worker.** Built. A Restate endpoint with no handlers, registered by every full `docker compose up`, per D14. D15 makes a failed registration stop API once API calls Worker. The operator chose to add Worker's first handler, and its database connection, with the first workflow.
 4. **Footprint and README pass.** Not started. Measure the full seven-process stack, and walk the README from a fresh clone.
 
 ## Slice 1 — what was built
@@ -176,8 +176,9 @@ The registration evidence in the spec's "Implementation constraints and evidence
   - After removing it and running the same command, the call returned 404.
 - Restarting Restate keeps the deployment.
 - `docker compose stop worker` returned in 0.29 seconds.
-- With `WORKER_URL` overridden to a port nothing listens on, `worker-register` exits 1 with Restate's discovery error, and `docker compose up -d` still exits 0. `--wait` does not help: it treats every one-off nothing depends on as failed, even one that exits 0.
-- `docker stats --no-stream`, idle: Worker 2.2 MiB. Restate showed 842 MiB, against 278 MiB in slice 1's figures. Its container had been restarted and had run the checks above. Slice 4 measures this properly.
+- With `WORKER_URL` overridden to a port nothing listens on, `worker-register` exits 1 with Restate's discovery error, and `docker compose up -d` still exits 0. `--wait` does not help: it treats every one-off nothing depends on as failed, even one that exits 0. So `docker compose up -d --wait` now exits 1 on a successful start too, and slice 4 should not use it until D15 applies.
+- `docker compose up -d --build worker` recreates Worker without running `worker-register`. `docker compose up -d --build worker worker-register` runs it, and the README says so.
+- `docker stats --no-stream`, idle: Worker 2.2 MiB. The checks above did not cause Restate's growth: a fresh `restatedev/restate:1.7.13` container, idle and with nothing registered, used 804 MiB 15 seconds after starting and 816 MiB at 60 seconds. The stack's Restate, about an hour after it started, used 1.1 GiB. Slice 1 recorded 278 MiB, and it is unknown whether that figure came from the same moment after start or from a since-changed Restate. Slice 4 measures this properly, and it bears on the intent's MacBook test.
 
 Worker has no tests. It has no handler, and its two commands are a server with nothing bound and one call to Restate. A test of either needs a real Restate, so the checks above ran against one instead. The first handler, in 00003, needs a test harness with a Restate server.
 

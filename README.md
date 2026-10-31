@@ -28,7 +28,13 @@ Compose starts PostgreSQL, RustFS, and Restate, then Auth, API, Worker, and Web.
 - `auth-migrate` applies Auth's migrations and grants API's role the columns it may read.
 - `api-migrate` applies API's migrations.
 
-Once Restate and Worker are healthy, a fourth step, `worker-register`, registers Worker's handlers with Restate. It runs on every `docker compose up`, so Restate picks up changed handlers. `docker compose up` does not report it failing; `docker compose logs worker-register` shows its result.
+Once Restate and Worker are healthy, a fourth step, `worker-register`, registers Worker's handlers with Restate, so Restate picks up changed handlers. It runs on every `docker compose up` that names no services. `docker compose up` does not report it failing; `docker compose logs worker-register` shows its result.
+
+To rebuild Worker alone, name the registration step too. Compose starts a named service's dependencies, not the services that depend on it, so `docker compose up -d --build worker` alone leaves Restate with Worker's old handlers:
+
+```sh
+docker compose up -d --build worker worker-register
+```
 
 Web listens on port 3000, Auth on port 3001, and API on port 3002, all on localhost only. Worker hosts no handlers yet.
 
