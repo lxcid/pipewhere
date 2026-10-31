@@ -104,7 +104,13 @@ async fn a_request_without_a_valid_token_is_unauthorized() {
         )
         .await;
     let valid = instance.sign_token(json!({ "sub": owner.id })).await;
-    let tampered = format!("{}x", valid);
+    let malformed_signature = format!("{valid}x");
+    let other = instance
+        .sign_token(json!({ "sub": "usr_someone_else" }))
+        .await;
+    let (other_claims, _) = other.rsplit_once('.').unwrap();
+    let (_, signature) = valid.rsplit_once('.').unwrap();
+    let forged = format!("{other_claims}.{signature}");
 
     let cases = [
         ("no token", None),
@@ -114,7 +120,8 @@ async fn a_request_without_a_valid_token_is_unauthorized() {
         ("expired", Some(expired.as_str())),
         ("wrong audience", Some(wrong_audience.as_str())),
         ("wrong issuer", Some(wrong_issuer.as_str())),
-        ("bad signature", Some(tampered.as_str())),
+        ("malformed signature", Some(malformed_signature.as_str())),
+        ("signature over other claims", Some(forged.as_str())),
     ];
     for (case, token) in cases {
         let response = instance.get(&path, token).await;
