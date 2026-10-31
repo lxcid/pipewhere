@@ -25,7 +25,7 @@ A later pipeline is in violation if it starts a provider commit after the public
 
 What would overturn this: operators routinely retrying late failures unchanged, which would show the default is too strict.
 
-### D2 — The deadline is fixed when a publication is created and measured to the commit's start
+### D2 — The tolerance is fixed when a publication is created, and the deadline is checked when the commit starts
 
 Proposed: awaiting operator approval.
 
@@ -59,6 +59,8 @@ What would overturn this: operators routinely retrying every publication a broke
 
 ### D4 — D3's check reads the channel's status when the commit is claimed
 
+Binding: 00004, 00008, and later pipelines that change a channel's status.
+
 Proposed: awaiting operator approval.
 
 D3 fails a publication whose channel "cannot publish" at its planned time. This decision says what that means, so that a brief provider failure and a broken channel are not confused.
@@ -71,3 +73,17 @@ D3 fails a publication whose channel "cannot publish" at its planned time. This 
   - An ambiguous result becomes `outcome_unknown`.
 
 This keeps D3's behaviour for a broken channel and lets D1's tolerance absorb a brief failure. Without it, the builders of 00004 and 00008 could not tell a transient error from a broken channel. Recovery would also need a record of the channel's state at a moment when nobody checked it.
+
+D4 narrows two parts of D3's wording:
+
+- "At its planned time" in D3 means at the claim.
+- An unreachable instance, one of D3's examples, fails a publication only when the channel's status records it.
+
+Once the operator approves D4, D3's text can be folded together with it.
+
+A later pipeline is in violation if it:
+
+- fails a publication because of its channel on anything other than the channel's status read at the claim
+- sets a status that stops a channel publishing merely because one commit call failed
+
+What would overturn this: provider failures that last longer than D1's tolerance, and recur too often for operators to retry by hand.
