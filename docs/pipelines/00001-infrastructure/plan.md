@@ -6,7 +6,7 @@ The build runs in slices. Each slice leaves the stack running from one command.
 
 1. **Infrastructure and Auth, with a first Web UI.** Built.
 2. **API.** Built. Local token verification, D2's per-request organization check, D9's first action, and D11's migration step. D10 defers forbidden, and D11 defers API's id generator, check constraint, and prefix test.
-3. **Worker.** Built. A Restate endpoint with no handlers, registered by every full `docker compose up`, per D14. D15 makes a failed registration stop API once API calls Worker. The operator chose to add Worker's first handler, and its database connection, with the first workflow.
+3. **Worker.** Built. A Restate endpoint with no handlers, registered by every full `docker compose up`, per D14. D15 makes a failed registration stop API once Worker has a handler. The operator chose to add Worker's first handler, and its database connection, with the first workflow.
 4. **Footprint and README pass.** Not started. Measure the full seven-process stack, and walk the README from a fresh clone.
 
 ## Slice 1 — what was built
