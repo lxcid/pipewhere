@@ -126,8 +126,19 @@ impl TokenVerifier {
             .keys
             .iter()
             .filter_map(|jwk| {
-                let kid = jwk.common.key_id.clone()?;
-                DecodingKey::from_jwk(jwk).ok().map(|key| (kid, key))
+                // A key API cannot use makes every token it signed unauthorized,
+                // so the log is the operator's only clue.
+                let Some(kid) = jwk.common.key_id.clone() else {
+                    tracing::warn!("ignoring a signing key from Auth without a key id");
+                    return None;
+                };
+                match DecodingKey::from_jwk(jwk) {
+                    Ok(key) => Some((kid, key)),
+                    Err(error) => {
+                        tracing::warn!(%kid, %error, "ignoring a signing key from Auth");
+                        None
+                    }
+                }
             })
             .collect())
     }
