@@ -39,6 +39,8 @@ This follows [publication contract D2](../00002-publication-contract/spec.md): a
 
 Binding: 00004, 00008, and later pipelines that add a provider adapter or change a channel's status.
 
+D4 narrows this decision's wording. Read the two together.
+
 This answers the open question "What happens to a waiting publication when its channel cannot publish?"
 
 When a publication's time comes and its channel cannot publish, the publication becomes `failed`. The reason names the channel's problem, such as revoked access or an unreachable instance. Pipewhere does not hold the publication until the channel recovers. Reconnecting the channel does not resume it. The operator retries it explicitly, per [publication contract D3](../00002-publication-contract/spec.md), and the retry gets a new planned time and deadline under D1.
