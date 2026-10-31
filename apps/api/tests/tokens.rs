@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use axum::routing::get;
 use axum::{Json, Router};
@@ -87,6 +87,42 @@ async fn an_unknown_key_id_refetches_once_the_cooldown_ends() {
     tokio::time::sleep(Duration::from_millis(300)).await;
     assert_invalid(&verifier, "c").await;
     assert_eq!(fetches.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn requests_queued_behind_a_hanging_auth_answer_within_the_timeout() {
+    // Accepts connections and never answers.
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}/jwks", listener.local_addr().unwrap());
+    tokio::spawn(async move {
+        let mut open = Vec::new();
+        while let Ok((connection, _)) = listener.accept().await {
+            open.push(connection);
+        }
+    });
+    let verifier = Arc::new(TokenVerifier::new("http://auth.test", url));
+
+    let started = Instant::now();
+    let mut verifications = JoinSet::new();
+    for n in 0..3 {
+        let verifier = verifier.clone();
+        verifications.spawn(async move {
+            verifier
+                .verify(&unknown_kid_token(&format!("kid-{n}")))
+                .await
+        });
+    }
+    while let Some(verification) = verifications.join_next().await {
+        assert!(matches!(
+            verification.unwrap(),
+            Err(TokenError::AuthUnavailable(_))
+        ));
+    }
+    assert!(
+        started.elapsed() < Duration::from_secs(6),
+        "{:?}",
+        started.elapsed()
+    );
 }
 
 #[tokio::test]

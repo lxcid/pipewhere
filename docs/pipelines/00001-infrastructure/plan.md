@@ -96,7 +96,7 @@ The fresh-clone README walk and the memory figures above were not re-run on this
 
 Run on 2026-10-31 on the same machine, with `pnpm --filter @pipewhere/auth test:db` running.
 
-`cargo test -p pipewhere-api`, 14 tests, all passing. `tests/access.rs` drives a real Auth, per D13, and covers these D2 checks:
+`cargo test -p pipewhere-api`, 15 tests, all passing. `tests/access.rs` drives a real Auth, per D13, and covers these D2 checks:
 
 - each of these reported as unauthorized:
   - no token, or one that is not a JWT
@@ -118,6 +118,7 @@ Run on 2026-10-31 on the same machine, with `pnpm --filter @pipewhere/auth test:
 - five distinct unknown key ids, one after another, causing one fetch
 - sixteen concurrent requests with distinct unknown key ids causing one fetch
 - an unknown key id fetching again once the cooldown ends
+- three concurrent requests behind an Auth that never answers each reported as unavailable within 6 seconds in total
 - an unreachable Auth reported as unavailable
 
 Breaking the code shows the tests check it. Each of these makes its test fail:
@@ -127,6 +128,7 @@ Breaking the code shows the tests check it. Each of these makes its test fail:
 - removing the cooldown
 - letting concurrent misses fetch without waiting for each other
 - a cooldown that never ends
+- a timeout on Auth's response alone, which made those three requests take 15 seconds
 
 Adding a migration file, and changing nothing else, makes `cargo build -p pipewhere-api` recompile API.
 

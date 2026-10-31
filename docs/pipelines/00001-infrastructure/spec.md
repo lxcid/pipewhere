@@ -300,7 +300,7 @@ API drops a cached key only when it refetches, or when it restarts. A key Auth s
 
 API accepts only EdDSA, which is what Better Auth signs with by default. It requires `exp`, `iss`, `aud`, and `sub`. It allows 60 seconds of clock skew on expiry, jsonwebtoken's default.
 
-When fetching the JWKS fails, or takes more than 5 seconds, API answers 503 with `auth_unavailable`. It does not retry. An unreachable Auth is an operator problem, and a retry would only delay the answer.
+When fetching the JWKS fails, or a request waits more than 5 seconds for its key, API answers 503 with `auth_unavailable`. The 5 seconds include any wait for another request's fetch, so requests queued behind a hanging Auth do not wait longer. It does not retry. An unreachable Auth is an operator problem, and a retry would only delay the answer.
 
 API takes two settings for Auth:
 

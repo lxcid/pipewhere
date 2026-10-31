@@ -14,6 +14,10 @@ pub const AUDIENCE: &str = "pipewhere-api";
 // request into a call to Auth.
 const MISS_COOLDOWN: Duration = Duration::from_secs(10);
 
+// Covers the wait for another request's fetch as well as API's own, so a
+// request queued behind a hanging Auth still answers within it.
+const FETCH_TIMEOUT: Duration = Duration::from_secs(5);
+
 #[derive(Debug, Deserialize)]
 pub struct Claims {
     pub sub: String,
@@ -52,14 +56,10 @@ impl TokenVerifier {
         validation.set_issuer(&[issuer]);
         validation.set_audience(&[AUDIENCE]);
         validation.set_required_spec_claims(&["exp", "iss", "aud", "sub"]);
-        let http = reqwest::Client::builder()
-            .timeout(Duration::from_secs(5))
-            .build()
-            .expect("an HTTP client with a timeout builds");
         Self {
             jwks_url,
             validation,
-            http,
+            http: reqwest::Client::new(),
             keys: RwLock::default(),
             refresh: Mutex::default(),
             miss_cooldown: MISS_COOLDOWN,
@@ -84,6 +84,16 @@ impl TokenVerifier {
         if let Some(cached) = self.cached(kid).await {
             return Ok(cached);
         }
+        tokio::time::timeout(FETCH_TIMEOUT, self.refetch(kid))
+            .await
+            .unwrap_or_else(|_| {
+                Err(TokenError::AuthUnavailable(
+                    "Auth's keys took too long to fetch".into(),
+                ))
+            })
+    }
+
+    async fn refetch(&self, kid: &str) -> Result<Option<DecodingKey>, TokenError> {
         let _refresh = self.refresh.lock().await;
         if let Some(cached) = self.cached(kid).await {
             return Ok(cached);
