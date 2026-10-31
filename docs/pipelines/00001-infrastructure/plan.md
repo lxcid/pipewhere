@@ -35,7 +35,7 @@ Choices made in the build, within the spec:
 - `Cargo.toml` is a Cargo workspace. `rust-toolchain.toml` pins Rust 1.95.0.
 - `apps/api` is the API service, built with axum 0.8.9, sqlx 0.9.0, and jsonwebtoken 11.1.0. Its binary is `api`, with two commands:
   - `api serve` answers `GET /health` and D9's `GET /v1/orgs/{organization_id}`.
-  - `api migrate` applies `apps/api/migrations`, which holds no migration yet, per D11.
+  - `api migrate` applies `apps/api/migrations`, which holds no migration yet, per D11. The migrations are compiled into the binary, and `build.rs` makes Cargo rebuild when a migration file is added.
 - `src/tokens.rs` verifies tokens against Auth's JWKS, per D12.
 - `src/access.rs` holds `OrgCaller`, the axum extractor that checks the caller against the organization in the path, in D2's order. Every organization-scoped handler takes it, so D2's check runs before the handler body.
 - `compose.yaml` adds `api-migrate`, after `auth-migrate`, and `api`, on `localhost:3002`.
@@ -43,7 +43,7 @@ Choices made in the build, within the spec:
 
 Choices made in the build, within the spec:
 
-- An error response is JSON carrying a `code`: `unauthorized` (401, with `WWW-Authenticate: Bearer`), `not_found` (404), `auth_unavailable` (503), or `internal` (500). This is provisional until 00002 publishes the REST API schema.
+- An error response is JSON carrying a `code`: `unauthorized` (401, with `WWW-Authenticate: Bearer`), `not_found` (404, also for an unknown path), `method_not_allowed` (405), `auth_unavailable` (503), or `internal` (500). This is provisional until 00002 publishes the REST API schema.
 - reqwest is built without its default TLS provider, so the image does not compile aws-lc. It uses ring, which sqlx already links. Both can reach Auth and PostgreSQL over TLS, so a hosted deployment changes only URLs.
 - API does not send CORS headers. Web does not call API yet. The first Web page that does will need API to allow Web's origin, as Auth does.
 - `api` handles SIGTERM, so `docker compose stop api` returns at once instead of waiting for Docker to kill it.
@@ -96,12 +96,13 @@ The fresh-clone README walk and the memory figures above were not re-run on this
 
 Run on 2026-10-31 on the same machine, with `pnpm --filter @pipewhere/auth test:db` running.
 
-`cargo test -p pipewhere-api`, 11 tests, all passing. `tests/access.rs` drives a real Auth, per D13, and covers these D2 checks:
+`cargo test -p pipewhere-api`, 14 tests, all passing. `tests/access.rs` drives a real Auth, per D13, and covers these D2 checks:
 
 - each of these reported as unauthorized:
   - no token, or one that is not a JWT
   - a token with no `sub`, or a `sub` with neither prefix
-  - a token that is expired, has the wrong audience or issuer, or has a bad signature
+  - a token that is expired or has the wrong audience or issuer
+  - a token whose signature is malformed, or is Auth's signature over other claims
 - a disabled, expired, or deleted key reported as unauthorized while its token is still valid
 - a user who is not a member, another organization's key, and an organization that does not exist, each reported as not found
 - a member removed while their token is still valid, reported as not found on the next request
@@ -110,14 +111,24 @@ Run on 2026-10-31 on the same machine, with `pnpm --filter @pipewhere/auth test:
 - a session token and a key token each reading the organization, with the actor's id and the user's role
 - tokens signed before and after a signing-key rotation both verifying
 - API's migrations running twice
+- an unknown path and a wrong method each answered with a JSON `code`
 
-`tests/tokens.rs` covers D12's cooldown, with five unknown key ids causing one fetch, and an unreachable Auth reported as unavailable.
+`tests/tokens.rs` covers D12's fetching, against a stand-in key endpoint:
+
+- five distinct unknown key ids, one after another, causing one fetch
+- sixteen concurrent requests with distinct unknown key ids causing one fetch
+- an unknown key id fetching again once the cooldown ends
+- an unreachable Auth reported as unavailable
 
 Breaking the code shows the tests check it. Each of these makes its test fail:
 
 - dropping the `enabled` check
 - never refetching keys once some are loaded
 - removing the cooldown
+- letting concurrent misses fetch without waiting for each other
+- a cooldown that never ends
+
+Adding a migration file, and changing nothing else, makes `cargo build -p pipewhere-api` recompile API.
 
 `cargo clippy -p pipewhere-api --all-targets -- -D warnings` and `cargo fmt --check` pass.
 

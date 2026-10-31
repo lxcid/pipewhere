@@ -124,6 +124,8 @@ Before the auth boundary is considered verified, Pipewhere must exercise:
 - Auth's database role being refused on the `pipewhere` schema
 - API verification across a signing-key rotation
 
+D10 moves the forbidden checks, and changing a key's permissions, to the pipeline that adds the first action a role or key may not perform.
+
 What would overturn this:
 
 - Better Auth cannot issue the required claims, or local verification proves unreliable.
@@ -290,6 +292,12 @@ API fetches Auth's JWKS when it first needs a key, and keeps it in memory. A tok
 
 A refetch that still lacks the key starts a 10-second cooldown. During it, tokens naming unknown keys are refused without another fetch. Without the cooldown, a stream of forged key ids would turn every request into a call to Auth. A token signed by a key rotated in during a cooldown is refused until the cooldown ends.
 
+Only one fetch runs at a time. Requests that miss while it runs wait for it and use its result, so a burst of forged key ids causes one fetch.
+
+A failed fetch does not start the cooldown. While Auth is unreachable, each request with an uncached key id tries once more, one at a time, and gets 503. Tokens whose keys are cached still verify.
+
+API drops a cached key only when it refetches, or when it restarts. A key Auth stops publishing therefore stays trusted until a token names a key API has not cached. To revoke a signing key at once, delete its `jwks` row and restart API.
+
 API accepts only EdDSA, which is what Better Auth signs with by default. It requires `exp`, `iss`, `aud`, and `sub`. It allows 60 seconds of clock skew on expiry, jsonwebtoken's default.
 
 When fetching the JWKS fails, or takes more than 5 seconds, API answers 503 with `auth_unavailable`. It does not retry. An unreachable Auth is an operator problem, and a retry would only delay the answer.
@@ -301,7 +309,7 @@ API takes two settings for Auth:
 
 They differ in Compose. Inside the Compose network API reaches Auth as `http://auth:3001`, while the issuer is `http://localhost:3001`.
 
-What would overturn this: Auth rotating keys often enough that the cooldown refuses real tokens, or a need to revoke a signing key before the JWKS stops publishing it.
+What would overturn this: Auth rotating keys often enough that the cooldown refuses real tokens, or a need to revoke a signing key without restarting API.
 
 ### D13 — API's tests drive a real Auth process
 
