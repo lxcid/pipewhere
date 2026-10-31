@@ -27,8 +27,6 @@ What would overturn this: operators routinely retrying late failures unchanged, 
 
 ### D2 — The tolerance is fixed when a publication is created, and the deadline is checked when the commit starts
 
-Proposed: awaiting operator approval.
-
 A publication records its tolerance when it is created. It takes the organization's default unless the request overrides it. Changing the organization's default affects new publications only. The deadline is the planned time plus that tolerance, and the API shows it for each waiting publication. For a pinned time, the deadline does not move unless the operator edits the publication. A projected time from posting slots, and so its deadline, can move; [intent 00007](../00007-posting-slots/intent.md) owns that.
 
 The deadline applies to the start of the provider commit, the move to `publishing`. The worker checks it in the same conditional update that claims the commit. Work still in `preparing` at the deadline therefore fails before anything public happens. A commit that started in time is never cut off.
@@ -61,8 +59,6 @@ What would overturn this: operators routinely retrying every publication a broke
 
 Binding: 00004, 00008, and later pipelines that change a channel's status.
 
-Proposed: awaiting operator approval.
-
 D3 fails a publication whose channel "cannot publish" at its planned time. This decision says what that means, so that a brief provider failure and a broken channel are not confused.
 
 - "Cannot publish" means the channel's status says it cannot publish. Examples are revoked access, a removed account, or a channel the operator disconnected. That status comes from [intent 00004](../00004-provider-delivery/intent.md).
@@ -80,7 +76,7 @@ D4 narrows two parts of D3's wording:
 - "At its planned time" in D3 means at the claim.
 - An unreachable instance, one of D3's examples, fails a publication only when the channel's status records it.
 
-Once the operator approves D4, D3's text can be folded together with it.
+D3's text can be folded together with D4 when either is next revised.
 
 A later pipeline is in violation if it:
 
