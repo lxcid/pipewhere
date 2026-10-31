@@ -25,6 +25,8 @@ pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/v1/orgs/{organization_id}", get(organization))
+        .fallback(async || ApiError::NotFound)
+        .method_not_allowed_fallback(async || ApiError::MethodNotAllowed)
         .with_state(state)
 }
 

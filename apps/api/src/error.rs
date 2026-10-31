@@ -8,6 +8,7 @@ use serde_json::json;
 pub enum ApiError {
     Unauthorized,
     NotFound,
+    MethodNotAllowed,
     AuthUnavailable(String),
     Database(sqlx::Error),
 }
@@ -23,6 +24,7 @@ impl IntoResponse for ApiError {
         let (status, code) = match &self {
             Self::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized"),
             Self::NotFound => (StatusCode::NOT_FOUND, "not_found"),
+            Self::MethodNotAllowed => (StatusCode::METHOD_NOT_ALLOWED, "method_not_allowed"),
             Self::AuthUnavailable(reason) => {
                 tracing::error!(%reason, "fetching Auth's signing keys failed");
                 (StatusCode::SERVICE_UNAVAILABLE, "auth_unavailable")

@@ -19,6 +19,27 @@ async fn health_needs_no_token() {
 }
 
 #[tokio::test]
+async fn unknown_paths_and_methods_answer_with_a_code() {
+    let instance = Instance::start().await;
+    let unknown_path = instance.get("/nope", None).await;
+    assert_eq!(
+        refusal(unknown_path).await,
+        (StatusCode::NOT_FOUND, "not_found".into())
+    );
+    let wrong_method = instance
+        .http
+        .post(format!("{}/health", instance.api_url))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        refusal(wrong_method).await,
+        (StatusCode::METHOD_NOT_ALLOWED, "method_not_allowed".into())
+    );
+    instance.close().await;
+}
+
+#[tokio::test]
 async fn a_member_reads_the_organization_and_their_role() {
     let instance = Instance::start().await;
     let owner = instance.sign_up("owner@example.com").await;
