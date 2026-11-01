@@ -364,6 +364,30 @@ A later pipeline is in violation if it ships a Worker handler while `api` does n
 
 What would overturn this: registration moving out of Compose, or a service other than API becoming the one an operator watches to see that the stack started.
 
+### D16 — Restate keeps its default partition count and memory settings
+
+Proposed: awaiting operator approval.
+
+Compose sets no Restate tuning. Restate 1.7.13 provisions 24 partitions and sizes RocksDB's memory at 2 GiB in total by default.
+
+Restate is most of the stack's memory. The plan's slice 4 has the measurements. Idle, on the builder's machine:
+
+- The stack's Restate grew from 850 MiB to 1.04 GiB over its first hour, and used 1.15 GiB after 23 hours.
+- Throwaway Restate containers with the defaults used 250 to 500 MiB.
+- With 4 partitions, they used about 55 to 60 percent of what a 24-partition container started at the same moment used: 136 to 295 MiB.
+- Capping RocksDB at 512 MiB, in one container, used 254 MiB, against 443 MiB for the default container started beside it.
+
+Lowering the partition count has a durable cost. An installation keeps the partition count it was provisioned with:
+
+- Restate's help says the setting is ignored once a cluster is bootstrapped.
+- `restatectl config set` changes replication, not partitions.
+
+Restate's help calls partitions "the logical shards used to process messages". An installation started with 4 could not spread its work over more shards when it moves to several machines. Growing it would need a new Restate cluster. That conflicts with the intent's test that moving to a hosted deployment changes configuration and placement, not architecture. The saving is about 110 to 550 MiB, which is under 4 percent of 16 GB. The entry-level MacBook Pro's memory is assumed, not checked against a current model.
+
+Capping RocksDB's memory has no durable cost. An operator can set `RESTATE_ROCKSDB_TOTAL_MEMORY_SIZE` at any time. Its effect under load is unmeasured, so the default stays until a measurement says the cap is needed.
+
+What would overturn this: the operator finding on an entry-level MacBook Pro that the stack gets in the way and Restate's memory is the cause, or a Restate version that can change an installation's partition count.
+
 ## Implementation constraints and evidence
 
 Verified on 2026-09-22, before the build chose its versions. Compose now pins Restate 1.7.13; see below.
