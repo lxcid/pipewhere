@@ -358,8 +358,6 @@ What would overturn this: a Restate version that updates a changed deployment wi
 
 Binding: 00003, and any other pipeline that adds the first Worker handler.
 
-Proposed: awaiting operator approval.
-
 Once Worker has a handler, `api` depends on `worker-register` completing successfully. A failed registration then stops API from starting, and `docker compose up` reports the failure, as it does for `api-migrate`. `docker compose up --wait` also succeeds again, since every one-off then has a service that depends on it. A targeted `docker compose up -d api` registers Worker too, because Compose starts a named service's dependencies.
 
 The trigger is Worker's first handler, not API's first call into one. A handler may first be started by something other than API, such as a re-drive Worker runs, a delayed call from another handler, or an operator using Restate's CLI. A failed registration should be loud in each of those cases too. `api` carries the dependency because it is the service the stack cannot do without, so its failure to start is the one an operator notices.
