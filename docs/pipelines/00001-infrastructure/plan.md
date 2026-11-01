@@ -7,7 +7,7 @@ The build runs in slices. Each slice leaves the stack running from one command.
 1. **Infrastructure and Auth, with a first Web UI.** Built.
 2. **API.** Built. Local token verification, D2's per-request organization check, D9's first action, and D11's migration step. D10 defers forbidden, and D11 defers API's id generator, check constraint, and prefix test.
 3. **Worker.** Built. A Restate endpoint with no handlers, registered by every full `docker compose up`, per D14. D15 makes a failed registration stop API once Worker has a handler. The operator chose to add Worker's first handler, and its database connection, with the first workflow.
-4. **Footprint and README pass.** Not started. Measure the full seven-process stack, and walk the README from a fresh clone.
+4. **Footprint and README pass.** Built. The full seven-process stack measured, a cold build timed, and the README walked from a fresh clone. D16 keeps Restate's defaults.
 
 ## Slice 1 — what was built
 
@@ -98,16 +98,12 @@ Removing the session hook makes three organization tests fail, so they test the 
 
 The README's steps, run word for word in a fresh clone of this branch, bring up the same stack. Auth answers `/health`, Web answers 200, and a sign-up succeeds. The run used `docker compose -p pipewhere-fresh` so it did not share volumes with the running stack.
 
-`docker stats --no-stream`, with the stack idle after that walkthrough: Web 57 MiB, Auth 60 MiB, PostgreSQL 50 MiB, RustFS 89 MiB, Restate 278 MiB. That is about 530 MiB for five of the seven processes.
-
 Review fixes then changed the PostgreSQL healthcheck, Auth's CORS and session reads, and Web's key list. Re-run on 2026-10-31 at `0c27734`, on the existing volumes:
 
 - `docker compose up -d --build`: every service starts, PostgreSQL reports healthy over TCP, and both one-off steps exit 0.
 - A CORS preflight from Web's origin allows only `content-type` and `x-api-key`.
 - A signed-in `get-session` carries no `set-auth-jwt` header, and `/api/auth/token` still issues a token. Run in-process against the test database.
 - In Chrome: signing up, creating an organization, which shows "No keys yet", and creating a key, which is listed after a reload.
-
-The fresh-clone README walk and the memory figures above were not re-run on this head.
 
 ### Slice 2
 
@@ -157,7 +153,6 @@ Adding a migration file, and changing nothing else, makes `cargo build -p pipewh
 - `/health` answers, and a request with no token gets 401 with `WWW-Authenticate: Bearer`.
 - A user signed up through Auth with curl. A session token, then a key token, each read the organization through API, which fetched the keys from `http://auth:3001` and checked the issuer `http://localhost:3001`. The key token got `not_found` for another organization.
 - `docker compose stop api` returned in 0.15 seconds.
-- `docker stats --no-stream`, right after a restart, with no requests since: API 2.6 MiB. This is not a footprint measurement under load; slice 4 measures the full stack.
 
 ### Slice 3
 
@@ -178,9 +173,52 @@ The registration evidence in the spec's "Implementation constraints and evidence
 - `docker compose stop worker` returned in 0.29 seconds.
 - With `WORKER_URL` overridden to a port nothing listens on, `worker-register` exits 1 with Restate's discovery error, and `docker compose up -d` still exits 0. `--wait` does not help: it treats every one-off nothing depends on as failed, even one that exits 0. So `docker compose up -d --wait` now exits 1 on a successful start too, and slice 4 should not use it until D15 applies.
 - `docker compose up -d --build worker` recreates Worker without running `worker-register`. `docker compose up -d --build worker worker-register` runs it, and the README says so.
-- `docker stats --no-stream`, idle: Worker 2.2 MiB. The checks above did not cause Restate's growth: a fresh `restatedev/restate:1.7.13` container, idle and with nothing registered, used 804 MiB 15 seconds after starting and 816 MiB at 60 seconds. The stack's Restate, about an hour after it started, used 1.1 GiB. Slice 1 recorded 278 MiB, and it is unknown whether that figure came from the same moment after start or from a since-changed Restate. Slice 4 measures this properly, and it bears on the intent's MacBook test.
 
 Worker has no tests. It has no handler, and its two commands are a server with nothing bound and one call to Restate. A test of either needs a real Restate, so the checks above ran against one instead. The first handler, in 00003, needs a test harness with a Restate server.
+
+### Slice 4
+
+Run on 2026-11-02 on the same machine: an Apple M4 Pro with 14 cores and 48 GB. Docker Desktop's VM has 14 CPUs and 17.5 GiB. Other projects' containers ran alongside throughout.
+
+#### README walk
+
+The README's steps, run word for word in a fresh clone of this branch at `e1bbff7`, with two changes:
+
+- `docker compose -p pipewhere-fresh`, so the walk did not share volumes with the development stack. The development stack was stopped for the walk, since both publish the same ports.
+- `BUILDX_BUILDER` set to a new, empty `docker-container` builder, so nothing came from an earlier build.
+
+Results:
+
+- `docker compose up -d --build` exited 0 after 83 seconds. Every long-running service started, and all four one-off steps exited 0. The Rust release build took 39 seconds of that. The base images were pulled by the new builder. PostgreSQL's, RustFS's, and Restate's images were already on the machine, so their download is not in the 83 seconds. They total 1.6 GB.
+- Auth and API answered `/health`, and Web answered 200 on `127.0.0.1:3000`.
+- A sign-up, an organization, and a key were created through Auth with curl, sending Web's origin, as Web's pages do. Then the README's own commands exchanged the key and read the organization through API.
+
+The walk was not done in a browser. Another project's dev server was listening on `[::1]:3000`. Compose publishes Web on `127.0.0.1` only, so `localhost:3000` reached that server and Compose did not warn. The README now says so.
+
+#### Footprint
+
+`docker stats --no-stream`, which reports each container's memory less its inactive file cache. CPU is a percentage of one core. Every figure is idle, with no requests after the walk.
+
+The fresh stack, sampled every 5 minutes for an hour after the walk:
+
+| Service    | Memory                       | CPU         |
+| ---------- | ---------------------------- | ----------- |
+| Restate    | 850 MiB, growing to 1.04 GiB | 1.3 to 3.3% |
+| RustFS     | 78 to 85 MiB                 | under 0.3%  |
+| Auth       | 57 to 103 MiB                | under 0.1%  |
+| Web        | 43 MiB                       | under 0.1%  |
+| PostgreSQL | 33 to 40 MiB                 | under 2.9%  |
+| Worker     | 2.3 to 4.4 MiB               | under 2.3%  |
+| API        | 3.1 MiB                      | 0%          |
+| Total      | 1.08 to 1.28 GiB             | 1.8 to 6.9% |
+
+The development stack, before it was stopped, after 23 to 47 hours up and some days of use: Restate 1.15 GiB, RustFS 276 MiB, Auth 61 MiB, Web 48 MiB, PostgreSQL 29 MiB, Worker 4.0 MiB, API 2.7 MiB. That is 1.57 GiB. Restate averaged 3.3% CPU over six samples 5 seconds apart, and the rest together 2%.
+
+Restate's memory is nearly all heap. `memory.stat` in the fresh stack's container showed 785 MiB anonymous and 1 MiB file-backed. It varies between containers with the same settings, for a reason not found. Throwaway `restatedev/restate:1.7.13` containers with the stack's settings, three started together, used 252, 256, and 498 MiB after 16 minutes. The partition and RocksDB measurements behind D16 are recorded there.
+
+Worker's and PostgreSQL's idle CPU is their healthchecks, which run every 2 seconds. API has none and shows 0%.
+
+Images: Auth 1.03 GB, Web 429 MB, API 163 MB, and Worker 157 MB. The one-off steps reuse these images.
 
 ## Not yet verified
 
@@ -188,7 +226,8 @@ Worker has no tests. It has no handler, and its two commands are a server with n
   - a member whose role does not permit an action, and a key whose permissions do not, reported as forbidden
   - a role change, or a key permission change, affecting what the caller may do on the next request
 - D5's object-store checks. RustFS runs but nothing uses it yet.
-- The intent's MacBook test. The numbers above come from a 14-core machine, and they predate API and Worker. Whether the stack gets in the way of development work is for the operator to judge on an entry-level MacBook Pro.
+- The intent's MacBook test. The numbers above come from a 14-core machine with 48 GB. The stack idles at 1.1 to 1.6 GiB and a few percent of one core. Whether that gets in the way of development work is for the operator to judge on an entry-level MacBook Pro.
+- The footprint under load. Every figure above is idle, and nothing yet runs a workflow.
 - A new operator following the README unaided. The builder followed it from a fresh clone, as described above, which is not the same test.
-- A cold first build. The fresh-clone run reused Docker's layer cache from earlier builds, so the time a new machine takes to build the images is unmeasured.
+- A cold first build on a slower machine or network. The 83 seconds above come from this machine, with the infrastructure images already pulled.
 - Web's key list for a member who may not list keys. It should show Auth's refusal, not "No keys yet". This was checked by reading the code, not in a browser.

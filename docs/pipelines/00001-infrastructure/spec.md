@@ -286,8 +286,6 @@ What would overturn this: a later pipeline needing ids outside a table, such as 
 
 ### D12 — API verifies tokens against Auth's published keys and refetches them on an unknown key id
 
-Proposed: awaiting operator approval.
-
 API fetches Auth's JWKS when it first needs a key, and keeps it in memory. A token whose key id is not in memory makes API fetch the JWKS again, so a key Auth has just rotated in verifies at once.
 
 A refetch that still lacks the key starts a 10-second cooldown. During it, tokens naming unknown keys are refused without another fetch. Without the cooldown, a stream of forged key ids would turn every request into a call to Auth. A token signed by a key rotated in during a cooldown is refused until the cooldown ends.
@@ -314,8 +312,6 @@ They differ in Compose. Inside the Compose network API reaches Auth as `http://a
 What would overturn this: Auth rotating keys often enough that the cooldown refuses real tokens, or a need to revoke a signing key without restarting API.
 
 ### D13 — API's tests drive a real Auth process
-
-Proposed: awaiting operator approval.
 
 API's integration tests create a disposable database and run `setup.sql` and Auth's migrations against it. They start Auth's own server, and get every session and key token from it through its HTTP endpoints. Tokens with unusual claims come from Better Auth's `signJWT`, called from Node with Auth's options, so they are signed with Auth's real key.
 
@@ -367,6 +363,30 @@ Until then, Worker has no handler, so a failed registration changes nothing anyo
 A later pipeline is in violation if it ships a Worker handler while `api` does not depend on `worker-register` completing successfully.
 
 What would overturn this: registration moving out of Compose, or a service other than API becoming the one an operator watches to see that the stack started.
+
+### D16 — Restate keeps its default partition count and memory settings
+
+Proposed: awaiting operator approval.
+
+Compose sets no Restate tuning. Restate 1.7.13 provisions 24 partitions and sizes RocksDB's memory at 2 GiB in total by default.
+
+Restate is most of the stack's memory. The plan's slice 4 has the measurements. Idle, on the builder's machine:
+
+- The stack's Restate grew from 850 MiB to 1.04 GiB over its first hour, and used 1.15 GiB after 23 hours.
+- Throwaway Restate containers with the defaults used 250 to 500 MiB.
+- With 4 partitions, they used about 55 to 60 percent of what a 24-partition container started at the same moment used: 136 to 295 MiB.
+- Capping RocksDB at 512 MiB, in one container, used 254 MiB, against 443 MiB for the default container started beside it.
+
+Lowering the partition count has a durable cost. An installation keeps the partition count it was provisioned with:
+
+- Restate's help says the setting is ignored once a cluster is bootstrapped.
+- `restatectl config set` changes replication, not partitions.
+
+Restate's help calls partitions "the logical shards used to process messages". An installation started with 4 could not spread its work over more shards when it moves to several machines. Growing it would need a new Restate cluster. That conflicts with the intent's test that moving to a hosted deployment changes configuration and placement, not architecture. The saving is about 110 to 550 MiB, which is under 4 percent of 16 GB. The entry-level MacBook Pro's memory is assumed, not checked against a current model.
+
+Capping RocksDB's memory has no durable cost. An operator can set `RESTATE_ROCKSDB_TOTAL_MEMORY_SIZE` at any time. Its effect under load is unmeasured, so the default stays until a measurement says the cap is needed.
+
+What would overturn this: the operator finding on an entry-level MacBook Pro that the stack gets in the way and Restate's memory is the cause, or a Restate version that can change an installation's partition count.
 
 ## Implementation constraints and evidence
 

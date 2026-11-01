@@ -38,6 +38,8 @@ docker compose up -d --build worker worker-register
 
 Web listens on port 3000, Auth on port 3001, and API on port 3002, all on localhost only. Worker hosts no handlers yet.
 
+Compose publishes these ports on `127.0.0.1` only. Another server on the same port on `::1`, such as a Node dev server, does not stop Compose, and a browser opening `localhost` may reach that server instead. Stop it first.
+
 To call API, open an organization in Web and create a key. Web shows the key once. The organization's id is the last part of the page's URL. Exchange the key at Auth for an access token, then name the organization in API's path:
 
 ```sh
