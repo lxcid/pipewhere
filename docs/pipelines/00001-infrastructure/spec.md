@@ -286,8 +286,6 @@ What would overturn this: a later pipeline needing ids outside a table, such as 
 
 ### D12 — API verifies tokens against Auth's published keys and refetches them on an unknown key id
 
-Proposed: awaiting operator approval.
-
 API fetches Auth's JWKS when it first needs a key, and keeps it in memory. A token whose key id is not in memory makes API fetch the JWKS again, so a key Auth has just rotated in verifies at once.
 
 A refetch that still lacks the key starts a 10-second cooldown. During it, tokens naming unknown keys are refused without another fetch. Without the cooldown, a stream of forged key ids would turn every request into a call to Auth. A token signed by a key rotated in during a cooldown is refused until the cooldown ends.
@@ -314,8 +312,6 @@ They differ in Compose. Inside the Compose network API reaches Auth as `http://a
 What would overturn this: Auth rotating keys often enough that the cooldown refuses real tokens, or a need to revoke a signing key without restarting API.
 
 ### D13 — API's tests drive a real Auth process
-
-Proposed: awaiting operator approval.
 
 API's integration tests create a disposable database and run `setup.sql` and Auth's migrations against it. They start Auth's own server, and get every session and key token from it through its HTTP endpoints. Tokens with unusual claims come from Better Auth's `signJWT`, called from Node with Auth's options, so they are signed with Auth's real key.
 
