@@ -330,6 +330,44 @@ The cost is that `cargo test` needs Node, `psql`, Auth's installed dependencies,
 
 What would overturn this: Auth's startup making the suite too slow to run on every change, or a CI runner that cannot provide Node.
 
+### D14 — Worker force-registers with Restate on every start of the stack
+
+Binding: 00003, and any other pipeline that adds the first Worker handler.
+
+Worker's binary has a `register` command. Compose runs it as `worker-register`, once Restate and Worker are healthy. It registers Worker's URI with Restate's admin API, with `force` set.
+
+It runs on every `docker compose up` that names no services, and on one that names `worker-register`. Compose starts a named service's dependencies, never the services that depend on it. So `docker compose up -d --build worker` rebuilds Worker without registering it, and the README says to name both. A restart of Worker's container also skips registration, but it runs the same image, so the handlers Restate holds stay current.
+
+Restate 1.7.13 accepts a registration of a URI it already holds, and keeps that deployment's handlers unchanged, even when Worker's handlers have changed. It answers 200 either way. Without `force`, a changed Worker would keep running under its old handler list, and a new handler would answer 404. With `force`, Restate replaces the handler list under the same deployment id. The evidence is under "Implementation constraints and evidence".
+
+The operator chose forcing on every start over the alternative: registering without `force` and failing when Restate's handlers differ from Worker's. That alternative stops every Worker change in development until someone forces the registration by hand.
+
+Forcing has these costs:
+
+- An invocation in flight when Worker's code changes resumes on the new code. Restate's documentation warns that this can leave it in an unrecoverable error state, when the new code does not replay the old journal.
+- Nothing depends on `worker-register`, so `docker compose up` succeeds when it fails. A failed registration leaves Restate without Worker's current handlers. D15 assigns this to the pipeline that adds the first handler.
+- For the same reason, `docker compose up --wait` exits 1 on every start, even a successful one. It treats a one-off that nothing depends on as failed when it exits, whatever its exit code.
+
+Only the `--wait` cost touches this pipeline, and nothing in the repository uses `--wait`. The other costs need a handler, and Worker has none yet. The operator chose to add no handler, and no database connection, before a workflow needs them.
+
+A later pipeline is in violation if it ships a Worker handler without a stated way for its in-flight invocations to survive a Worker upgrade, and a test that changes the code under an invocation in flight. Restate's own answer is a new deployment URI per version, with the old Worker kept running until its invocations finish.
+
+What would overturn this: a Restate version that updates a changed deployment without `force`, or the first workflow choosing versioned deployments.
+
+### D15 — API waits for Worker's registration once Worker has a handler
+
+Binding: 00003, and any other pipeline that adds the first Worker handler.
+
+Once Worker has a handler, `api` depends on `worker-register` completing successfully. A failed registration then stops API from starting, and `docker compose up` reports the failure, as it does for `api-migrate`. `docker compose up --wait` also succeeds again, since every one-off then has a service that depends on it. A targeted `docker compose up -d api` registers Worker too, because Compose starts a named service's dependencies.
+
+The trigger is Worker's first handler, not API's first call into one. A handler may first be started by something other than API, such as a re-drive Worker runs, a delayed call from another handler, or an operator using Restate's CLI. A failed registration should be loud in each of those cases too. `api` carries the dependency because it is the service the stack cannot do without, so its failure to start is the one an operator notices.
+
+Until then, Worker has no handler, so a failed registration changes nothing anyone can observe. The dependency would also make `--wait` succeed, but nothing in the repository uses `--wait`. Making API depend on registration now would tie API's start to Restate and Worker for no present use.
+
+A later pipeline is in violation if it ships a Worker handler while `api` does not depend on `worker-register` completing successfully.
+
+What would overturn this: registration moving out of Compose, or a service other than API becoming the one an operator watches to see that the stack started.
+
 ## Implementation constraints and evidence
 
 Verified on 2026-09-22, before the build chose its versions. Compose now pins Restate 1.7.13; see below.
@@ -362,8 +400,19 @@ Auth pins Better Auth 1.7.12 and `@better-auth/api-key` 1.7.12. Every statement 
 
 Compose pins Restate 1.7.13. Restate names its node after the hostname by default, and refuses its existing data when the name changes. A container's hostname changes whenever it is recreated, so Compose sets `RESTATE_NODE_NAME`. Tested by recreating the container on its existing volume.
 
-Still to verify: whether registering the same deployment URI twice is idempotent in the pinned Restate version. The build must reproduce this before choosing an automatic registration design.
-
 Restate server and Rust SDK versions must be pinned independently. The server can be stable while the pre-1.0 SDK changes its Rust API.
+
+Worker pins `restate-sdk` 0.12.1 exactly. The SDK's README lists 0.11 and 0.12 as compatible with Restate 1.6 and 1.7. 0.13.0, released on 2026-10-28, moves to service protocol V8, and its README does not list it. Restate 1.7.13 accepts Worker's deployment with protocol versions 5 to 7.
+
+Registration in Restate 1.7.13 with `restate-sdk` 0.12.1, reproduced on 2026-11-01 against a throwaway Restate container and then in Compose. Each case registered the same URI, `POST /deployments`:
+
+- An endpoint with no services registers: 201, with an empty handler list.
+- The same URI again, with Worker unchanged: 200, with the same deployment id.
+- The same URI again, after a service was added or removed: 200 and no change, with or without `breaking`. A call to the added service answered 404.
+- With `force`: 200, with the same deployment id and the new handler list. Every service's revision goes up by one, even when nothing changed.
+- An invocation sleeping in a handler when `force` replaced its code woke and finished on the new code. Its journal held only the sleep, so this shows nothing about code that does not replay.
+- Restate keeps the deployment across a restart of its container.
+
+The SDK's `listen_and_serve` stops on Ctrl-C only. Worker serves with `serve_with_cancel` and stops on SIGTERM too, as API does.
 
 These constraints do not settle boot order, port assignment, or snapshot configuration. The build decides those details for the seven-process topology.

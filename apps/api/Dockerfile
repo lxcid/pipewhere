@@ -2,8 +2,9 @@ FROM rust:1.95.0-slim-trixie AS build
 WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY apps/api apps/api
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/app/target \
+COPY apps/worker apps/worker
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/app/target,sharing=locked \
     cargo build --release --locked --bin api \
     && cp target/release/api /usr/local/bin/api
 

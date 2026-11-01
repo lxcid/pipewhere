@@ -6,7 +6,7 @@ The build runs in slices. Each slice leaves the stack running from one command.
 
 1. **Infrastructure and Auth, with a first Web UI.** Built.
 2. **API.** Built. Local token verification, D2's per-request organization check, D9's first action, and D11's migration step. D10 defers forbidden, and D11 defers API's id generator, check constraint, and prefix test.
-3. **Worker.** Not started. Restate handlers, with the server and the Rust SDK pinned separately. Reproduce deployment re-registration in the pinned Restate version before choosing how Worker registers.
+3. **Worker.** Built. A Restate endpoint with no handlers, registered by every full `docker compose up`, per D14. D15 makes a failed registration stop API once Worker has a handler. The operator chose to add Worker's first handler, and its database connection, with the first workflow.
 4. **Footprint and README pass.** Not started. Measure the full seven-process stack, and walk the README from a fresh clone.
 
 ## Slice 1 — what was built
@@ -47,6 +47,23 @@ Choices made in the build, within the spec:
 - reqwest is built without its default TLS provider, so the image does not compile aws-lc. It uses ring, which sqlx already links. Both can reach Auth and PostgreSQL over TLS, so a hosted deployment changes only URLs.
 - API does not send CORS headers. Web does not call API yet. The first Web page that does will need API to allow Web's origin, as Auth does.
 - `api` handles SIGTERM, so `docker compose stop api` returns at once instead of waiting for Docker to kill it.
+
+## Slice 3 — what was built
+
+- `apps/worker` is the Worker service, built with `restate-sdk` 0.12.1, pinned exactly apart from the Restate server. Its binary is `worker`, with three commands:
+  - `worker serve` serves a Restate endpoint with no services on port 9080, and stops on SIGTERM.
+  - `worker register` registers `WORKER_URL` with Restate's admin API at `RESTATE_ADMIN_URL`, with `force`, per D14. It fails with Restate's error when Restate refuses.
+  - `worker health` asks the endpoint's `/health` over HTTP/2. It is Worker's healthcheck.
+- `compose.yaml` adds `worker` and the one-off `worker-register`, which waits for Restate and Worker to be healthy. Restate gains a healthcheck on its admin API.
+- `apps/worker/Dockerfile` mirrors API's. The image is 157 MB.
+
+Choices made in the build, within the spec:
+
+- Worker's endpoint is not published outside Compose, and it does not check that requests come from Restate. Only Restate reaches it, over the Compose network. A hosted deployment that exposes Worker would configure the SDK's request identity check.
+- Restate's ingress and admin ports stay unpublished. Nothing outside Compose calls them yet.
+- `restate-sdk` is built without its default features. Worker needs only its HTTP server.
+- The healthcheck is a Worker command, not a TCP connect. The endpoint speaks HTTP/2 only, and logs a warning for every connection that closes before sending a request.
+- Both Rust Dockerfiles copy both crates, since the Cargo workspace needs every member present. Their cache mounts are `sharing=locked`. Compose builds the images in parallel, and two Cargo processes unpacking into one shared registry failed with `File exists`.
 
 ## Verified
 
@@ -142,13 +159,36 @@ Adding a migration file, and changing nothing else, makes `cargo build -p pipewh
 - `docker compose stop api` returned in 0.15 seconds.
 - `docker stats --no-stream`, right after a restart, with no requests since: API 2.6 MiB. This is not a footprint measurement under load; slice 4 measures the full stack.
 
+### Slice 3
+
+Run on 2026-11-01 on the same machine.
+
+`cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --check`, and `pnpm fmt:check` pass.
+
+The registration evidence in the spec's "Implementation constraints and evidence" was reproduced against a throwaway `restatedev/restate:1.7.13` container, with Worker running on the host.
+
+`docker compose up -d --build`, on the existing volumes:
+
+- `restate` and `worker` report healthy. `worker-register` exits 0, and Restate lists the deployment `http://worker:9080/` with `restate-sdk-rust/0.12.1` and no services.
+- `docker compose up -d` again, with nothing changed, runs `worker-register` again. The deployment id stays the same.
+- A `Probe` service with one handler, added to Worker for this check and then removed:
+  - After `docker compose up -d --build`, Restate listed it, and a call through Restate's ingress returned `"pong"`.
+  - After removing it and running the same command, the call returned 404.
+- Restarting Restate keeps the deployment.
+- `docker compose stop worker` returned in 0.29 seconds.
+- With `WORKER_URL` overridden to a port nothing listens on, `worker-register` exits 1 with Restate's discovery error, and `docker compose up -d` still exits 0. `--wait` does not help: it treats every one-off nothing depends on as failed, even one that exits 0. So `docker compose up -d --wait` now exits 1 on a successful start too, and slice 4 should not use it until D15 applies.
+- `docker compose up -d --build worker` recreates Worker without running `worker-register`. `docker compose up -d --build worker worker-register` runs it, and the README says so.
+- `docker stats --no-stream`, idle: Worker 2.2 MiB. The checks above did not cause Restate's growth: a fresh `restatedev/restate:1.7.13` container, idle and with nothing registered, used 804 MiB 15 seconds after starting and 816 MiB at 60 seconds. The stack's Restate, about an hour after it started, used 1.1 GiB. Slice 1 recorded 278 MiB, and it is unknown whether that figure came from the same moment after start or from a since-changed Restate. Slice 4 measures this properly, and it bears on the intent's MacBook test.
+
+Worker has no tests. It has no handler, and its two commands are a server with nothing bound and one call to Restate. A test of either needs a real Restate, so the checks above ran against one instead. The first handler, in 00003, needs a test harness with a Restate server.
+
 ## Not yet verified
 
 - D2 checks that need a gated action. D10 moves them to the pipeline that adds the first one:
   - a member whose role does not permit an action, and a key whose permissions do not, reported as forbidden
   - a role change, or a key permission change, affecting what the caller may do on the next request
 - D5's object-store checks. RustFS runs but nothing uses it yet.
-- The intent's MacBook test. The numbers above come from a 14-core machine, and they predate API. Worker is missing. Whether the stack gets in the way of development work is for the operator to judge on an entry-level MacBook Pro.
+- The intent's MacBook test. The numbers above come from a 14-core machine, and they predate API and Worker. Whether the stack gets in the way of development work is for the operator to judge on an entry-level MacBook Pro.
 - A new operator following the README unaided. The builder followed it from a fresh clone, as described above, which is not the same test.
 - A cold first build. The fresh-clone run reused Docker's layer cache from earlier builds, so the time a new machine takes to build the images is unmeasured.
 - Web's key list for a member who may not list keys. It should show Auth's refusal, not "No keys yet". This was checked by reading the code, not in a browser.

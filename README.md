@@ -22,13 +22,21 @@ You need Docker with Compose v2.
 
 3. Open <http://localhost:3000>, create an account, and create an organization.
 
-Compose starts PostgreSQL, RustFS, and Restate, then Auth, API, and Web. Before Auth and API start, three one-off steps run in order and exit:
+Compose starts PostgreSQL, RustFS, and Restate, then Auth, API, Worker, and Web. Before Auth and API start, three one-off steps run in order and exit:
 
 - `postgres-setup` creates the `auth` and `pipewhere` schemas and the two database roles.
 - `auth-migrate` applies Auth's migrations and grants API's role the columns it may read.
 - `api-migrate` applies API's migrations.
 
-Web listens on port 3000, Auth on port 3001, and API on port 3002, all on localhost only. The Worker service is not built yet.
+Once Restate and Worker are healthy, a fourth step, `worker-register`, registers Worker's handlers with Restate, so Restate picks up changed handlers. It runs on every `docker compose up` that names no services. `docker compose up` does not report it failing; `docker compose logs worker-register` shows its result.
+
+To rebuild Worker alone, name the registration step too. Compose starts a named service's dependencies, not the services that depend on it, so `docker compose up -d --build worker` alone leaves Restate with Worker's old handlers:
+
+```sh
+docker compose up -d --build worker worker-register
+```
+
+Web listens on port 3000, Auth on port 3001, and API on port 3002, all on localhost only. Worker hosts no handlers yet.
 
 To call API, open an organization in Web and create a key. Web shows the key once. The organization's id is the last part of the page's URL. Exchange the key at Auth for an access token, then name the organization in API's path:
 
@@ -55,7 +63,7 @@ pnpm --filter @pipewhere/auth test
 pnpm --filter @pipewhere/auth typecheck
 pnpm --filter @pipewhere/web typecheck
 cargo test -p pipewhere-api
-cargo clippy -p pipewhere-api --all-targets -- -D warnings
+cargo clippy --workspace --all-targets -- -D warnings
 ```
 
 Rerun API's tests whenever Auth's migrations or Better Auth's version change. API reads Better Auth's tables and verifies its tokens, so an upgrade can break API without breaking Auth.
