@@ -12,7 +12,7 @@ use crate::tokens::TokenError;
 
 /// Who is making a request, as Auth's tables say now. The token only names
 /// the subject; membership, role, and a key's standing are read per request.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Actor {
     User { id: String, role: String },
