@@ -37,10 +37,11 @@ function urlFor(database: string, user?: string, password?: string): string {
 
 export async function startInstance(): Promise<TestInstance> {
   const database = `pipewhere_test_${randomBytes(4).toString("hex")}`;
-  const server = new pg.Pool({ connectionString: adminUrl, max: 1 });
+  // Advisory locks are per database, so this connects to `postgres`, where API's
+  // tests take the same lock; see apps/api/tests/support/mod.rs.
+  const server = new pg.Pool({ connectionString: urlFor("postgres"), max: 1 });
   await server.query(`CREATE DATABASE ${database}`);
-  // setup.sql alters roles the whole server shares. API's tests run it too and
-  // take the same advisory lock; see apps/api/tests/support/mod.rs.
+  // setup.sql alters roles the whole server shares.
   await server.query("SELECT pg_advisory_lock(hashtext('infra/postgres/setup.sql'))");
   try {
     execFileSync(
