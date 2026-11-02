@@ -46,7 +46,6 @@ Asserted, not verified:
   - `provider` is checked against D8's list.
 - `apps/api/src/channels.rs` serves `GET /v1/orgs/{organization_id}/channels` and `GET /v1/orgs/{organization_id}/channels/{channel_id}`. Both take `OrgCaller`. Both queries filter on the path's organization, so another organization's channel is not found, per D6.
 - Routes and schema paths are registered in one place. `api()` in `apps/api/src/lib.rs` builds a utoipa-axum `OpenApiRouter`. Each `routes!` call serves a handler and adds its path to the schema, and `/openapi.json` serves the schema that router produced. `ApiDoc` now holds only the schema's info and the bearer scheme.
-- Tolerated: nothing stops a later route being added with `OpenApiRouter::route`, which serves it without documenting it. `the_schema_lists_every_endpoint` compares the schema with a written list, not with the routes served.
 - `apps/api/tests/channels.rs` inserts channel rows directly, since connecting a channel belongs to 00004.
 
 Choices made in the build, within the spec:
@@ -55,6 +54,7 @@ Choices made in the build, within the spec:
 - The channel's path parameter is `channel_id`, to match `organization_id`. The issue wrote `{id}`.
 - utoipa-axum is 0.2.0, not 0.3.0. 0.3.0 requires utoipa 6, and API uses utoipa 5.5.0. #14 does not need the upgrade.
 - No index on `organization_id`. An organization has a handful of channels. Organization deletion is off, so the foreign key's delete check does not run in normal use. Add one when a measured list query needs it.
+- Tolerated: nothing stops a later route being added with `OpenApiRouter::route`, which serves it without documenting it. `the_schema_lists_every_endpoint` compares the schema with a written list, not with the routes served.
 - Tolerated: a channel holds only its provider, so two channels on one provider look alike in the API. 00004 adds the account each one links.
 
 Verified:
