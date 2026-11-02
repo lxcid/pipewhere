@@ -6,8 +6,8 @@
 
 use std::path::PathBuf;
 use std::process::Stdio;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use pipewhere_api::tokens::TokenVerifier;
@@ -24,9 +24,6 @@ const API_PASSWORD: &str = "api-test";
 const SECRET: &str = "0123456789abcdef0123456789abcdef0123456789abcdef";
 
 static DATABASES: AtomicUsize = AtomicUsize::new(0);
-// setup.sql creates and alters roles, which the whole server shares, so
-// tests running in parallel would race on them.
-static SETUP: Mutex<()> = Mutex::new(());
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -83,11 +80,15 @@ impl Instance {
             .execute(&server)
             .await
             .unwrap();
-        server.close().await;
 
-        let guard = SETUP
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        // setup.sql creates and alters roles, which the whole server shares, so
+        // concurrent runs of setup.sql fail with "tuple concurrently updated".
+        // Advisory locks are per database, so every test run, in this process,
+        // another one, or Auth's tests, takes the same one in `postgres`.
+        sqlx::query("SELECT pg_advisory_lock(hashtext('infra/postgres/setup.sql'))")
+            .execute(&server)
+            .await
+            .unwrap();
         let setup = std::process::Command::new("psql")
             .args(["-q", "-v", &format!("auth_password={AUTH_PASSWORD}")])
             .args(["-v", &format!("api_password={API_PASSWORD}")])
@@ -96,7 +97,7 @@ impl Instance {
             .arg(admin_url(&database))
             .status()
             .expect("psql runs");
-        drop(guard);
+        server.close().await;
         assert!(setup.success(), "setup.sql failed");
 
         let auth_port = free_port();

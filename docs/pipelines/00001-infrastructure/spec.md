@@ -268,7 +268,7 @@ What would overturn this: the operator needing D2 verified in full before 00001 
 
 ### D11 — API runs its migrations as a one-off step; id checks arrive with the first table
 
-Binding: the first pipeline that adds a table to the `pipewhere` schema, which is expected to be 00003.
+Binding: the first pipeline that adds a table to the `pipewhere` schema, which is 00002.
 
 API's binary has a `migrate` command. Compose runs it as `api-migrate`, after `auth-migrate` completes and before API starts. That settles the boot order and the schema's owner now, so the first table needs only a migration file. The step creates sqlx's migration ledger, `pipewhere._sqlx_migrations`, and no table.
 

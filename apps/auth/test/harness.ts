@@ -37,24 +37,30 @@ function urlFor(database: string, user?: string, password?: string): string {
 
 export async function startInstance(): Promise<TestInstance> {
   const database = `pipewhere_test_${randomBytes(4).toString("hex")}`;
-  const server = new pg.Pool({ connectionString: adminUrl, max: 1 });
+  // Advisory locks are per database, so this connects to `postgres`, where API's
+  // tests take the same lock; see apps/api/tests/support/mod.rs.
+  const server = new pg.Pool({ connectionString: urlFor("postgres"), max: 1 });
   await server.query(`CREATE DATABASE ${database}`);
-  await server.end();
-
-  execFileSync(
-    "psql",
-    [
-      "-q",
-      "-v",
-      `auth_password=${authPassword}`,
-      "-v",
-      `api_password=${apiPassword}`,
-      "-f",
-      setupSql,
-      urlFor(database),
-    ],
-    { stdio: ["ignore", "ignore", "inherit"] },
-  );
+  // setup.sql alters roles the whole server shares.
+  await server.query("SELECT pg_advisory_lock(hashtext('infra/postgres/setup.sql'))");
+  try {
+    execFileSync(
+      "psql",
+      [
+        "-q",
+        "-v",
+        `auth_password=${authPassword}`,
+        "-v",
+        `api_password=${apiPassword}`,
+        "-f",
+        setupSql,
+        urlFor(database),
+      ],
+      { stdio: ["ignore", "ignore", "inherit"] },
+    );
+  } finally {
+    await server.end();
+  }
 
   const env: AuthEnv = {
     databaseUrl: urlFor(database, "pipewhere_auth", authPassword),
