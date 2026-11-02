@@ -20,12 +20,12 @@ The build runs as one small PR per issue. Each issue carries its own scope and d
 
 Choices made in the build, within the spec:
 
-- Prefixes: `chn` for `channel`, `cnt` for `content`, `pub` for `publication`, and `patm` for `publication_attempt`. They are listed before their tables exist so the collision test has real entries to compare. The operator chose `patm` over `att`, which reads as "attachment" and could not be reused by a later media table.
+- Prefixes: `chn` for `channel`, `cnt` for `content`, `pub` for `publication`, and `pubat` for `publication_attempt`. They are listed before their tables exist so the collision test has real entries to compare. The operator chose `pubat` so that an attempt's id starts like its publication's `pub`. `att` was rejected because it reads as "attachment", and a later media table could not reuse it.
 - The base32 encoding is written by hand on the `uuid` crate instead of adding a TypeID crate. A test pins it to three ids encoded by typeid-js 1.2.0, the library Auth uses.
 - A migration's version is the time its file was created, to the second, as `sqlx migrate add` writes it. That lets #14 and #15 be built in parallel without clashing. The first migration's version, `20261102000000`, carries only the date. Do not copy that pattern. Two migrations on one version fail when sqlx records the second.
 - Tolerated: nothing checks that a table actually carries its id check. A wrong prefix in a check fails at the table's first insert test. A missing check is caught only in review.
 
-Verified at `aff58e8`:
+Verified after the `pubat` rename. The lock probes ran at `aff58e8`, and neither harness has changed since.
 
 - `cargo test -p pipewhere-api`: 5 unit tests and 17 integration tests pass.
 - `pnpm --filter @pipewhere/auth test`: 20 tests pass.
