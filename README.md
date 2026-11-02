@@ -40,6 +40,8 @@ docker compose up -d --build worker worker-register
 
 Web listens on port 3000, Auth on port 3001, and API on port 3002, all on `127.0.0.1`. Worker hosts no handlers yet.
 
+API serves its OpenAPI schema at `http://localhost:3002/openapi.json`.
+
 To call API, open an organization in Web and create a key. Web shows the key once. The organization's id is the last part of the page's URL. Exchange the key at Auth for an access token, then name the organization in API's path:
 
 ```sh

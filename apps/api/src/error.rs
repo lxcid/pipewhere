@@ -2,7 +2,12 @@ use axum::Json;
 use axum::http::StatusCode;
 use axum::http::header::WWW_AUTHENTICATE;
 use axum::response::{IntoResponse, Response};
-use serde_json::json;
+use serde::Serialize;
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct ErrorBody {
+    code: &'static str,
+}
 
 #[derive(Debug)]
 pub enum ApiError {
@@ -34,7 +39,7 @@ impl IntoResponse for ApiError {
                 (StatusCode::INTERNAL_SERVER_ERROR, "internal")
             }
         };
-        let body = Json(json!({ "code": code }));
+        let body = Json(ErrorBody { code });
         if status == StatusCode::UNAUTHORIZED {
             (status, [(WWW_AUTHENTICATE, "Bearer")], body).into_response()
         } else {

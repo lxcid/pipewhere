@@ -6,8 +6,6 @@
 
 Binding: 00003–00006, and later API, MCP, CLI, and web pipelines that expose publications.
 
-Proposed: awaiting operator approval.
-
 - An **organization** is the ownership boundary, managed by Auth.
 - A **channel** links one external account to one organization, per D7.
 - **Content** is private source writing, with no channel or time.
@@ -20,8 +18,6 @@ What would overturn this: evidence that operators or clients consistently misund
 
 ### D2 — Each publication owns its sent content
 
-Proposed: awaiting operator approval.
-
 A publication copies its plain-text body when created. A request may supply text directly, creating source content in the same transaction, or refer to existing content. `content_id` groups publications made from the same writing. Editing content never edits a publication. Editing a publication changes only that channel's copy. After `published`, its body, remote id, and remote URL cannot change.
 
 This makes the scheduled and sent record readable without reconstructing old content versions. A shared body with per-channel overrides would make edits and review harder to reason about. Media snapshots are decided when media is in scope.
@@ -29,8 +25,6 @@ This makes the scheduled and sent record readable without reconstructing old con
 ### D3 — States preserve the publish boundary
 
 Binding: 00003, 00004, 00006, and later pipelines that change a publication's state.
-
-Proposed: awaiting operator approval.
 
 | State | Meaning |
 | --- | --- |
@@ -65,8 +59,6 @@ What would overturn this: a provider whose commit cannot be isolated as one step
 
 Binding: 00004 and later pipelines that add a provider adapter or another call that creates public content.
 
-Proposed: awaiting operator approval.
-
 A timeout after sending, a lost response, or an unproven server failure becomes `outcome_unknown`. Only a result known to have done nothing can be retried automatically. Recovery after a restart must not replay a provider commit whose result may already be public. A provider-specific idempotency handle may add protection, but cannot justify treating an unverified outcome as failure.
 
 The worker records the attempt and its reason so the operator can investigate without raw server logs. The adapter pipeline must define and test its commit guard, including a crash after provider acceptance but before the result is durable. A later pipeline violates this decision if it automatically commits again after an ambiguous result.
@@ -79,8 +71,6 @@ What would overturn this: live tests showing that every supported provider relia
 
 Binding: 00003 and later pipelines that add a client creating or retrying publications.
 
-Proposed: awaiting operator approval.
-
 Create and retry requests require an `Idempotency-Key` with at least 128 random bits. The key is unique within an organization across actors and replacement API keys. The same key and request return the stored result; the same key with different input is rejected. Concurrent use of one key produces one operation. The key, request hash, result, and publication changes commit together.
 
 Successful keys have no time-based expiry while their publication history exists. Before returning a stored result, API checks the current caller's authorization. A client retry with a new key violates this decision because it can create a second publication. An endpoint violates it if it creates or retries a publication without an `Idempotency-Key`, or commits the key separately from the publication change. A deliberate new request with a new key may publish identical text.
@@ -90,8 +80,6 @@ What would overturn this: client-assigned publication ids that make create reque
 ### D6 — Organizations bound every publication request
 
 Binding: 00003–00006 and later pipelines that add an organization-scoped API endpoint or business row.
-
-Proposed: awaiting operator approval.
 
 An operator working alone uses an organization with one member; a team shares one with several. Auth owns that membership. One user may belong to several organizations, such as a personal one and a company one. Each holds its own channels, content, and publications, and nothing is shared between them. Every business row belongs to an organization directly or through its parent. Every request names one organization, and API checks the caller against it before reading or writing business records, as infrastructure D2 requires. A resource from another organization appears not found.
 
