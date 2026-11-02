@@ -6,7 +6,7 @@ pub const PREFIXES: &[(&str, &str)] = &[
     ("channel", "chn"),
     ("content", "cnt"),
     ("publication", "pub"),
-    ("publication_attempt", "att"),
+    ("publication_attempt", "patm"),
 ];
 
 const CROCKFORD: &[u8; 32] = b"0123456789abcdefghjkmnpqrstvwxyz";
