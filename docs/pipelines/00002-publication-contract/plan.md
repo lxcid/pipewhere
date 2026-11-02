@@ -45,7 +45,8 @@ Asserted, not verified:
   - `organization_id` references `auth.organization` without a cascade, per 00001 D2.
   - `provider` is checked against D8's list.
 - `apps/api/src/channels.rs` serves `GET /v1/orgs/{organization_id}/channels` and `GET /v1/orgs/{organization_id}/channels/{channel_id}`. Both take `OrgCaller`. Both queries filter on the path's organization, so another organization's channel is not found, per D6.
-- Routes and schema paths are registered in one place. `api()` in `apps/api/src/lib.rs` builds a utoipa-axum `OpenApiRouter`. Each `routes!` call serves a handler and adds its path to the schema, and `/openapi.json` serves the schema that router produced. `openapi()` returns the same schema for tests. `ApiDoc` now holds only the schema's info and the bearer scheme.
+- Routes and schema paths are registered in one place. `api()` in `apps/api/src/lib.rs` builds a utoipa-axum `OpenApiRouter`. Each `routes!` call serves a handler and adds its path to the schema, and `/openapi.json` serves the schema that router produced. `ApiDoc` now holds only the schema's info and the bearer scheme.
+- Tolerated: nothing stops a later route being added with `OpenApiRouter::route`, which serves it without documenting it. `the_schema_lists_every_endpoint` compares the schema with a written list, not with the routes served.
 - `apps/api/tests/channels.rs` inserts channel rows directly, since connecting a channel belongs to 00004.
 
 Choices made in the build, within the spec:
@@ -64,7 +65,7 @@ Verified:
 - With the single-channel query's organization filter removed, `another_organizations_channel_is_not_found` fails. Another organization's channel then answers 200.
 - The table refuses an id with another table's prefix (`channel_id_check`), an unlisted provider (`channel_provider_check`), and an organization that does not exist (`channel_organization_id_fkey`). Deleting an organization that has a channel fails on `channel_organization_id_fkey`.
 - `api serve`, run by hand against the test server, served `/openapi.json` with all four paths. It answered an unauthenticated channel list with 401.
-- A throwaway test printed `openapi()`'s `Provider` schema as a string enum of `mastodon` and `threads`.
+- A throwaway test printed the `Provider` schema as a string enum of `mastodon` and `threads`.
 
 Asserted, not verified:
 

@@ -111,6 +111,8 @@ A channel's `provider` is one of a fixed list of names. The list starts with `ma
 
 This lets a client read from the schema which providers exist. The database also refuses a provider API cannot read back.
 
+The cost falls on clients that validate the enum strictly, such as one generated into a Rust enum or a zod schema. Each new provider adds a value to the enum in responses. Until such a client is regenerated, it fails to read an organization's whole channel list once one channel uses the new provider, not only that channel.
+
 Rejected alternatives:
 
 - **Free text.** The schema would not say which values exist, and a misspelt provider would be stored.
