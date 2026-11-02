@@ -39,22 +39,27 @@ export async function startInstance(): Promise<TestInstance> {
   const database = `pipewhere_test_${randomBytes(4).toString("hex")}`;
   const server = new pg.Pool({ connectionString: adminUrl, max: 1 });
   await server.query(`CREATE DATABASE ${database}`);
-  await server.end();
-
-  execFileSync(
-    "psql",
-    [
-      "-q",
-      "-v",
-      `auth_password=${authPassword}`,
-      "-v",
-      `api_password=${apiPassword}`,
-      "-f",
-      setupSql,
-      urlFor(database),
-    ],
-    { stdio: ["ignore", "ignore", "inherit"] },
-  );
+  // setup.sql alters roles the whole server shares. API's tests run it too and
+  // take the same advisory lock; see apps/api/tests/support/mod.rs.
+  await server.query("SELECT pg_advisory_lock(hashtext('infra/postgres/setup.sql'))");
+  try {
+    execFileSync(
+      "psql",
+      [
+        "-q",
+        "-v",
+        `auth_password=${authPassword}`,
+        "-v",
+        `api_password=${apiPassword}`,
+        "-f",
+        setupSql,
+        urlFor(database),
+      ],
+      { stdio: ["ignore", "ignore", "inherit"] },
+    );
+  } finally {
+    await server.end();
+  }
 
   const env: AuthEnv = {
     databaseUrl: urlFor(database, "pipewhere_auth", authPassword),
