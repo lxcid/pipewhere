@@ -366,8 +366,6 @@ What would overturn this: registration moving out of Compose, or a service other
 
 ### D16 — Restate keeps its default partition count and memory settings
 
-Proposed: awaiting operator approval.
-
 Compose sets no Restate tuning. Restate 1.7.13 provisions 24 partitions and sizes RocksDB's memory at 2 GiB in total by default.
 
 Restate is most of the stack's memory. The plan's slice 4 has the measurements. Idle, on the builder's machine:

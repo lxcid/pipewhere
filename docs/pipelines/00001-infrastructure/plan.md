@@ -222,13 +222,14 @@ PostgreSQL, Restate, and Worker each run a healthcheck every 2 seconds. Their id
 
 Images: Auth 1.03 GB, Web 429 MB, API 163 MB, and Worker 157 MB. The one-off steps reuse these images.
 
+The operator judged the intent's MacBook test passed on 2026-11-02, from the footprint above.
+
 ## Not yet verified
 
 - D2 checks that need a gated action. D10 moves them to the pipeline that adds the first one:
   - a member whose role does not permit an action, and a key whose permissions do not, reported as forbidden
   - a role change, or a key permission change, affecting what the caller may do on the next request
 - D5's object-store checks. RustFS runs but nothing uses it yet.
-- The intent's MacBook test. The numbers above come from a 14-core machine with 48 GB. The stack idles at 1.1 to 1.6 GiB and a few percent of one core. Whether that gets in the way of development work is for the operator to judge on an entry-level MacBook Pro.
 - The footprint under load. Every figure above is idle, and nothing yet runs a workflow.
 - A new operator following the README unaided. The builder followed it from a fresh clone, as described above, which is not the same test.
 - A cold first build on a slower machine or network. The 83 seconds above come from this machine, with the infrastructure images already pulled.
