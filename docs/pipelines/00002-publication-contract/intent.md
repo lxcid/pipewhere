@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 ---
 
 # Intent 00002 — Publication contract
