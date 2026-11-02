@@ -7,7 +7,7 @@ The build runs in slices. Each slice leaves the stack running from one command.
 1. **Infrastructure and Auth, with a first Web UI.** Built.
 2. **API.** Built. Local token verification, D2's per-request organization check, D9's first action, and D11's migration step. D10 defers forbidden, and D11 defers API's id generator, check constraint, and prefix test.
 3. **Worker.** Built. A Restate endpoint with no handlers, registered by every full `docker compose up`, per D14. D15 makes a failed registration stop API once Worker has a handler. The operator chose to add Worker's first handler, and its database connection, with the first workflow.
-4. **Footprint and README pass.** Built. The full seven-process stack measured, a cold build timed, and the README walked from a fresh clone. D16 keeps Restate's defaults.
+4. **Footprint and README pass.** Built. The full seven-process stack measured, a build from an empty cache timed, and the README walked from a fresh clone. D16 keeps Restate's defaults.
 
 ## Slice 1 — what was built
 
@@ -193,11 +193,13 @@ Results:
 - Auth and API answered `/health`, and Web answered 200 on `127.0.0.1:3000`.
 - A sign-up, an organization, and a key were created through Auth with curl, sending Web's origin, as Web's pages do. Then the README's own commands exchanged the key and read the organization through API.
 
-The walk was not done in a browser. Another project's dev server was listening on `[::1]:3000`. Compose publishes Web on `127.0.0.1` only, so `localhost:3000` reached that server and Compose did not warn. The README now says so.
+The walk was not done in a browser. Another project's dev server was listening on `[::1]:3000`. Compose publishes Web on `127.0.0.1` only, so `localhost:3000` reached that server and Compose did not warn. The README now says so. Web and Auth are unchanged since `0c27734`, the head last walked in Chrome: `git diff 0c27734 de81647 -- apps/web apps/auth` is empty.
 
 #### Footprint
 
 `docker stats --no-stream`, which reports each container's memory less its inactive file cache. CPU is a percentage of one core. Every figure is idle, with no requests after the walk.
+
+These figures exclude Docker Desktop's own cost on the host. In one sample, with the development stack and two other projects' containers running, the containers used 2.03 GiB. The VM process used 2.41 GiB, and Docker Desktop's other processes 0.51 GiB. So the host paid about 0.9 GiB more than the containers. Docker Desktop's cost with only this stack running is unmeasured.
 
 The fresh stack, sampled every 5 minutes for an hour after the walk:
 
@@ -214,9 +216,9 @@ The fresh stack, sampled every 5 minutes for an hour after the walk:
 
 The development stack, before it was stopped, after 23 to 47 hours up and some days of use: Restate 1.15 GiB, RustFS 276 MiB, Auth 61 MiB, Web 48 MiB, PostgreSQL 29 MiB, Worker 4.0 MiB, API 2.7 MiB. That is 1.57 GiB. Restate averaged 3.3% CPU over six samples 5 seconds apart, and the rest together 2%.
 
-Restate's memory is nearly all heap. `memory.stat` in the fresh stack's container showed 785 MiB anonymous and 1 MiB file-backed. It varies between containers with the same settings, for a reason not found. Throwaway `restatedev/restate:1.7.13` containers with the stack's settings, three started together, used 252, 256, and 498 MiB after 16 minutes. The partition and RocksDB measurements behind D16 are recorded there.
+Restate's memory is nearly all heap. `memory.stat` in the fresh stack's container showed 785 MiB anonymous and 1 MiB file-backed. It varies between containers with the same settings, for a reason not found. Throwaway `restatedev/restate:1.7.13` containers with the stack's settings, three started together, used 252, 256, and 498 MiB after 16 minutes. In slice 3, one used 804 MiB 15 seconds after starting. D16 records the partition and RocksDB measurements.
 
-Worker's and PostgreSQL's idle CPU is their healthchecks, which run every 2 seconds. API has none and shows 0%.
+PostgreSQL, Restate, and Worker each run a healthcheck every 2 seconds. Their idle CPU is probably mostly those checks, since API has none and shows 0%. This is inferred, not measured.
 
 Images: Auth 1.03 GB, Web 429 MB, API 163 MB, and Worker 157 MB. The one-off steps reuse these images.
 
