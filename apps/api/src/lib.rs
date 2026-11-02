@@ -38,12 +38,9 @@ pub async fn migrate(db: &PgPool) -> Result<(), sqlx::migrate::MigrateError> {
     sqlx::migrate!("./migrations").run(db).await
 }
 
-pub fn openapi() -> utoipa::openapi::OpenApi {
-    api().into_openapi()
-}
-
-// Each handler is served and documented by the one `routes!` call, so the
-// schema cannot miss a route.
+// A handler registered with `routes!` is served and documented by that one
+// call. `OpenApiRouter::route` serves without documenting, so routes here go
+// through `routes!`.
 fn api() -> OpenApiRouter<AppState> {
     OpenApiRouter::with_openapi(ApiDoc::openapi())
         .routes(routes!(health))
@@ -129,7 +126,7 @@ mod tests {
 
     #[test]
     fn the_schema_lists_every_endpoint() {
-        let schema = serde_json::to_value(openapi()).unwrap();
+        let schema = serde_json::to_value(api().into_openapi()).unwrap();
         let mut paths: Vec<_> = schema["paths"].as_object().unwrap().keys().collect();
         paths.sort();
         assert_eq!(
