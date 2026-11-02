@@ -102,3 +102,18 @@ Organizations that link the same account share that provider's per-account limit
 A later pipeline violates this decision if connecting a channel checks or reveals another organization's links.
 
 What would overturn this: evidence that accounts shared across organizations cause provider-limit failures or duplicate posts that operators cannot diagnose from within their own organization.
+
+### D8 — A channel's provider comes from a fixed list
+
+Proposed: awaiting operator approval.
+
+A channel's `provider` is one of a fixed list of names. The list starts with `mastodon` and `threads`, the first providers in the intent's constraints. The API schema publishes the list as a string enum, and the table checks the column against the same list. Adding a provider takes a migration that widens the check and a new variant in API's `Provider` enum.
+
+This lets a client read from the schema which providers exist. The database also refuses a provider API cannot read back.
+
+Rejected alternatives:
+
+- **Free text.** The schema would not say which values exist, and a misspelt provider would be stored.
+- **A PostgreSQL enum type.** PostgreSQL cannot drop a value from an enum type without rebuilding it. A value added inside a transaction cannot be used until that transaction commits. A text column with a check changes with one `ALTER TABLE`.
+
+A provider can be listed before its adapter exists. Until 00004 and 00008 build theirs, a Mastodon or Threads channel can be stored and read, but not published to.
