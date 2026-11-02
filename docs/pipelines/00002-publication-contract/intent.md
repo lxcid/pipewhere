@@ -22,11 +22,11 @@ The contract is ready for implementation when:
 - The published API contract guarantees that repeating a client request returns the first result instead of creating another publication. It forbids an automatic second provider commit after an ambiguous result.
 - Every publication belongs to one organization. A single operator can use an organization without a team setup step.
 
-This pipeline defines the contract. Later pipelines implement scheduling, provider adapters, and interfaces against it.
+This pipeline defines the contract, then builds its tables and API endpoints, with the schema generated from API's code. Later pipelines implement scheduling, provider adapters, and other interfaces against it.
 
 ## Affected users and systems
 
-Operators reading publication outcomes; API clients retrying requests; the REST API, database, and worker that will implement the contract; later MCP, CLI, and web clients that will use its vocabulary.
+Operators reading publication outcomes; API clients retrying requests; the REST API and database that implement the contract; the worker that will run it; later MCP, CLI, and web clients that will use its vocabulary.
 
 ## Constraints
 
