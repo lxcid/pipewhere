@@ -22,7 +22,7 @@ Choices made in the build, within the spec:
 
 - Prefixes: `chn` for `channel`, `cnt` for `content`, `pub` for `publication`, and `patm` for `publication_attempt`. They are listed before their tables exist so the collision test has real entries to compare. The operator chose `patm` over `att`, which reads as "attachment" and could not be reused by a later media table.
 - The base32 encoding is written by hand on the `uuid` crate instead of adding a TypeID crate. A test pins it to three ids encoded by typeid-js 1.2.0, the library Auth uses.
-- Migration versions are timestamps, so #14 and #15 can be built in parallel without clashing.
+- A migration's version is the time its file was created, to the second, as `sqlx migrate add` writes it. That lets #14 and #15 be built in parallel without clashing. The first migration's version, `20261102000000`, carries only the date. Do not copy that pattern. Two migrations on one version fail when sqlx records the second.
 - Tolerated: nothing checks that a table actually carries its id check. A wrong prefix in a check fails at the table's first insert test. A missing check is caught only in review.
 
 Verified at `aff58e8`:
