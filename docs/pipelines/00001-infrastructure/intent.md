@@ -1,5 +1,5 @@
 ---
-status: in-progress
+status: done
 ---
 
 # Intent 00001 — Self-hostable infrastructure foundation
