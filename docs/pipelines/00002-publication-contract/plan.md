@@ -63,7 +63,8 @@ Verified:
 - `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all --check`: clean.
 - With the single-channel query's organization filter removed, `another_organizations_channel_is_not_found` fails. Another organization's channel then answers 200.
 - The table refuses an id with another table's prefix (`channel_id_check`), an unlisted provider (`channel_provider_check`), and an organization that does not exist (`channel_organization_id_fkey`). Deleting an organization that has a channel fails on `channel_organization_id_fkey`.
-- `api serve`, run by hand against the test server, served `/openapi.json` with all four paths, and `provider` as the enum `mastodon`, `threads`. It answered an unauthenticated channel list with 401.
+- `api serve`, run by hand against the test server, served `/openapi.json` with all four paths. It answered an unauthenticated channel list with 401.
+- A throwaway test printed `openapi()`'s `Provider` schema as a string enum of `mastodon` and `threads`.
 
 Asserted, not verified:
 
