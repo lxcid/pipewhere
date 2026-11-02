@@ -63,7 +63,7 @@ struct Health {
     ok: bool,
 }
 
-#[utoipa::path(get, path = "/health", responses((status = 200, body = Health)))]
+#[utoipa::path(get, path = "/health", responses((status = 200, body = Health, description = "API is up")))]
 async fn health() -> Json<Health> {
     Json(Health { ok: true })
 }
@@ -82,7 +82,7 @@ struct Organization {
     params(("organization_id" = String, Path)),
     security(("bearer" = [])),
     responses(
-        (status = 200, body = Organization),
+        (status = 200, body = Organization, description = "The organization and the caller"),
         (status = 401, body = ErrorBody, description = "No valid access token"),
         (status = 404, body = ErrorBody, description = "No such organization, or the caller is not in it"),
         (status = 500, body = ErrorBody, description = "A database query failed"),
