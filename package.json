@@ -3,9 +3,11 @@
   "private": true,
   "scripts": {
     "fmt": "oxfmt",
-    "fmt:check": "oxfmt --check"
+    "fmt:check": "oxfmt --check",
+    "api:lint": "redocly lint apps/api/openapi.yaml"
   },
   "devDependencies": {
+    "@redocly/cli": "2.64.1",
     "oxfmt": "0.68.0"
   },
   "packageManager": "pnpm@11.27.1"
