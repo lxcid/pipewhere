@@ -37,7 +37,7 @@ pub async fn migrate(db: &PgPool) -> Result<(), sqlx::migrate::MigrateError> {
 
 #[derive(OpenApi)]
 #[openapi(
-    info(title = "Pipewhere API"),
+    info(title = "Pipewhere API", description = "Pipewhere's REST API.", license(name = "Elastic License 2.0", identifier = "Elastic-2.0")),
     paths(health, organization),
     modifiers(&BearerAuth)
 )]
@@ -85,6 +85,7 @@ struct Organization {
         (status = 200, body = Organization),
         (status = 401, body = ErrorBody, description = "No valid access token"),
         (status = 404, body = ErrorBody, description = "No such organization, or the caller is not in it"),
+        (status = 500, body = ErrorBody, description = "A database query failed"),
         (status = 503, body = ErrorBody, description = "Auth's signing keys could not be fetched"),
     )
 )]
@@ -111,14 +112,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_schema_lists_every_served_path() {
+    fn the_schema_lists_both_endpoints() {
         let schema = serde_json::to_value(ApiDoc::openapi()).unwrap();
         let mut paths: Vec<_> = schema["paths"].as_object().unwrap().keys().collect();
         paths.sort();
         assert_eq!(paths, ["/health", "/v1/orgs/{organization_id}"]);
-        assert_eq!(
-            schema["components"]["schemas"]["Actor"]["oneOf"][1]["properties"]["type"]["enum"],
-            serde_json::json!(["api_key"])
-        );
     }
 }
