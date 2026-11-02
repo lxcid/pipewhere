@@ -66,10 +66,7 @@ pnpm --filter @pipewhere/auth typecheck
 pnpm --filter @pipewhere/web typecheck
 cargo test -p pipewhere-api
 cargo clippy --workspace --all-targets -- -D warnings
-pnpm api:lint # checks apps/api/openapi.yaml
 ```
-
-API's contract is `apps/api/openapi.yaml`. Change it in the same change as the endpoint it describes.
 
 Rerun API's tests whenever Auth's migrations or Better Auth's version change. API reads Better Auth's tables and verifies its tokens, so an upgrade can break API without breaking Auth.
 

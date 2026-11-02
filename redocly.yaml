@@ -1,7 +1,0 @@
-extends:
-  - recommended-strict
-rules:
-  # /health has no failure response: API answers it whenever it runs.
-  operation-4xx-response: off
-  # The local Compose stack is the only deployment so far.
-  no-server-example.com: off
