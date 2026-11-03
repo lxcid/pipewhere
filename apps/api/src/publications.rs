@@ -368,6 +368,90 @@ pub async fn get_publication(
     .ok_or(ApiError::NotFound)
 }
 
+/// How one attempt ended. Each value means what the publication state of the
+/// same name means, for that attempt alone, per 00002 D3.
+#[derive(Serialize, ToSchema, sqlx::Type)]
+#[serde(rename_all = "snake_case")]
+#[sqlx(type_name = "text", rename_all = "snake_case")]
+pub enum AttemptResult {
+    /// The provider confirmed a remote post.
+    Published,
+    /// The provider definitely did not publish, or the attempt stopped before
+    /// its commit.
+    Failed,
+    /// A remote post may exist.
+    OutcomeUnknown,
+}
+
+/// One execution of a publication, per 00002 D1. The publication's state says
+/// where it is now. An attempt's result says only how that execution ended.
+#[derive(Serialize, ToSchema, sqlx::FromRow)]
+pub struct PublicationAttempt {
+    id: String,
+    publication_id: String,
+    /// Null while the attempt runs.
+    #[schema(required = true)]
+    result: Option<AttemptResult>,
+    /// Why the attempt failed or its outcome is unknown, written for a person.
+    /// Always set when `result` is `failed` or `outcome_unknown`.
+    #[schema(required = true)]
+    reason: Option<String>,
+    started_at: DateTime<Utc>,
+    /// Null while the attempt runs.
+    #[schema(required = true)]
+    ended_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct PublicationAttempts {
+    attempts: Vec<PublicationAttempt>,
+}
+
+#[utoipa::path(
+    get,
+    path = "/v1/orgs/{organization_id}/publications/{publication_id}/attempts",
+    params(("organization_id" = String, Path), ("publication_id" = String, Path)),
+    security(("bearer" = [])),
+    responses(
+        (status = 200, body = PublicationAttempts, description = "The publication's attempts, newest first. Empty until its first run"),
+        (status = 401, body = ErrorBody, description = "No valid access token"),
+        (status = 404, body = ErrorBody, description = "No such publication in the organization, or the caller is not in it"),
+        (status = 500, body = ErrorBody, description = "A database query failed"),
+        (status = 503, body = ErrorBody, description = "Auth's signing keys could not be fetched"),
+    )
+)]
+pub async fn list_publication_attempts(
+    State(state): State<AppState>,
+    caller: OrgCaller,
+    Path((_, publication_id)): Path<(String, String)>,
+) -> Result<Json<PublicationAttempts>, ApiError> {
+    if holds_nul(&publication_id) {
+        return Err(ApiError::NotFound);
+    }
+    let organization_id = &caller.organization_id;
+    let attempts: Vec<PublicationAttempt> = sqlx::query_as(
+        "SELECT a.id, a.publication_id, a.result, a.reason, a.started_at, a.ended_at
+         FROM pipewhere.publication_attempt a
+         JOIN pipewhere.publication p ON p.id = a.publication_id
+         WHERE a.publication_id = $1 AND p.organization_id = $2
+         ORDER BY a.id DESC",
+    )
+    .bind(&publication_id)
+    .bind(organization_id)
+    .fetch_all(&state.db)
+    .await?;
+    // A publication that has not run yet has no attempts, and is still found.
+    if attempts.is_empty() {
+        sqlx::query("SELECT 1 FROM pipewhere.publication WHERE id = $1 AND organization_id = $2")
+            .bind(&publication_id)
+            .bind(organization_id)
+            .fetch_optional(&state.db)
+            .await?
+            .ok_or(ApiError::NotFound)?;
+    }
+    Ok(Json(PublicationAttempts { attempts }))
+}
+
 // A conditional update that changed nothing found no publication, or found
 // one in a state the action does not allow.
 async fn refusal(db: &PgPool, organization_id: &str, publication_id: &str) -> ApiError {
