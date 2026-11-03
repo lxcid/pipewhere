@@ -208,5 +208,30 @@ mod tests {
             schemas["Publication"]["properties"]["planned_at"]["format"],
             "date-time"
         );
+        assert_eq!(
+            schemas["Publication"]["properties"]["deadline"]["format"],
+            "date-time"
+        );
+        for (schema, required) in [
+            ("Publication", true),
+            ("PublicationInput", false),
+            ("PublicationEdit", false),
+        ] {
+            let tolerance = &schemas[schema]["properties"]["tolerance_seconds"];
+            assert_eq!(
+                (&tolerance["minimum"], &tolerance["maximum"]),
+                (&serde_json::json!(300), &serde_json::json!(86400)),
+                "{schema}"
+            );
+            let listed = |field: &str| {
+                schemas[schema]["required"]
+                    .as_array()
+                    .is_some_and(|fields| fields.contains(&serde_json::json!(field)))
+            };
+            assert_eq!(listed("tolerance_seconds"), required, "{schema}");
+            if schema == "Publication" {
+                assert!(listed("deadline"));
+            }
+        }
     }
 }

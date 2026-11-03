@@ -32,8 +32,8 @@ async fn insert_publication(db: &PgPool, organization_id: &str) -> String {
     .unwrap();
     sqlx::query(
         "INSERT INTO pipewhere.publication
-             (id, organization_id, channel_id, content_id, body, state, planned_at)
-         VALUES ($1, $2, $3, $4, 'Copy', 'failed', '2026-12-01T09:00:00Z')",
+             (id, organization_id, channel_id, content_id, body, state, planned_at, tolerance_seconds)
+         VALUES ($1, $2, $3, $4, 'Copy', 'failed', '2026-12-01T09:00:00Z', 1800)",
     )
     .bind(&id)
     .bind(organization_id)
