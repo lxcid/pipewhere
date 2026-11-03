@@ -15,6 +15,7 @@ use crate::tokens::TokenVerifier;
 
 pub mod access;
 pub mod channels;
+pub mod contents;
 pub mod error;
 pub mod ids;
 pub mod tokens;
@@ -47,6 +48,8 @@ fn api() -> OpenApiRouter<AppState> {
         .routes(routes!(organization))
         .routes(routes!(channels::list_channels))
         .routes(routes!(channels::get_channel))
+        .routes(routes!(contents::create_content))
+        .routes(routes!(contents::get_content, contents::update_content))
 }
 
 #[derive(OpenApi)]
@@ -136,6 +139,8 @@ mod tests {
                 "/v1/orgs/{organization_id}",
                 "/v1/orgs/{organization_id}/channels",
                 "/v1/orgs/{organization_id}/channels/{channel_id}",
+                "/v1/orgs/{organization_id}/contents",
+                "/v1/orgs/{organization_id}/contents/{content_id}",
             ]
         );
     }
