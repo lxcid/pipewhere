@@ -8,7 +8,7 @@ The build runs as one small PR per issue. Each issue carries its own scope and d
 2. **#14 Channels table and read endpoints.** Built in PR #20.
 3. **#15 Content create, read, and edit.** Built in PR #21.
 4. **#16 Create and read publications.** Built in PR #22.
-5. **#17 Edit, cancel, retry, and resolve publications.** Not started. Needs #16.
+5. **#17 Edit, cancel, retry, and resolve publications.** Built in PR #23.
 6. **#18 Publication attempts table and read endpoint.** Not started. Needs #16.
 
 ## #13 — what was built
@@ -168,4 +168,59 @@ Not isolated by a test:
 Asserted, not verified:
 
 - The API Docker image embeds the new migration. The image was not built, as for #13–#15.
+- `api serve` was not run by hand. The schema was read from the same router through the test harness.
+
+## #17 — what was built
+
+- The migration `20261103083748_publication_remote.sql` adds `remote_id` and `remote_url` to `pipewhere.publication`. `publication_remote_id_check` requires `remote_id` exactly when the state is `published`, per D18.
+- `apps/api/src/publications.rs` serves four operations, per D15. All take `OrgCaller`, and every query filters on the path's organization, per D6:
+  - `PATCH /v1/orgs/{organization_id}/publications/{publication_id}` edits `body`, `planned_at`, or both, in `scheduled` or `failed`.
+  - `POST .../{publication_id}/cancel` cancels from `scheduled` or `preparing`.
+  - `POST .../{publication_id}/retry` requires `Idempotency-Key`, and moves `failed` to `scheduled`, per D17.
+  - `POST .../{publication_id}/resolve` moves `outcome_unknown` to `published`, with a remote id and an optional address, or to `failed`, per D18.
+- Each action is one conditional `UPDATE` on the states D3 allows. When it changes nothing, `refusal` looks the publication up: missing answers 404, and present answers 409 `state_conflict`, a new `ErrorCode`, per D16.
+- Every publication response gains `remote_id` and `remote_url`, null until `published`.
+- Create's year check on `planned_at` moved to `checked_planned_at`, which create, edit, and retry share. The publication column list is the `columns!` macro, since every query returning a publication now names nine columns.
+- The schema publishes the resolution's `outcome` as the string enum `Outcome`, `published` or `failed`.
+
+Choices made in the build, within the spec:
+
+- The tests are in `tests/publication_transitions.rs`, apart from #16's `tests/publications.rs`. They insert publications in each state directly, because only the worker moves a publication into `preparing`, `publishing`, or `outcome_unknown`.
+- Tolerated: nothing checks that `remote_url` is set only with `remote_id`. Resolve is the only writer, and it sets both in one update.
+- No index added. Every action goes by the publication's primary key.
+
+Verified:
+
+- `cargo test -p pipewhere-api`: 6 unit tests and 46 integration tests pass, 9 of them in `tests/publication_transitions.rs`.
+- `pnpm --filter @pipewhere/auth test`: 20 tests pass.
+- `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all --check`: clean.
+- `tests/publications.rs` and `tests/publication_transitions.rs` passed 5 runs in a row.
+- `each_action_is_allowed_only_in_the_states_d3_lists` runs all five actions (edit, cancel, retry, and resolve to each outcome) against all seven states. Each allowed pair reaches D16's target state. Every other pair answers 409 `state_conflict` and leaves the publication unchanged.
+- `resolving_records_what_a_person_found` refuses every action on a `published` publication, per D2. It refuses `javascript:alert(1)` and an address that is not a URL, and it stores `HTTPS://Mastodon.Example/@me/109` as `https://mastodon.example/@me/109`.
+- `a_repeated_retry_returns_the_publication_without_retrying_again` retries once. It sets the publication back to `failed`, then repeats the request: the answer is `failed`, and the publication stays `failed`. The same key with another time, with no time, on another publication, or after a create, answers 422 `idempotency_key_reused`. A retry refused with 409 or 404 leaves its key unused.
+- `concurrent_requests_change_a_publication_once` sends 20 retries with one key at once, and all answer 200 with the same publication. It sends 20 retries with different keys, and 20 cancels: each time, one answers 200 and 19 answer 409.
+- `an_action_waits_for_another_transaction_changing_the_publication` holds an open transaction that moves the publication on, as the worker's claim would. An edit of a `scheduled` publication, and a cancel of a `preparing` one, still wait after 500 ms. When the transaction commits, they answer 409. When it rolls back, they succeed.
+- `a_retry_waits_for_another_transaction_holding_its_key` does the same for a held key. On commit the retry answers 422 `idempotency_key_reused`. On rollback, it retries.
+- A throwaway test fetched `/openapi.json` from the router the harness serves. It listed `patch` on the publication, `post` on `/cancel`, `/retry`, and `/resolve`, the required `Idempotency-Key` header on retry, and 409 on all four. `remote_id` and `remote_url` were required and nullable.
+- Each of these changes, made by a script and reverted, fails a test:
+  - The organization filter removed from the edit, cancel, retry, or resolve update, or from `refusal`'s lookup: `another_organizations_publication_is_not_found`.
+  - The organization filter removed from the retry's stored key lookup: `a_repeated_retry_returns_the_publication_without_retrying_again`.
+  - Each state guard removed: `each_action_is_allowed_only_in_the_states_d3_lists`, among others. Edit widened to `preparing`, or cancel widened to `publishing`: the same test, and `an_action_waits_for_another_transaction_changing_the_publication`.
+  - The retry's hash comparison skipped: `a_repeated_retry_returns_the_publication_without_retrying_again` and `a_retry_waits_for_another_transaction_holding_its_key`.
+  - The publication id, or the planned time, dropped from the retry's hash: `a_repeated_retry_returns_the_publication_without_retrying_again`.
+  - The key claimed by checking for it first and then inserting without `ON CONFLICT`: `a_retry_waits_for_another_transaction_holding_its_key` and `concurrent_requests_change_a_publication_once`.
+  - The key never claimed: five tests.
+  - The U+0000 check on the publication id removed from any of the four: `another_organizations_publication_is_not_found`, with 500 `internal`.
+  - D10's text check removed from the edit, D12's year check removed from the edit or the retry, or `deny_unknown_fields` removed from `PublicationEdit`: the edit's or retry's test.
+  - The URL scheme check removed, or a blank or U+0000 remote id allowed: `resolving_records_what_a_person_found`.
+- `a_published_publication_names_its_post` shows the table refusing `published` without a remote id, and a remote id on `failed`.
+
+Not isolated by a test:
+
+- The organization filter on the retry's stored publication read. As in create, the stored key's lookup already filters on the organization.
+- `retry_publication` as the hash's first element. Create's hash has five elements and retry's three, so the two never match without the names. The name keeps them apart if the shapes ever line up.
+
+Asserted, not verified:
+
+- The API Docker image embeds the new migration. The image was not built, as for #13–#16.
 - `api serve` was not run by hand. The schema was read from the same router through the test harness.
