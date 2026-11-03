@@ -52,7 +52,7 @@ Choices made in the build, within the spec:
 
 - The list answers `{ "channels": [...] }`, not a bare array, so a later cursor can be added without breaking clients. Channels are ordered by id, which is creation order to the millisecond, per 00001 D6.
 - The channel's path parameter is `channel_id`, to match `organization_id`. The issue wrote `{id}`.
-- utoipa-axum is 0.2.0, not 0.3.0. 0.3.0 requires utoipa 6, and API uses utoipa 5.5.0. #14 does not need the upgrade.
+- API moves from utoipa 5.5.0 to 6.0.0, because utoipa-axum 0.3.0 requires it. The upgrade needed no code change, and it drops `paste` from `Cargo.lock`.
 - No index on `organization_id`. An organization has a handful of channels. Organization deletion is off, so the foreign key's delete check does not run in normal use. Add one when a measured list query needs it.
 - Tolerated: nothing stops a later route being added with `OpenApiRouter::route`, which serves it without documenting it. `the_schema_lists_every_endpoint` compares the schema with a written list, not with the routes served.
 - Tolerated: a channel holds only its provider, so two channels on one provider look alike in the API. 00004 adds the account each one links.
@@ -65,6 +65,7 @@ Verified:
 - With the single-channel query's organization filter removed, `another_organizations_channel_is_not_found` fails. Another organization's channel then answers 200.
 - The table refuses an id with another table's prefix (`channel_id_check`), an unlisted provider (`channel_provider_check`), and an organization that does not exist (`channel_organization_id_fkey`). Deleting an organization that has a channel fails on `channel_organization_id_fkey`.
 - `api serve`, run by hand against the test server, served `/openapi.json` with all four paths. It answered an unauthenticated channel list with 401.
+- `/openapi.json` served by a utoipa 5.5.0 build and by a 6.0.0 build of the same code compared equal as JSON. Both builds were run by hand against the test server.
 - A throwaway test printed the `Provider` schema as a string enum of `mastodon` and `threads`.
 
 Asserted, not verified:
