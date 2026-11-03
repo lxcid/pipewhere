@@ -172,7 +172,7 @@ Create does not check the channel's status. [Scheduling and recovery D3 and D4](
 
 `planned_at` is an RFC 3339 timestamp with an offset. The schema publishes it as a `date-time` string, and API answers it in UTC. PostgreSQL keeps microseconds, so finer precision is dropped.
 
-Its year in UTC must be from 0000 to 9999, the years RFC 3339 can write. The year checked is the stored one, into which a leap second at the end of 9999 carries. API refuses other times with 422 `invalid_body`. chrono parses wider years, which API would otherwise store and answer outside the published format. PostgreSQL refuses years before 4713 BC, which would answer 500.
+Its year in UTC must be from 0000 to 9999, the years RFC 3339 can write. API refuses other times with 422 `invalid_body`. A time written within those years can still leave them. An offset can move it across a year boundary in UTC, and a leap second at the end of 9999 carries into 10000 when stored. API checks the stored year, because it would otherwise store and answer such a time outside the published format.
 
 When the request omits it, the planned time is the time of the request, by the database's clock. That is how a client publishes now, per D3. Making it required would tie publishing now to the client's clock.
 
@@ -182,7 +182,7 @@ A publication does not store a tolerance yet. Scheduling and recovery D2 records
 
 ### D13 — Idempotency keys live in their own table, one key space per organization
 
-Binding: 00006, and any pipeline that gates reading or creating publications.
+Binding: 00006, and any pipeline that gates reading publications.
 
 This is how create meets D5.
 
