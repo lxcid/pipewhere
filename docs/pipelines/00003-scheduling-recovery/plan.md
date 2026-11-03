@@ -12,7 +12,7 @@ The build runs as one small PR per issue, as 00002's did. Each issue carries its
 
 ## Steps
 
-1. **#26 Tolerance and deadline on a publication.** `tolerance_seconds` on create and edit, `deadline` in every publication response. The migration gives existing publications 1,800 seconds. No organization setting yet: create uses 30 minutes. D1, D2, D11.
+1. **#26 Tolerance and deadline on a publication.** `tolerance_seconds` on create and edit, `deadline` in every publication response. The migration gives existing publications 1,800 seconds. No organization setting yet: create uses 30 minutes. D1, D2, D11. Built in PR #35.
 2. **#27 An organization's default tolerance.** `pipewhere.organization_setting`, `GET` and `PATCH .../settings`. Create reads the default. D11. Depends on #26.
 3. **#28 The overdue list.** `?overdue=true` on the publication list. D10. Depends on #26 only for the response shape.
 4. **#29 The run's steps in API's library.** The claim with its attempt, the commit claim with its deadline check, the adapter seam with no adapter, result recording, and the `cancelled` attempt result. Tested against PostgreSQL without Restate. D7, D8. Depends on #26.
