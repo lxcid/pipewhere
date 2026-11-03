@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use pipewhere_api::tokens::TokenVerifier;
 use pipewhere_api::{AppState, migrate, router};
-use reqwest::{Client, Response, StatusCode, Url};
+use reqwest::{Client, Method, Response, StatusCode, Url};
 use serde_json::{Value, json};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{AssertSqlSafe, PgPool};
@@ -191,9 +191,30 @@ impl Instance {
 
     /// Calls API as a client would, with a bearer token.
     pub async fn get(&self, path: &str, token: Option<&str>) -> Response {
-        let mut request = self.http.get(format!("{}{path}", self.api_url));
+        self.send(Method::GET, path, token, None).await
+    }
+
+    pub async fn post(&self, path: &str, token: Option<&str>, body: Value) -> Response {
+        self.send(Method::POST, path, token, Some(body)).await
+    }
+
+    pub async fn patch(&self, path: &str, token: Option<&str>, body: Value) -> Response {
+        self.send(Method::PATCH, path, token, Some(body)).await
+    }
+
+    async fn send(
+        &self,
+        method: Method,
+        path: &str,
+        token: Option<&str>,
+        body: Option<Value>,
+    ) -> Response {
+        let mut request = self.http.request(method, format!("{}{path}", self.api_url));
         if let Some(token) = token {
             request = request.bearer_auth(token);
+        }
+        if let Some(body) = body {
+            request = request.json(&body);
         }
         request.send().await.unwrap()
     }

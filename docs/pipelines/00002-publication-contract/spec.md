@@ -117,3 +117,38 @@ Rejected alternatives:
 - **A PostgreSQL enum type.** PostgreSQL cannot drop a value from an enum type without rebuilding it. A value added inside a transaction cannot be used until that transaction commits. A text column with a check changes with one `ALTER TABLE`.
 
 A provider can be listed before its adapter exists. Until 00004 and 00008 build theirs, a Mastodon or Threads channel can be stored and read, but not published to.
+
+### D9 — A request body API cannot read answers with an error code
+
+Binding: later pipelines that add an API endpoint with a request body.
+
+Every endpoint reads its JSON body through `JsonBody` in `apps/api/src/error.rs`, not axum's `Json`. A body it cannot read answers with API's error body, `{ "code": "invalid_body" }`, and the status axum's `Json` extractor chose:
+
+- 400 when the body is not JSON.
+- 413 when the body is over axum's default limit of 2 MB.
+- 415 when the request does not say `application/json`.
+- 422 when the JSON has the wrong shape.
+
+axum's `Json` answers the same statuses with a plain-text message. A client would then need a second way to read API's errors. Keeping axum's statuses tells a client which of the four mistakes it made without adding a message field.
+
+This decision covers only bodies the extractor cannot read. How an endpoint answers a readable body that breaks its own rules is that endpoint's decision, such as D10 for content.
+
+The caller is checked against the organization before the body is read, per 00001 D2. An outsider sending a bad body therefore gets not found, not `invalid_body`.
+
+A later endpoint violates this decision if it takes axum's `Json` as a request extractor.
+
+What would overturn this: clients needing more than the status to fix a bad request, such as which field failed. That would add a message or field list to the error body.
+
+### D10 — Content needs text other than whitespace, and no NUL
+
+Content's `body` must hold at least one character that is not whitespace, and must not hold U+0000. API refuses other text with 422 `invalid_body`, on create and on edit, the same answer D9 gives a body of the wrong shape. Whitespace is Rust's definition, the Unicode `White_Space` property.
+
+Text is all content holds, so blank content is not writing. Mastodon and Threads both refuse a blank post, so a publication made from it could never go out. API has no way to delete content yet, so a blank row would stay.
+
+PostgreSQL's `text` cannot store U+0000. Without the check, such text fails at the insert and answers 500, as if API were at fault.
+
+No other limit applies. Content has no channel, so provider length limits belong to publications. Request bodies are capped at 2 MB by axum's default, per D9.
+
+The table does not check the body. PostgreSQL's whitespace classes differ from Rust's, and a check that disagrees with API would refuse text API accepted. API is the only writer, since Worker runs the same application layer.
+
+What would overturn this: a client that saves a draft before any text is typed, such as an editor that autosaves.

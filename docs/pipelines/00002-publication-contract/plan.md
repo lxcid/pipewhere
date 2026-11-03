@@ -6,7 +6,7 @@ The build runs as one small PR per issue. Each issue carries its own scope and d
 
 1. **#13 API's id generator.** Built in PR #19.
 2. **#14 Channels table and read endpoints.** Built in PR #20.
-3. **#15 Content create, read, and edit.** Not started. Needs #13.
+3. **#15 Content create, read, and edit.** Built in PR #21.
 4. **#16 Create and read publications.** Not started. Needs #14 and #15.
 5. **#17 Edit, cancel, retry, and resolve publications.** Not started. Needs #16.
 6. **#18 Publication attempts table and read endpoint.** Not started. Needs #16.
@@ -71,3 +71,45 @@ Verified:
 Asserted, not verified:
 
 - The API Docker image embeds the new migration. The image was not built, as for #13.
+
+## #15 — what was built
+
+- The migration `20261103043042_content.sql` adds `pipewhere.content` with `id`, `organization_id`, and `body`:
+  - The id is checked with `pipewhere.is_typeid(id, 'cnt')`.
+  - `organization_id` references `auth.organization` without a cascade, per 00001 D2.
+  - `body` is plain text with no table check, per D10.
+- `apps/api/src/contents.rs` serves three operations. All take `OrgCaller`, and every query filters on the path's organization, per D6:
+  - `POST /v1/orgs/{organization_id}/contents` creates content and answers 201 with it.
+  - `GET /v1/orgs/{organization_id}/contents/{content_id}` reads one.
+  - `PATCH /v1/orgs/{organization_id}/contents/{content_id}` replaces its body and answers 200 with it.
+- Request and response share one shape: `{ "body": "..." }` in, `{ "id", "organization_id", "body" }` out.
+- `JsonBody` in `apps/api/src/error.rs` wraps axum's `Json`. A body API cannot read answers `invalid_body` with axum's status, per D9. Blank text, or text holding U+0000, answers 422 `invalid_body`, per D10.
+- `support::Instance` gains `post` and `patch`, which send a JSON body.
+
+Choices made in the build, within the spec:
+
+- D5 does not reach content. Its retry is a publication's `failed` → `scheduled`, and its violation clause names publications. A lost-response retry of content create makes a second private row, which publishes nothing. Creating content from a publication request is #16's, and D5 covers that request.
+- `PATCH` requires `body`, so it replaces the one editable field. When content gains a second field, `body` becomes optional, which existing clients do not notice.
+- Deferred: listing content. A list grows without bound, so it needs a cursor, which no client needs yet. Add it with the first client that browses content.
+- Tolerated: content has no delete. A duplicate from a retried create stays as a private row.
+- Tolerated: `PATCH` reads the body before looking up the content. Any body D9 or D10 refuses, sent to missing content, answers `invalid_body`, not 404. The caller has already been checked against the organization, so this reveals nothing.
+- No index beyond the primary key. Reads and edits go by id.
+
+Verified:
+
+- `cargo test -p pipewhere-api`: 5 unit tests and 28 integration tests pass, 6 of them in `tests/contents.rs`.
+- `pnpm --filter @pipewhere/auth test`: 20 tests pass.
+- `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all --check`: clean.
+- `a_body_api_cannot_read_is_refused` sends each bad body to `POST` and `PATCH`: not JSON (400), no content type (415), no `body` field and a non-text `body` (422), empty and whitespace-only text and text holding U+0000 (422), and over 2 MB (413). Each answers `invalid_body`, and the stored row is unchanged. An outsider's malformed body answers 404.
+- Each of these changes, made by hand and reverted, fails a test:
+  - The read query's organization filter removed: `another_organizations_content_is_not_found`.
+  - The edit query's organization filter removed: the same test.
+  - `trim()` dropped from the blank check: `a_body_api_cannot_read_is_refused`.
+  - The NUL check absent: the same test, with 500 `internal` for text holding U+0000.
+  - Every rejection mapped to 400: the same test.
+- The table refuses an id with another table's prefix (`content_id_check`) and an organization that does not exist (`content_organization_id_fkey`). Deleting an organization that has content fails on `content_organization_id_fkey`.
+- `api serve`, run by hand against the test server, served `/openapi.json` with `post` on `/contents`, and `get` and `patch` on `/contents/{content_id}`. It answered an unauthenticated malformed `POST` with 401.
+
+Asserted, not verified:
+
+- The API Docker image embeds the new migration. The image was not built, as for #13 and #14.
