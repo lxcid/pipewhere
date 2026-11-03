@@ -155,8 +155,6 @@ What would overturn this: a client that saves a draft before any text is typed, 
 
 ### D11 — A publication request supplies its text or names content
 
-Proposed: awaiting operator approval.
-
 `POST /v1/orgs/{organization_id}/publications` takes a `channel_id`, and either `body` or `content_id`:
 
 - `body` creates content with that text, in the same transaction as the publication, per D2. The text follows D10.
@@ -172,8 +170,6 @@ Create does not check the channel's status. [Scheduling and recovery D3 and D4](
 
 ### D12 — The planned time defaults to the time of the request
 
-Proposed: awaiting operator approval.
-
 `planned_at` is an RFC 3339 timestamp with an offset. The schema publishes it as a `date-time` string, and API answers it in UTC. PostgreSQL keeps microseconds, so finer precision is dropped.
 
 Its year in UTC must be from 0000 to 9999, the years RFC 3339 can write. The year checked is the stored one, into which a leap second at the end of 9999 carries. API refuses other times with 422 `invalid_body`. chrono parses wider years, which API would otherwise store and answer outside the published format. PostgreSQL refuses years before 4713 BC, which would answer 500.
@@ -185,8 +181,6 @@ Any time within those years is accepted, including one in the past. Lateness bel
 A publication does not store a tolerance yet. Scheduling and recovery D2 records one at create, from the organization's default of 30 minutes. No organization can change that default until 00003 adds the setting, so 00003's migration can give existing publications 30 minutes, which is what each would have recorded. Nothing runs a publication before 00003.
 
 ### D13 — Idempotency keys live in their own table, one key space per organization
-
-Proposed: awaiting operator approval.
 
 This is how create meets D5.
 
@@ -203,8 +197,6 @@ Keys have no expiry, per D5. A key's row lasts as long as its publication.
 Tolerated: a UUIDv4 passes the length check but holds 122 random bits, fewer than D5 asks for. The header's description asks for 16 random bytes. A key with too little randomness risks colliding only with another key in the same organization, and a collision either answers 422 or returns that organization's own publication.
 
 ### D14 — The publication list pages by cursor
-
-Proposed: awaiting operator approval.
 
 `GET /v1/orgs/{organization_id}/publications` answers `{ "publications": [...], "next_cursor": ... }`, newest first, 100 to a page. `next_cursor` is null on the last page. Otherwise the client sends it back as `?cursor=` for the next page. The cursor is opaque to clients.
 
