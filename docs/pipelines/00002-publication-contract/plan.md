@@ -123,7 +123,7 @@ Asserted, not verified:
   - `POST /v1/orgs/{organization_id}/publications` requires `Idempotency-Key`, and answers 201 with the publication, per D11–D13.
   - `GET /v1/orgs/{organization_id}/publications` lists them newest first, 100 to a page, with `next_cursor`, per D14.
   - `GET /v1/orgs/{organization_id}/publications/{publication_id}` reads one.
-- An id or cursor holding U+0000 never reaches PostgreSQL, whose text cannot store it. A body's `channel_id` or `content_id` answers its `*_not_found` code, a path's publication id answers 404, and a cursor answers an empty page.
+- A publication id, a body's `channel_id` or `content_id`, or a cursor holding U+0000 does not reach PostgreSQL, whose text cannot store it. The reference answers its `*_not_found` code, the publication id 404, and the cursor an empty page. The path's organization id still reaches PostgreSQL through `OrgCaller` and answers 500, as on every endpoint; PR #22's review follow-ups record it.
 - `ErrorBody.code` is now `ErrorCode`, so the schema publishes every code as a string enum. #16 adds four codes: `invalid_idempotency_key` (400), `idempotency_key_reused` (422), `channel_not_found` (422), and `content_not_found` (422).
 - `PublicationState` publishes D3's seven states. Create sets only `scheduled`.
 - D10's text check moved to `contents::checked_body`, which content and publication create share.
@@ -146,7 +146,7 @@ Verified:
 - `the_schema_publishes_the_error_codes_and_states_as_fixed_sets` checks the `ErrorCode` and `PublicationState` enums and the `date-time` format of `planned_at`.
 - A throwaway test fetched `/openapi.json` from the router `api serve` runs. It listed both new paths, the required `Idempotency-Key` header, the optional `cursor` query parameter, and `ErrorBody.code` as a reference to `ErrorCode`.
 - `concurrent_use_of_one_key_creates_one_publication` sends 20 requests with one key at once. All answer 201 with one id, and one publication and one content row exist.
-- `a_body_api_cannot_read_is_refused` also refuses with 422 `invalid_body`: an unknown field (`scheduled_at`), `+10000-01-01T00:00:00Z`, `9999-12-31T23:59:59-23:59` (year 10000 in UTC), and `-10000-01-01T00:00:00Z`.
+- `a_body_api_cannot_read_is_refused` also refuses with 422 `invalid_body`: an unknown field (`scheduled_at`), `+10000-01-01T00:00:00Z`, `9999-12-31T23:59:59-23:59` (year 10000 in UTC), `9999-12-31T23:59:60Z` (a leap second that carries into 10000 when stored), and `-10000-01-01T00:00:00Z`.
 - `a_request_waits_for_another_transaction_holding_its_key` holds the key in an open transaction. The request is still waiting after 500 ms. When the transaction commits a different request, it answers 422 `idempotency_key_reused`. When the transaction rolls back, it creates.
 - Each of these changes, made by hand and reverted, fails a test:
   - The organization filter removed from the single read, the list, the channel check, or the content lookup: `another_organizations_resources_are_not_found`.

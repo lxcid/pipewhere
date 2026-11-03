@@ -731,6 +731,12 @@ async fn a_body_api_cannot_read_is_refused() {
             unprocessable,
         ),
         (
+            "a leap second that carries into 10000 when stored",
+            json!({ "channel_id": channel_id, "body": "Hello", "planned_at": "9999-12-31T23:59:60Z" })
+                .to_string(),
+            unprocessable,
+        ),
+        (
             "a year before 0000, which PostgreSQL cannot hold",
             json!({ "channel_id": channel_id, "body": "Hello", "planned_at": "-10000-01-01T00:00:00Z" })
                 .to_string(),

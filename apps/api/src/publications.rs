@@ -144,10 +144,12 @@ pub async fn create_publication(
         _ => return Err(ApiError::InvalidBody(StatusCode::UNPROCESSABLE_ENTITY)),
     };
     // RFC 3339 has four-digit years, and the schema publishes `date-time`.
-    if input
-        .planned_at
-        .is_some_and(|time| !(0..=9999).contains(&time.year()))
-    {
+    // The year checked is that of the whole microseconds sqlx stores, into
+    // which a leap second carries.
+    if input.planned_at.is_some_and(|time| {
+        DateTime::from_timestamp_micros(time.timestamp_micros())
+            .is_none_or(|stored| !(0..=9999).contains(&stored.year()))
+    }) {
         return Err(ApiError::InvalidBody(StatusCode::UNPROCESSABLE_ENTITY));
     }
     if holds_nul(&input.channel_id) {

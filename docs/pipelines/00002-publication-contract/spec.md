@@ -176,7 +176,7 @@ Proposed: awaiting operator approval.
 
 `planned_at` is an RFC 3339 timestamp with an offset. The schema publishes it as a `date-time` string, and API answers it in UTC. PostgreSQL keeps microseconds, so finer precision is dropped.
 
-Its year in UTC must be from 0000 to 9999, the years RFC 3339 can write. API refuses other times with 422 `invalid_body`. chrono parses wider years, which API would otherwise store and answer outside the published format. PostgreSQL refuses years before 4713 BC, which would answer 500.
+Its year in UTC must be from 0000 to 9999, the years RFC 3339 can write. The year checked is the stored one, into which a leap second at the end of 9999 carries. API refuses other times with 422 `invalid_body`. chrono parses wider years, which API would otherwise store and answer outside the published format. PostgreSQL refuses years before 4713 BC, which would answer 500.
 
 When the request omits it, the planned time is the time of the request, by the database's clock. That is how a client publishes now, per D3. Making it required would tie publishing now to the client's clock.
 
