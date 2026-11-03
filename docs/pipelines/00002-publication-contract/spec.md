@@ -279,8 +279,6 @@ Tolerated: API cannot check that the id or address names a real post on the chan
 
 ### D19 — An attempt records how one execution ended, and why
 
-Proposed: awaiting operator approval.
-
 Binding: 00003, 00004, and later pipelines that move a publication into `failed` or `outcome_unknown`.
 
 `pipewhere.publication_attempt` holds `id`, `publication_id`, `result`, `reason`, `started_at`, and `ended_at`. Only the worker writes it, from 00003 and 00004 on.
@@ -303,8 +301,6 @@ A later pipeline is in violation if a worker's move into `failed` or `outcome_un
 What would overturn this: a reason stored on the publication itself, so that a failure outside any execution could be explained without an attempt.
 
 ### D20 — The attempt list answers newest first, without a cursor
-
-Proposed: awaiting operator approval.
 
 Binding: 00003, 00004, and later pipelines that record attempts.
 
