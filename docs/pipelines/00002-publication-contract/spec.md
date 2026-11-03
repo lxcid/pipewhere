@@ -323,4 +323,4 @@ The answer is an object so that a cursor can arrive as a new field. Newest first
 
 A later pipeline is in violation if it records more than one attempt in one run while this list has no cursor.
 
-What would overturn this: publications routinely collecting dozens of attempts, which would make a cursor cheaper than the limit.
+What would overturn this: publications routinely collecting dozens of attempts, or a worker that needs each automatic re-run recorded. Either would make a cursor cheaper than the one-attempt-per-run rule.
