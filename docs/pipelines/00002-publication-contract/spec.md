@@ -276,3 +276,47 @@ The id is required because it is what identifies the post at its provider, and t
 The table checks `(state = 'published') = (remote_id IS NOT NULL)`. A published publication always names its post, and a remote id appears in no other state. Nothing moves a publication out of `published`, and edit is refused there, so D2's rule that its body and remote reference cannot change holds without a trigger.
 
 Tolerated: API cannot check that the id or address names a real post on the channel's account. Under D2 a mistyped reference cannot be corrected through the API. A person resolves only after looking for the post, and a resolution is rare. Correcting a published record would need its own decision against D2.
+
+### D19 — An attempt records how one execution ended, and why
+
+Binding: 00003, 00004, and later pipelines that move a publication into `failed` or `outcome_unknown`.
+
+`pipewhere.publication_attempt` holds `id`, `publication_id`, `result`, `reason`, `started_at`, and `ended_at`. Only the worker writes it, from 00003 and 00004 on.
+
+- **Organization.** An attempt belongs to its publication's organization, which D6 allows ("directly or through its parent"). It holds no `organization_id`. A copy could disagree with the publication's, unless a composite foreign key kept them equal, which needs a second unique index on `publication`. Every query joins the publication and filters on its organization. The attempt has no reference to `auth.organization`, so 00001 D2 holds through the publication's reference, which never cascades. The attempt's reference to its publication has no delete action either.
+- **Result.** `published`, `failed`, or `outcome_unknown`. Each means what D3's state of the same name means, for that one execution. D1 gives each word one meaning, so the attempt reuses the publication's words. The publication's state says where the publication is now. An attempt's result says how one execution ended. A `failed` attempt can therefore sit under a publication that runs again.
+- **A running attempt.** `result` and `ended_at` are both null, and the table checks that they are null together. A `running` value was rejected, so that `AttemptResult` lists only the ways an attempt can end.
+- **A fixed list.** The schema publishes `AttemptResult` as a string enum, and the table checks the column against the same list, for D8's reasons. D8's cost applies too: each new value breaks a client that validates the enum strictly until it is regenerated. Adding a value takes a migration that widens the check, and a new variant.
+- **Reason.** Free text, written for a person. The table requires it when the result is `failed` or `outcome_unknown`, so the operator can investigate without server logs, per D4. The reasons 00003 names are all sentences: missing the planned time (its D1), the channel's problem (its D3), and the provider's reason (its D4). A reason code was rejected for now. No client acts on the kind of reason yet, and 00004 owns which provider errors exist. A code can arrive later as a new nullable field, which existing clients ignore. Turning free text into a code later would break them.
+- **Every failure has an attempt.** Each move the worker makes into `failed` or `outcome_unknown` ends an attempt with that result and a reason. This includes a failure found before the publication was prepared, such as work that recovery finds past its deadline (00003 D2). That attempt may start and end at the same moment. The publication holds no reason, so without the attempt the operator could not see why it failed.
+
+Left to 00003 and 00004, which run the worker, within the rule above:
+
+- When an attempt starts.
+- Whether each automatic re-run within one run, `publishing` → `preparing`, is its own attempt. D20 requires a cursor first.
+- How a cancel in `preparing` ends a running attempt. If a cancelled run needs a result of its own, that pipeline widens the list.
+
+A later pipeline is in violation if a worker's move into `failed` or `outcome_unknown` leaves no ended attempt with that result and a reason.
+
+What would overturn this: a reason stored on the publication itself, so that a failure outside any execution could be explained without an attempt.
+
+### D20 — The attempt list answers newest first, without a cursor
+
+Binding: 00003, 00004, and later pipelines that record attempts.
+
+`GET /v1/orgs/{organization_id}/publications/{publication_id}/attempts` answers `{ "attempts": [...] }`, newest first. Order is by id, which is creation order, per infrastructure D6.
+
+- A publication outside the request's organization answers 404, per D6. So does an id holding U+0000.
+- A publication that has not run yet answers 200 with an empty list. Every `scheduled` publication starts with no attempts, so an empty list must not look like a wrong id.
+
+The list has no cursor, unlike D14's, because it grows with one publication's runs, not with an organization's history. A run is the worker's pass from `scheduled` to `published`, `failed`, `outcome_unknown`, or `cancelled`.
+
+- A run records one attempt. Each new run starts with an explicit retry, which a person sends.
+- An attempt with a 200-character reason is about 400 bytes of JSON. 100 attempts, D14's page size, are about 40 KB, and take about 100 retries. The list has no limit, so it still answers every attempt.
+- A worker that recorded each automatic re-run within a run as its own attempt could make far more. 00003 D1's 24-hour cap allows 1,440 re-runs at one a minute.
+
+The answer is an object so that a cursor can arrive as a new field. Newest first means a client written before the cursor still sees the latest attempts.
+
+A later pipeline is in violation if it records more than one attempt in one run while this list has no cursor.
+
+What would overturn this: publications routinely collecting dozens of attempts, or a worker that needs each automatic re-run recorded. Either would make a cursor cheaper than the one-attempt-per-run rule.

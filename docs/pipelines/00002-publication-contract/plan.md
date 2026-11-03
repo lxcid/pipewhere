@@ -9,7 +9,19 @@ The build runs as one small PR per issue. Each issue carries its own scope and d
 3. **#15 Content create, read, and edit.** Built in PR #21.
 4. **#16 Create and read publications.** Built in PR #22.
 5. **#17 Edit, cancel, retry, and resolve publications.** Built in PR #23.
-6. **#18 Publication attempts table and read endpoint.** Not started. Needs #16.
+6. **#18 Publication attempts table and read endpoint.** Built in PR #24.
+
+## Outcome check
+
+Each bullet of the intent's proposed outcome, against what #13–#18 built. The tests named here passed in `cargo test -p pipewhere-api` at #18's head. Worker behavior is not built, so the parts only the worker can make true rest on binding decisions, not on tests.
+
+- **One name and one meaning for each entity and state, including an attempt that explains failures and unknown outcomes.** D1, D3, and D19. The schema publishes `PublicationState` and `AttemptResult` as fixed sets, checked by `the_schema_publishes_the_error_codes_and_states_as_fixed_sets`. `the_table_refuses_an_attempt_it_cannot_explain` shows the table refusing a `failed` or `outcome_unknown` attempt without a reason. That the worker writes one for every failure is D19's binding on 00003 and 00004.
+- **Each channel's publication shows exactly what goes out, and changing its content cannot change it.** D2. `a_member_creates_lists_and_reads_publications` edits content and reads the publication's copy unchanged. `an_edit_changes_only_this_channels_copy` edits the publication and reads the content unchanged. `resolving_records_what_a_person_found` refuses every action on a `published` publication.
+- **The transitions distinguish work that is safe to repeat from a provider commit whose outcome may be unknown.** D3 and D16. `each_action_is_allowed_only_in_the_states_d3_lists` checks every person's action against every state: nothing edits or cancels `publishing`, and nothing retries `outcome_unknown`. The worker's transitions are bound by D3 and D4 on 00003 and 00004.
+- **Repeating a client request returns the first result, and no automatic second commit follows an ambiguous result.** D5, D13, and D17. `a_repeated_request_returns_the_first_result`, `concurrent_use_of_one_key_creates_one_publication`, `a_repeated_retry_returns_the_publication_without_retrying_again`, and `concurrent_requests_change_a_publication_once`. The API answers 409 to a retry of `outcome_unknown`. No automatic commit is D4's binding on 00004.
+- **Every publication belongs to one organization, and a single operator needs no team setup.** D6. Each resource has an `another_organization…_not_found` test, through #18's `another_organizations_attempts_are_not_found`. Every channel, content, publication, and attempt test acts as the sole member of an organization its owner just created.
+
+Not part of the outcome, and open: the API Docker image embedding the migrations was never built, and a NUL in the path's organization id answers 500 on every endpoint.
 
 ## #13 — what was built
 
@@ -224,3 +236,43 @@ Asserted, not verified:
 
 - The API Docker image embeds the new migration. The image was not built, as for #13–#16.
 - `api serve` was not run by hand. The schema was read from the same router through the test harness.
+
+## #18 — what was built
+
+- The migration `20261103093910_publication_attempt.sql` adds `pipewhere.publication_attempt` with `id`, `publication_id`, `result`, `reason`, `started_at`, and `ended_at`, per D19:
+  - The id is checked with `pipewhere.is_typeid(id, 'pubat')`.
+  - `publication_id` references `pipewhere.publication` with no delete action. The attempt holds no `organization_id`.
+  - `result` is checked against `published`, `failed`, and `outcome_unknown`.
+  - `publication_attempt_ended_check` requires `result` and `ended_at` to be null together.
+  - `publication_attempt_reason_check` requires a reason when the result is `failed` or `outcome_unknown`.
+- `apps/api/src/publications.rs` serves `GET /v1/orgs/{organization_id}/publications/{publication_id}/attempts`, per D20. It takes `OrgCaller`. The attempts query joins the publication and filters on the path's organization. When it finds no attempts, a second query looks the publication up in the organization: missing answers 404, and present answers an empty list.
+- The schema publishes `PublicationAttempt`, with `result`, `reason`, and `ended_at` required and nullable, and `AttemptResult` as a string enum.
+
+Choices made in the build, within the spec:
+
+- The tests are in `tests/publication_attempts.rs`. They insert attempts directly, since no worker writes them yet.
+- No index beyond the primary key. The list scans attempts for the publication's id. At 10 publications a day and a few attempts each, the table holds tens of thousands of rows after years. Add an index on `publication_id` when a measured list query needs it, as for #14 and #16.
+- Tolerated: nothing stops two running attempts for one publication. The worker is the only writer, and 00003 decides when an attempt starts.
+
+Verified:
+
+- `cargo test -p pipewhere-api`: 6 unit tests and 49 integration tests pass, 3 of them in `tests/publication_attempts.rs`.
+- `pnpm --filter @pipewhere/auth test`: 20 tests pass.
+- `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all --check`: clean.
+- `the_list_shows_each_attempt_newest_first` lists an empty publication as `{ "attempts": [] }`. It then lists a `failed`, an `outcome_unknown`, and a running attempt newest first, with each field as stored, and leaves out another publication's attempt.
+- `another_organizations_attempts_are_not_found` answers 404 `not_found` for another organization's publication with attempts and without, a publication that does not exist, an id that is not a publication id, an id holding U+0000, and a user who is not a member.
+- `the_table_refuses_an_attempt_it_cannot_explain` shows the table refusing another table's prefix, a result outside the list (`cancelled`), a result without an end and an end without a result, `failed` and `outcome_unknown` without a reason, and a publication that does not exist. Deleting a publication that has an attempt fails on `publication_attempt_publication_id_fkey`. Read from `pg_constraint`, that is the attempt's only foreign key, with no delete action.
+- `the_schema_lists_every_endpoint` lists the new path. `the_schema_publishes_the_error_codes_and_states_as_fixed_sets` checks `AttemptResult`.
+- A throwaway test printed the schema of the new path and its types. `result`, `reason`, and `ended_at` were required and nullable, and the path answered 200, 401, 404, 500, and 503.
+- Each of these changes, made by a script and reverted, fails a test:
+  - The organization filter removed from the attempts query, or from the publication lookup: `another_organizations_attempts_are_not_found`.
+  - The publication lookup skipped: the same test, where a publication that does not exist answers an empty list.
+  - The U+0000 check removed: the same test, with 500 `internal`.
+  - Oldest first: `the_list_shows_each_attempt_newest_first`.
+  - The id check, the result check, the ended check, or the reason check removed, or the reason check loosened to let `outcome_unknown` through: `the_table_refuses_an_attempt_it_cannot_explain`.
+  - The publication reference removed, or set to cascade, or an `organization_id` added that cascades: the same test.
+
+Asserted, not verified:
+
+- The API Docker image embeds the new migration. The image was not built, as for #13–#17.
+- `api serve` was not run by hand. The schema was read from the same router through a unit test.
