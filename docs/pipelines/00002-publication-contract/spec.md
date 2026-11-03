@@ -105,8 +105,6 @@ What would overturn this: evidence that accounts shared across organizations cau
 
 ### D8 — A channel's provider comes from a fixed list
 
-Proposed: awaiting operator approval.
-
 A channel's `provider` is one of a fixed list of names. The list starts with `mastodon` and `threads`, the first providers in the intent's constraints. The API schema publishes the list as a string enum, and the table checks the column against the same list. Adding a provider takes a migration that widens the check and a new variant in API's `Provider` enum.
 
 This lets a client read from the schema which providers exist. The database also refuses a provider API cannot read back.
