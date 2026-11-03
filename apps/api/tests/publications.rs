@@ -9,6 +9,7 @@ use pipewhere_api::ids::new_id;
 use reqwest::header::CONTENT_TYPE;
 use reqwest::{Method, RequestBuilder, Response, StatusCode};
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use support::{Instance, ok_json, refusal};
 
@@ -274,6 +275,42 @@ async fn a_repeated_request_returns_the_first_result() {
     )
     .await;
     assert_eq!(from_key, first);
+
+    // 00002 D5: a key stored before the tolerance existed keeps matching its
+    // request, so a request without one hashes as it did then.
+    let (stored_hash,): (Vec<u8>,) = sqlx::query_as(
+        "SELECT request_hash FROM pipewhere.idempotency_key WHERE organization_id = $1 AND key = $2",
+    )
+    .bind(&organization_id)
+    .bind(&idempotency_key)
+    .fetch_one(&instance.api_db)
+    .await
+    .unwrap();
+    let before_tolerance = serde_json::to_vec(&(
+        "create_publication",
+        &channel_id,
+        Some("Once"),
+        None::<String>,
+        None::<DateTime<Utc>>,
+    ))
+    .unwrap();
+    assert_eq!(stored_hash, Sha256::digest(before_tolerance).to_vec());
+    let with_null = json!({ "channel_id": channel_id, "body": "Once", "tolerance_seconds": null });
+    assert_eq!(
+        created(
+            create(
+                &instance,
+                &organization_id,
+                &token,
+                &idempotency_key,
+                with_null
+            )
+            .await
+        )
+        .await,
+        first,
+        "a null tolerance is an omitted one"
+    );
 
     let reused = (
         StatusCode::UNPROCESSABLE_ENTITY,

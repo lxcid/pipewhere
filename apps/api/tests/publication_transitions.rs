@@ -334,6 +334,20 @@ async fn an_edit_changes_only_this_channels_copy() {
     assert_eq!(
         ok_json(
             instance
+                .patch(
+                    &publication_path,
+                    Some(&token),
+                    json!({ "tolerance_seconds": null }),
+                )
+                .await,
+        )
+        .await,
+        expected,
+        "a null tolerance keeps the current one"
+    );
+    assert_eq!(
+        ok_json(
+            instance
                 .patch(&publication_path, Some(&token), json!({}))
                 .await
         )

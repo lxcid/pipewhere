@@ -130,7 +130,10 @@ fn checked_planned_at(
     Ok(planned_at)
 }
 
-/// Refuses a tolerance outside 00003 D1's range, which the table also checks.
+/// Refuses a tolerance outside 00003 D1's range.
+// The table's check and the three `#[schema(minimum, maximum)]` attributes
+// repeat the range. utoipa takes only literals there, so change all of them
+// together.
 fn checked_tolerance(tolerance_seconds: Option<i32>) -> Result<Option<i32>, ApiError> {
     if tolerance_seconds.is_some_and(|seconds| !(300..=86_400).contains(&seconds)) {
         return Err(ApiError::InvalidBody(StatusCode::UNPROCESSABLE_ENTITY));
@@ -146,9 +149,14 @@ impl PublicationInput {
             &self.body,
             &self.content_id,
             self.planned_at,
-            self.tolerance_seconds,
         );
-        Sha256::digest(serde_json::to_vec(&request).expect("the request serializes")).to_vec()
+        // A request without a tolerance hashes as it did before tolerances
+        // existed, so keys stored then still match it, per 00002 D5.
+        let request = match self.tolerance_seconds {
+            None => serde_json::to_vec(&request),
+            Some(tolerance_seconds) => serde_json::to_vec(&(request, tolerance_seconds)),
+        };
+        Sha256::digest(request.expect("the request serializes")).to_vec()
     }
 }
 
