@@ -6,12 +6,15 @@ use axum::{Json, Router};
 use serde::Serialize;
 use sqlx::PgPool;
 use utoipa::{OpenApi, ToSchema};
+use utoipa_axum::router::OpenApiRouter;
+use utoipa_axum::routes;
 
 use crate::access::{Actor, OrgCaller};
 use crate::error::{ApiError, ErrorBody};
 use crate::tokens::TokenVerifier;
 
 pub mod access;
+pub mod channels;
 pub mod error;
 pub mod ids;
 pub mod tokens;
@@ -23,10 +26,9 @@ pub struct AppState {
 }
 
 pub fn router(state: AppState) -> Router {
-    Router::new()
-        .route("/health", get(health))
-        .route("/openapi.json", get(async || Json(ApiDoc::openapi())))
-        .route("/v1/orgs/{organization_id}", get(organization))
+    let (router, openapi) = api().split_for_parts();
+    router
+        .route("/openapi.json", get(async move || Json(openapi)))
         .fallback(async || ApiError::NotFound)
         .method_not_allowed_fallback(async || ApiError::MethodNotAllowed)
         .with_state(state)
@@ -36,13 +38,23 @@ pub async fn migrate(db: &PgPool) -> Result<(), sqlx::migrate::MigrateError> {
     sqlx::migrate!("./migrations").run(db).await
 }
 
+// A handler registered with `routes!` is served and documented by that one
+// call. `OpenApiRouter::route` serves without documenting, so routes here go
+// through `routes!`.
+fn api() -> OpenApiRouter<AppState> {
+    OpenApiRouter::with_openapi(ApiDoc::openapi())
+        .routes(routes!(health))
+        .routes(routes!(organization))
+        .routes(routes!(channels::list_channels))
+        .routes(routes!(channels::get_channel))
+}
+
 #[derive(OpenApi)]
 #[openapi(
     info(title = "Pipewhere API", description = "Pipewhere's REST API.", license(name = "Elastic License 2.0", identifier = "Elastic-2.0")),
-    paths(health, organization),
     modifiers(&BearerAuth)
 )]
-pub struct ApiDoc;
+struct ApiDoc;
 
 struct BearerAuth;
 
@@ -113,10 +125,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_schema_lists_both_endpoints() {
-        let schema = serde_json::to_value(ApiDoc::openapi()).unwrap();
+    fn the_schema_lists_every_endpoint() {
+        let schema = serde_json::to_value(api().into_openapi()).unwrap();
         let mut paths: Vec<_> = schema["paths"].as_object().unwrap().keys().collect();
         paths.sort();
-        assert_eq!(paths, ["/health", "/v1/orgs/{organization_id}"]);
+        assert_eq!(
+            paths,
+            [
+                "/health",
+                "/v1/orgs/{organization_id}",
+                "/v1/orgs/{organization_id}/channels",
+                "/v1/orgs/{organization_id}/channels/{channel_id}",
+            ]
+        );
     }
 }
