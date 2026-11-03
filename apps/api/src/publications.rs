@@ -394,7 +394,8 @@ pub struct PublicationEdit {
     /// to keep the current text.
     body: Option<String>,
     /// When to publish, in a year from 0000 to 9999 in UTC. Omit it to keep
-    /// the current time.
+    /// the current time. A `failed` publication takes the time its retry sets,
+    /// so a time edited there is replaced.
     #[serde(default, deserialize_with = "rfc3339")]
     planned_at: Option<DateTime<Utc>>,
 }
@@ -491,7 +492,7 @@ pub async fn cancel_publication(
 #[serde(deny_unknown_fields)]
 pub struct RetryInput {
     /// When to publish, in a year from 0000 to 9999 in UTC. Defaults to the
-    /// time of the request.
+    /// time of the request, whatever time the publication held before.
     #[serde(default, deserialize_with = "rfc3339")]
     planned_at: Option<DateTime<Utc>>,
 }

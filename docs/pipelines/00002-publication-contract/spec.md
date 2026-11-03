@@ -220,7 +220,7 @@ A person changes a publication through four operations. Each answers 200 with th
 
 - `PATCH /v1/orgs/{organization_id}/publications/{publication_id}` edits `body`, `planned_at`, or both. An omitted field keeps its value. The body follows D10 and D11, and the time follows D12. Any other field answers 422 `invalid_body`, as on create.
 - `POST .../{publication_id}/cancel` takes no body.
-- `POST .../{publication_id}/retry` takes `Idempotency-Key` and a body, per D17.
+- `POST .../{publication_id}/retry` takes `Idempotency-Key` and a body, per D17. A retry sets its own planned time, so a time edited in `failed` is replaced when the publication is retried. The schema says so on both fields.
 - `POST .../{publication_id}/resolve` takes the outcome a person found, per D18.
 
 A writable `state` field on the edit was rejected:
@@ -265,7 +265,7 @@ Retry meets D5 the way create does, under D13:
 - **One transaction.** API claims the key's row first, with `ON CONFLICT DO NOTHING`, naming the retried publication. Then it runs D16's conditional update and commits both together. A retry refused with 404 or 409 rolls the key back, so the client can send it again with the same key.
 - **The stored result.** The same key with the same hash answers 200 with the publication as it is now, and does not retry it again. If the worker has failed it again since, the answer shows `failed`, and the client retries with a new key. This follows D13's reasoning for create.
 
-`planned_at` is optional, and defaults to the time of the request by the database's clock, as on create, per D12. [Scheduling and recovery D1](../00003-scheduling-recovery/spec.md) says a retry chooses a new planned time; omitting it chooses now. A retry keeps the publication's body. An operator who wants to fix the text edits it first, which D3 allows in `failed`. No tolerance or deadline is stored. Scheduling and recovery D2 adds them.
+`planned_at` is optional, and defaults to the time of the request by the database's clock, as on create, per D12. [Scheduling and recovery D1](../00003-scheduling-recovery/spec.md) says a retry chooses a new planned time; omitting it chooses now. It does not fall back to the stored time, even one an edit set in `failed`. A publication that failed late would hold a time already past, and retrying with it would fail late again. A retry keeps the publication's body. An operator who wants to fix the text edits it first, which D3 allows in `failed`. No tolerance or deadline is stored. Scheduling and recovery D2 adds them.
 
 Tolerated: the body is required, so a retry for now sends `{}`. Every action with input then reads one JSON body through `JsonBody`, per D9.
 
