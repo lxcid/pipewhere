@@ -385,6 +385,7 @@ pub enum AttemptResult {
 
 /// One execution of a publication, per 00002 D1. The publication's state says
 /// where it is now. An attempt's result says only how that execution ended.
+/// `result` and `ended_at` are null while the attempt runs.
 #[derive(Serialize, ToSchema, sqlx::FromRow)]
 pub struct PublicationAttempt {
     id: String,

@@ -11,6 +11,18 @@ The build runs as one small PR per issue. Each issue carries its own scope and d
 5. **#17 Edit, cancel, retry, and resolve publications.** Built in PR #23.
 6. **#18 Publication attempts table and read endpoint.** Built in PR #24.
 
+## Outcome check
+
+Each bullet of the intent's proposed outcome, against what #13–#18 built. The tests named here passed in `cargo test -p pipewhere-api` at #18's head. Worker behavior is not built, so the parts only the worker can make true rest on binding decisions, not on tests.
+
+- **One name and one meaning for each entity and state, including an attempt that explains failures and unknown outcomes.** D1, D3, and D19. The schema publishes `PublicationState` and `AttemptResult` as fixed sets, checked by `the_schema_publishes_the_error_codes_and_states_as_fixed_sets`. `the_table_refuses_an_attempt_it_cannot_explain` shows the table refusing a `failed` or `outcome_unknown` attempt without a reason. That the worker writes one for every failure is D19's binding on 00003 and 00004.
+- **Each channel's publication shows exactly what goes out, and changing its content cannot change it.** D2. `a_member_creates_lists_and_reads_publications` edits content and reads the publication's copy unchanged. `an_edit_changes_only_this_channels_copy` edits the publication and reads the content unchanged. `resolving_records_what_a_person_found` refuses every action on a `published` publication.
+- **The transitions distinguish work that is safe to repeat from a provider commit whose outcome may be unknown.** D3 and D16. `each_action_is_allowed_only_in_the_states_d3_lists` checks every person's action against every state: nothing edits or cancels `publishing`, and nothing retries `outcome_unknown`. The worker's transitions are bound by D3 and D4 on 00003 and 00004.
+- **Repeating a client request returns the first result, and no automatic second commit follows an ambiguous result.** D5, D13, and D17. `a_repeated_request_returns_the_first_result`, `concurrent_use_of_one_key_creates_one_publication`, `a_repeated_retry_returns_the_publication_without_retrying_again`, and `concurrent_requests_change_a_publication_once`. The API answers 409 to a retry of `outcome_unknown`. No automatic commit is D4's binding on 00004.
+- **Every publication belongs to one organization, and a single operator needs no team setup.** D6. Each resource has an `another_organization…_not_found` test, through #18's `another_organizations_attempts_are_not_found`. Every test acts as the sole member of an organization its owner just created.
+
+Not part of the outcome, and open: the API Docker image embedding the migrations was never built, and a NUL in the path's organization id answers 500 on every endpoint.
+
 ## #13 — what was built
 
 - `apps/api/src/ids.rs` holds `PREFIXES`, which maps each `pipewhere` table to its prefix. `new_id(table)` returns the prefix, an underscore, and a UUIDv7 as 26 lowercase Crockford base32 characters, per 00001 D6. It panics for a table with no listed prefix, as Auth's generator throws.
