@@ -4,7 +4,7 @@ use axum::Json;
 use axum::extract::{FromRequestParts, Path, Query, State};
 use axum::http::StatusCode;
 use axum::http::request::Parts;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Datelike, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use utoipa::ToSchema;
@@ -52,7 +52,10 @@ pub struct Publications {
     next_cursor: Option<String>,
 }
 
+// A misspelt `planned_at` would otherwise be dropped, and the publication
+// planned for now.
 #[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct PublicationInput {
     channel_id: String,
     /// Text for new content, which the publication copies. Send this or
@@ -61,7 +64,8 @@ pub struct PublicationInput {
     body: Option<String>,
     /// Existing content, whose body the publication copies.
     content_id: Option<String>,
-    /// When to publish. Defaults to the time of the request.
+    /// When to publish, in a year from 0000 to 9999 in UTC. Defaults to the
+    /// time of the request.
     planned_at: Option<DateTime<Utc>>,
 }
 
@@ -76,6 +80,12 @@ impl PublicationInput {
         );
         Sha256::digest(serde_json::to_vec(&request).expect("the request serializes")).to_vec()
     }
+}
+
+// PostgreSQL text cannot hold U+0000, so no id holds one, and a lookup with
+// one fails as a server error.
+fn holds_nul(id: &str) -> bool {
+    id.contains('\0')
 }
 
 enum Source {
@@ -133,6 +143,19 @@ pub async fn create_publication(
         (None, Some(content_id)) => Source::Content(content_id),
         _ => return Err(ApiError::InvalidBody(StatusCode::UNPROCESSABLE_ENTITY)),
     };
+    // RFC 3339 has four-digit years, and the schema publishes `date-time`.
+    if input
+        .planned_at
+        .is_some_and(|time| !(0..=9999).contains(&time.year()))
+    {
+        return Err(ApiError::InvalidBody(StatusCode::UNPROCESSABLE_ENTITY));
+    }
+    if holds_nul(&input.channel_id) {
+        return Err(ApiError::ChannelNotFound);
+    }
+    if matches!(&source, Source::Content(content_id) if holds_nul(content_id)) {
+        return Err(ApiError::ContentNotFound);
+    }
     let organization_id = &caller.organization_id;
     let id = new_id("publication");
 
@@ -242,13 +265,20 @@ pub async fn list_publications(
     // plain-text rejection.
     Query(query): Query<HashMap<String, String>>,
 ) -> Result<Json<Publications>, ApiError> {
+    let cursor = query.get("cursor");
+    if cursor.is_some_and(|cursor| holds_nul(cursor)) {
+        return Ok(Json(Publications {
+            publications: Vec::new(),
+            next_cursor: None,
+        }));
+    }
     let mut publications: Vec<Publication> = sqlx::query_as(
         "SELECT id, organization_id, channel_id, content_id, body, state, planned_at
          FROM pipewhere.publication WHERE organization_id = $1 AND ($2::text IS NULL OR id < $2)
          ORDER BY id DESC LIMIT $3",
     )
     .bind(&caller.organization_id)
-    .bind(query.get("cursor"))
+    .bind(cursor)
     .bind(PAGE_SIZE as i64 + 1)
     .fetch_all(&state.db)
     .await?;
@@ -280,6 +310,9 @@ pub async fn get_publication(
     caller: OrgCaller,
     Path((_, publication_id)): Path<(String, String)>,
 ) -> Result<Json<Publication>, ApiError> {
+    if holds_nul(&publication_id) {
+        return Err(ApiError::NotFound);
+    }
     sqlx::query_as(
         "SELECT id, organization_id, channel_id, content_id, body, state, planned_at
          FROM pipewhere.publication WHERE id = $1 AND organization_id = $2",

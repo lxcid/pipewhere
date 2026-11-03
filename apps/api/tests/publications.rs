@@ -503,6 +503,7 @@ async fn another_organizations_resources_are_not_found() {
         ),
         ("a publication that does not exist", new_id("publication")),
         ("an id that is not a publication id", "not-an-id".to_owned()),
+        ("an id holding a NUL character", "bad%00id".to_owned()),
     ] {
         let path = format!("/v1/orgs/{personal}/publications/{publication_id}");
         assert_eq!(
@@ -519,6 +520,19 @@ async fn another_organizations_resources_are_not_found() {
         )
         .await,
         json!({ "publications": [], "next_cursor": null })
+    );
+    assert_eq!(
+        ok_json(
+            instance
+                .get(
+                    &format!("/v1/orgs/{personal}/publications?cursor=bad%00cursor"),
+                    Some(&token)
+                )
+                .await
+        )
+        .await,
+        json!({ "publications": [], "next_cursor": null }),
+        "a cursor holding a NUL character"
     );
 
     let channel_not_found = (
@@ -549,6 +563,16 @@ async fn another_organizations_resources_are_not_found() {
         (
             "content that does not exist",
             json!({ "channel_id": personal_channel, "content_id": new_id("content") }),
+            &content_not_found,
+        ),
+        (
+            "a channel id holding a NUL character",
+            json!({ "channel_id": "bad\u{0}channel", "body": "Hello" }),
+            &channel_not_found,
+        ),
+        (
+            "a content id holding a NUL character",
+            json!({ "channel_id": personal_channel, "content_id": "bad\u{0}content" }),
             &content_not_found,
         ),
     ] {
@@ -686,6 +710,30 @@ async fn a_body_api_cannot_read_is_refused() {
         (
             "a planned time without an offset",
             json!({ "channel_id": channel_id, "body": "Hello", "planned_at": "2026-12-01T09:00:00" }).to_string(),
+            unprocessable,
+        ),
+        (
+            "a misspelt planned time, which would otherwise plan it for now",
+            json!({ "channel_id": channel_id, "body": "Hello", "scheduled_at": "2026-12-01T09:00:00Z" })
+                .to_string(),
+            unprocessable,
+        ),
+        (
+            "a year after 9999",
+            json!({ "channel_id": channel_id, "body": "Hello", "planned_at": "+10000-01-01T00:00:00Z" })
+                .to_string(),
+            unprocessable,
+        ),
+        (
+            "a year 9999 time that is after 9999 in UTC",
+            json!({ "channel_id": channel_id, "body": "Hello", "planned_at": "9999-12-31T23:59:59-23:59" })
+                .to_string(),
+            unprocessable,
+        ),
+        (
+            "a year before 0000, which PostgreSQL cannot hold",
+            json!({ "channel_id": channel_id, "body": "Hello", "planned_at": "-10000-01-01T00:00:00Z" })
+                .to_string(),
             unprocessable,
         ),
         (

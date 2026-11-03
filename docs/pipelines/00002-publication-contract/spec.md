@@ -162,10 +162,11 @@ Proposed: awaiting operator approval.
 - `body` creates content with that text, in the same transaction as the publication, per D2. The text follows D10.
 - `content_id` names existing content. The publication copies its body as it is at that moment.
 - A request with both, or with neither, answers 422 `invalid_body`, as D10 answers text it refuses.
+- A field the request does not define answers 422 `invalid_body`. A misspelt `planned_at` would otherwise be dropped, and the publication planned for now.
 
 A publication's body follows D10 as well: at least one character that is not whitespace, and no U+0000. D10's reasons hold for it. Mastodon and Threads refuse a blank post, and PostgreSQL text cannot store U+0000. On create, the body is always content's text, which D10 has already checked. #17's edit applies the same check. Provider length limits belong to the adapter pipelines, 00004 and 00008.
 
-A `channel_id` or `content_id` outside the request's organization answers 422 `channel_not_found` or `content_not_found`. Another organization's channel gets the same answer as a channel that does not exist, per D6. The body's references do not answer 404, because 404 says the path's organization or publication was not found.
+A `channel_id` or `content_id` outside the request's organization answers 422 `channel_not_found` or `content_not_found`. Another organization's channel gets the same answer as a channel that does not exist, per D6. So does an id holding U+0000, which PostgreSQL text cannot store, so no id holds one. The body's references do not answer 404, because 404 says the path's organization or publication was not found.
 
 Create does not check the channel's status. [Scheduling and recovery D3 and D4](../00003-scheduling-recovery/spec.md) fail a publication whose channel cannot publish when its commit is claimed, not when it is created. Channels have no status until 00004.
 
@@ -175,9 +176,11 @@ Proposed: awaiting operator approval.
 
 `planned_at` is an RFC 3339 timestamp with an offset. The schema publishes it as a `date-time` string, and API answers it in UTC. PostgreSQL keeps microseconds, so finer precision is dropped.
 
+Its year in UTC must be from 0000 to 9999, the years RFC 3339 can write. API refuses other times with 422 `invalid_body`. chrono parses wider years, which API would otherwise store and answer outside the published format. PostgreSQL refuses years before 4713 BC, which would answer 500.
+
 When the request omits it, the planned time is the time of the request, by the database's clock. That is how a client publishes now, per D3. Making it required would tie publishing now to the client's clock.
 
-Any time is accepted, including one in the past. Lateness belongs to [scheduling and recovery D1 and D2](../00003-scheduling-recovery/spec.md): a publication whose commit cannot start by its planned time plus its tolerance fails as late. Refusing a past time here would need an allowance for clock skew, which is that tolerance under another name.
+Any time within those years is accepted, including one in the past. Lateness belongs to [scheduling and recovery D1 and D2](../00003-scheduling-recovery/spec.md): a publication whose commit cannot start by its planned time plus its tolerance fails as late. Refusing a past time here would need an allowance for clock skew, which is that tolerance under another name.
 
 A publication does not store a tolerance yet. Scheduling and recovery D2 records one at create, from the organization's default of 30 minutes. No organization can change that default until 00003 adds the setting, so 00003's migration can give existing publications 30 minutes, which is what each would have recorded. Nothing runs a publication before 00003.
 
