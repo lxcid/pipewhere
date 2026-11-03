@@ -89,8 +89,6 @@ What would overturn this: provider failures that last longer than D1's tolerance
 
 ### D5 — Worker finds due work by polling PostgreSQL
 
-Proposed: awaiting operator approval.
-
 Worker's scheduler polls PostgreSQL every 5 seconds for publications that are `scheduled` and whose planned time has passed. It sends each one's run to Restate, up to 100 a tick, oldest planned time first. Restate holds no timer for the schedule.
 
 Restate timers were rejected:
@@ -111,8 +109,6 @@ The costs:
 A tick can send a publication's run again before the first send has claimed it. That is harmless. D6 runs at most one invocation per publication at a time, and the loser of the claim stops.
 
 ### D6 — A run's journal is a sequence of PostgreSQL steps
-
-Proposed: awaiting operator approval.
 
 Binding: 00004, 00008, and later pipelines that change Worker's handlers.
 
@@ -136,8 +132,6 @@ What would overturn this: a run that must wait inside Restate, such as a backoff
 
 ### D7 — An attempt starts when a run claims its publication
 
-Proposed: awaiting operator approval.
-
 [Publication contract D19](../00002-publication-contract/spec.md) left when an attempt starts, and how a cancel in `preparing` ends one, to this pipeline.
 
 A run's first step claims the publication. In one transaction it moves the publication from `scheduled` and inserts the run's attempt:
@@ -154,8 +148,6 @@ Adding `cancelled` widens `AttemptResult`, with publication contract D8's cost: 
 Tolerated: a publication cancelled between steps, whose run then never takes another, keeps a running attempt. That needs Restate's state lost in the same moment. D9's recovery ends it.
 
 ### D8 — The commit step claims the commit, then calls the channel's adapter
-
-Proposed: awaiting operator approval.
 
 The commit step does three things, in order:
 
@@ -180,8 +172,6 @@ Checking for an adapter before the claim was rejected. D4 forbids failing a publ
 
 ### D9 — `worker recover` re-drives every run in flight
 
-Proposed: awaiting operator approval.
-
 This is the recovery path [infrastructure D4](../00001-infrastructure/spec.md) gives the first pipeline with scheduled work.
 
 `worker recover` is a one-off command. It finds every publication with a running attempt and sends its run to Restate. A running attempt marks a run in flight, whatever the publication's state. `scheduled` publications need no recovery, since D5's poller finds them.
@@ -203,8 +193,6 @@ It is a command rather than part of every tick. A poller re-driving runs in flig
 
 ### D10 — The API lists overdue publications and shows whether the scheduler has stalled
 
-Proposed: awaiting operator approval.
-
 The intent's second and third outcomes need two reads.
 
 - **Overdue.** `GET /v1/orgs/{organization_id}/publications?overdue=true` lists the organization's `scheduled` publications whose planned time has passed, newest first and paged as publication contract D14 pages the list. It is the first filter that D14 left for a client that needs one. A publication past its deadline that the worker has not yet failed is still listed, since it has not started.
@@ -217,8 +205,6 @@ A stalled tick was chosen over deriving a stall from overdue work. Overdue work 
 Tolerated: a poller whose sends Restate accepts, while Restate cannot reach Worker, keeps ticking. Its due work then shows as overdue.
 
 ### D11 — An organization's default tolerance is a setting; a publication's tolerance is a field
-
-Proposed: awaiting operator approval.
 
 - **The default.** `pipewhere.organization_setting` holds one row per organization, keyed by its id, with no id of its own, per [infrastructure D6](../00001-infrastructure/spec.md). Its `tolerance_seconds` is the organization's default. An organization without a row uses 30 minutes. `GET` and `PATCH /v1/orgs/{organization_id}/settings` read and change it.
 - **Who may change it.** Any member and any key of the organization, like every action so far. Gating it would be the first action a role may not perform, which [infrastructure D10](../00001-infrastructure/spec.md) ties to building forbidden. Team permissions are [intent 00006](../00006-team-review/intent.md)'s.
