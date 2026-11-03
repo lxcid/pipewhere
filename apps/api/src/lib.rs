@@ -18,6 +18,7 @@ pub mod channels;
 pub mod contents;
 pub mod error;
 pub mod ids;
+pub mod publications;
 pub mod tokens;
 
 #[derive(Clone)]
@@ -50,6 +51,11 @@ fn api() -> OpenApiRouter<AppState> {
         .routes(routes!(channels::get_channel))
         .routes(routes!(contents::create_content))
         .routes(routes!(contents::get_content, contents::update_content))
+        .routes(routes!(
+            publications::create_publication,
+            publications::list_publications
+        ))
+        .routes(routes!(publications::get_publication))
 }
 
 #[derive(OpenApi)]
@@ -141,7 +147,46 @@ mod tests {
                 "/v1/orgs/{organization_id}/channels/{channel_id}",
                 "/v1/orgs/{organization_id}/contents",
                 "/v1/orgs/{organization_id}/contents/{content_id}",
+                "/v1/orgs/{organization_id}/publications",
+                "/v1/orgs/{organization_id}/publications/{publication_id}",
             ]
+        );
+    }
+
+    #[test]
+    fn the_schema_publishes_the_error_codes_and_states_as_fixed_sets() {
+        let schema = serde_json::to_value(api().into_openapi()).unwrap();
+        let schemas = &schema["components"]["schemas"];
+        assert_eq!(
+            schemas["ErrorCode"]["enum"],
+            serde_json::json!([
+                "unauthorized",
+                "not_found",
+                "method_not_allowed",
+                "invalid_body",
+                "invalid_idempotency_key",
+                "idempotency_key_reused",
+                "channel_not_found",
+                "content_not_found",
+                "auth_unavailable",
+                "internal",
+            ])
+        );
+        assert_eq!(
+            schemas["PublicationState"]["enum"],
+            serde_json::json!([
+                "scheduled",
+                "preparing",
+                "publishing",
+                "published",
+                "failed",
+                "outcome_unknown",
+                "cancelled",
+            ])
+        );
+        assert_eq!(
+            schemas["Publication"]["properties"]["planned_at"]["format"],
+            "date-time"
         );
     }
 }

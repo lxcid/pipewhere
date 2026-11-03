@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use pipewhere_api::tokens::TokenVerifier;
 use pipewhere_api::{AppState, migrate, router};
-use reqwest::{Client, Method, Response, StatusCode, Url};
+use reqwest::{Client, Method, RequestBuilder, Response, StatusCode, Url};
 use serde_json::{Value, json};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{AssertSqlSafe, PgPool};
@@ -202,6 +202,15 @@ impl Instance {
         self.send(Method::PATCH, path, token, Some(body)).await
     }
 
+    /// A request to API with a bearer token, for a test that adds headers.
+    pub fn request(&self, method: Method, path: &str, token: Option<&str>) -> RequestBuilder {
+        let request = self.http.request(method, format!("{}{path}", self.api_url));
+        match token {
+            Some(token) => request.bearer_auth(token),
+            None => request,
+        }
+    }
+
     async fn send(
         &self,
         method: Method,
@@ -209,10 +218,7 @@ impl Instance {
         token: Option<&str>,
         body: Option<Value>,
     ) -> Response {
-        let mut request = self.http.request(method, format!("{}{path}", self.api_url));
-        if let Some(token) = token {
-            request = request.bearer_auth(token);
-        }
+        let mut request = self.request(method, path, token);
         if let Some(body) = body {
             request = request.json(&body);
         }

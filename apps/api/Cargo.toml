@@ -11,6 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 axum = "0.8.9"
+chrono = { version = "0.4.45", default-features = false, features = ["serde"] }
 jsonwebtoken = { version = "11.1.0", default-features = false, features = ["rust_crypto"] }
 reqwest = { version = "0.13.5", default-features = false, features = [
   "json",
@@ -19,17 +20,19 @@ reqwest = { version = "0.13.5", default-features = false, features = [
 rustls = { version = "0.23.46", default-features = false, features = ["ring", "std"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
+sha2 = "0.11.1"
 sqlx = { version = "0.9.0", default-features = false, features = [
   "postgres",
   "runtime-tokio",
   "tls-rustls-ring",
   "macros",
   "migrate",
+  "chrono",
 ] }
 tokio = { version = "1.54.1", features = ["macros", "rt-multi-thread", "net", "signal", "sync"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
-utoipa = "6.0.0"
+utoipa = { version = "6.0.0", features = ["chrono"] }
 utoipa-axum = "0.3.0"
 uuid = { version = "1.29.0", features = ["v7"] }
 
