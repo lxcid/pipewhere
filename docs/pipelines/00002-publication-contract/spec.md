@@ -120,8 +120,6 @@ A provider can be listed before its adapter exists. Until 00004 and 00008 build 
 
 ### D9 — A request body API cannot read answers with an error code
 
-Proposed: awaiting operator approval.
-
 Binding: later pipelines that add an API endpoint with a request body.
 
 Every endpoint reads its JSON body through `JsonBody` in `apps/api/src/error.rs`, not axum's `Json`. A body it cannot read answers with API's error body, `{ "code": "invalid_body" }`, and the status axum's `Json` extractor chose:
@@ -142,8 +140,6 @@ A later endpoint violates this decision if it takes axum's `Json` as a request e
 What would overturn this: clients needing more than the status to fix a bad request, such as which field failed. That would add a message or field list to the error body.
 
 ### D10 — Content needs text other than whitespace, and no NUL
-
-Proposed: awaiting operator approval.
 
 Content's `body` must hold at least one character that is not whitespace, and must not hold U+0000. API refuses other text with 422 `invalid_body`, on create and on edit, the same answer D9 gives a body of the wrong shape. Whitespace is Rust's definition, the Unicode `White_Space` property.
 
