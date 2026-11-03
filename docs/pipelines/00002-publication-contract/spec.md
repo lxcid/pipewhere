@@ -129,9 +129,11 @@ Every endpoint reads its JSON body through `JsonBody` in `apps/api/src/error.rs`
 - 400 when the body is not JSON.
 - 413 when the body is over axum's default limit of 2 MB.
 - 415 when the request does not say `application/json`.
-- 422 when the JSON has the wrong shape, or fails the endpoint's own checks.
+- 422 when the JSON has the wrong shape.
 
 axum's `Json` answers the same statuses with a plain-text message. A client would then need a second way to read API's errors. Keeping axum's statuses tells a client which of the four mistakes it made without adding a message field.
+
+This decision covers only bodies the extractor cannot read. How an endpoint answers a readable body that breaks its own rules is that endpoint's decision, such as D10 for content.
 
 The caller is checked against the organization before the body is read, per 00001 D2. An outsider sending a bad body therefore gets not found, not `invalid_body`.
 
@@ -139,13 +141,15 @@ A later endpoint violates this decision if it takes axum's `Json` as a request e
 
 What would overturn this: clients needing more than the status to fix a bad request, such as which field failed. That would add a message or field list to the error body.
 
-### D10 — Content needs text other than whitespace
+### D10 — Content needs text other than whitespace, and no NUL
 
 Proposed: awaiting operator approval.
 
-Content's `body` must hold at least one character that is not whitespace. API refuses empty or whitespace-only text with 422 `invalid_body`, on create and on edit. Whitespace is Rust's definition, the Unicode `White_Space` property.
+Content's `body` must hold at least one character that is not whitespace, and must not hold U+0000. API refuses other text with 422 `invalid_body`, on create and on edit, the same answer D9 gives a body of the wrong shape. Whitespace is Rust's definition, the Unicode `White_Space` property.
 
 Text is all content holds, so blank content is not writing. Mastodon and Threads both refuse a blank post, so a publication made from it could never go out. API has no way to delete content yet, so a blank row would stay.
+
+PostgreSQL's `text` cannot store U+0000. Without the check, such text fails at the insert and answers 500, as if API were at fault.
 
 No other limit applies. Content has no channel, so provider length limits belong to publications. Request bodies are capped at 2 MB by axum's default, per D9.
 

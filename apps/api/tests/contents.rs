@@ -235,6 +235,12 @@ async fn a_body_api_cannot_read_is_refused() {
                 r#"{"body":" \n\t"}"#,
                 StatusCode::UNPROCESSABLE_ENTITY,
             ),
+            (
+                "a NUL character, which PostgreSQL text cannot hold",
+                json,
+                r#"{"body":"a\u0000b"}"#,
+                StatusCode::UNPROCESSABLE_ENTITY,
+            ),
         ];
         for (case, content_type, body, status) in cases {
             assert_eq!(

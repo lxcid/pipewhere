@@ -83,7 +83,7 @@ Asserted, not verified:
   - `GET /v1/orgs/{organization_id}/contents/{content_id}` reads one.
   - `PATCH /v1/orgs/{organization_id}/contents/{content_id}` replaces its body and answers 200 with it.
 - Request and response share one shape: `{ "body": "..." }` in, `{ "id", "organization_id", "body" }` out.
-- `JsonBody` in `apps/api/src/error.rs` wraps axum's `Json`. A body API cannot read answers `invalid_body` with axum's status, per D9. Blank text answers 422 `invalid_body`, per D10.
+- `JsonBody` in `apps/api/src/error.rs` wraps axum's `Json`. A body API cannot read answers `invalid_body` with axum's status, per D9. Blank text, or text holding U+0000, answers 422 `invalid_body`, per D10.
 - `support::Instance` gains `post` and `patch`, which send a JSON body.
 
 Choices made in the build, within the spec:
@@ -92,7 +92,7 @@ Choices made in the build, within the spec:
 - `PATCH` requires `body`, so it replaces the one editable field. When content gains a second field, `body` becomes optional, which existing clients do not notice.
 - Deferred: listing content. A list grows without bound, so it needs a cursor, which no client needs yet. Add it with the first client that browses content.
 - Tolerated: content has no delete. A duplicate from a retried create stays as a private row.
-- Tolerated: `PATCH` reads the body before looking up the content. A blank body sent to missing content answers 422, not 404. The caller has already been checked against the organization, so this reveals nothing.
+- Tolerated: `PATCH` reads the body before looking up the content. Any body D9 or D10 refuses, sent to missing content, answers `invalid_body`, not 404. The caller has already been checked against the organization, so this reveals nothing.
 - No index beyond the primary key. Reads and edits go by id.
 
 Verified:
@@ -100,11 +100,12 @@ Verified:
 - `cargo test -p pipewhere-api`: 5 unit tests and 28 integration tests pass, 6 of them in `tests/contents.rs`.
 - `pnpm --filter @pipewhere/auth test`: 20 tests pass.
 - `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all --check`: clean.
-- `a_body_api_cannot_read_is_refused` sends each bad body to `POST` and `PATCH`: not JSON (400), no content type (415), no `body` field and a non-text `body` (422), empty and whitespace-only text (422), and over 2 MB (413). Each answers `invalid_body`, and the stored row is unchanged. An outsider's malformed body answers 404.
+- `a_body_api_cannot_read_is_refused` sends each bad body to `POST` and `PATCH`: not JSON (400), no content type (415), no `body` field and a non-text `body` (422), empty and whitespace-only text and text holding U+0000 (422), and over 2 MB (413). Each answers `invalid_body`, and the stored row is unchanged. An outsider's malformed body answers 404.
 - Each of these changes, made by hand and reverted, fails a test:
   - The read query's organization filter removed: `another_organizations_content_is_not_found`.
   - The edit query's organization filter removed: the same test.
   - `trim()` dropped from the blank check: `a_body_api_cannot_read_is_refused`.
+  - The NUL check absent: the same test, with 500 `internal` for text holding U+0000.
   - Every rejection mapped to 400: the same test.
 - The table refuses an id with another table's prefix (`content_id_check`) and an organization that does not exist (`content_organization_id_fkey`). Deleting an organization that has content fails on `content_organization_id_fkey`.
 - `api serve`, run by hand against the test server, served `/openapi.json` with `post` on `/contents`, and `get` and `patch` on `/contents/{content_id}`. It answered an unauthenticated malformed `POST` with 401.

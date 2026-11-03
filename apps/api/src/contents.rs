@@ -20,13 +20,16 @@ pub struct Content {
 
 #[derive(Deserialize, ToSchema)]
 pub struct ContentInput {
-    /// The text. It must hold a character other than whitespace.
+    /// The text. It must hold a character other than whitespace, and no NUL
+    /// character.
     body: String,
 }
 
 impl ContentInput {
     fn into_body(self) -> Result<String, ApiError> {
-        if self.body.trim().is_empty() {
+        // PostgreSQL text cannot hold U+0000, so the insert would fail as a
+        // server error.
+        if self.body.trim().is_empty() || self.body.contains('\0') {
             return Err(ApiError::InvalidBody(StatusCode::UNPROCESSABLE_ENTITY));
         }
         Ok(self.body)

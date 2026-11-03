@@ -15,9 +15,10 @@ pub enum ApiError {
     Unauthorized,
     NotFound,
     MethodNotAllowed,
-    /// Carries the status axum's `Json` extractor chose: 400 for malformed
-    /// JSON, 413 over the body limit, 415 without a JSON content type, and
-    /// 422 for JSON of the wrong shape.
+    /// A 4xx status: the one axum's `Json` extractor chose (400 for malformed
+    /// JSON, 413 over the body limit, 415 without a JSON content type, 422
+    /// for JSON of the wrong shape), or 422 for a body an endpoint's own
+    /// checks refuse.
     InvalidBody(StatusCode),
     AuthUnavailable(String),
     Database(sqlx::Error),
