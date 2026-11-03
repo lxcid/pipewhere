@@ -214,8 +214,6 @@ The list needs a cursor now because it grows with every post, and adding one lat
 
 ### D15 — Edit, cancel, retry, and resolve are separate endpoints
 
-Proposed: awaiting operator approval.
-
 A person changes a publication through four operations. Each answers 200 with the publication as the change left it.
 
 - `PATCH /v1/orgs/{organization_id}/publications/{publication_id}` edits `body`, `planned_at`, or both. An omitted field keeps its value. The body follows D10 and D11, and the time follows D12. Any other field answers 422 `invalid_body`, as on create.
@@ -237,8 +235,6 @@ Tolerated:
 
 ### D16 — A state that does not allow the action answers 409 `state_conflict`
 
-Proposed: awaiting operator approval.
-
 Each action is one conditional `UPDATE`. Its `WHERE` clause names the states D3 allows the action from:
 
 | Action | From | To |
@@ -256,8 +252,6 @@ A concurrent change loses cleanly. PostgreSQL makes a second `UPDATE` of a row w
 
 ### D17 — A retry takes a key and a new time, and a repeat answers the publication as it is now
 
-Proposed: awaiting operator approval.
-
 Retry meets D5 the way create does, under D13:
 
 - **The header.** `Idempotency-Key` follows D13's rules. Create and retry share one key space per organization.
@@ -270,8 +264,6 @@ Retry meets D5 the way create does, under D13:
 Tolerated: the body is required, so a retry for now sends `{}`. Every action with input then reads one JSON body through `JsonBody`, per D9.
 
 ### D18 — Resolving to `published` records the remote id, and the address when given
-
-Proposed: awaiting operator approval.
 
 A publication gains `remote_id` and `remote_url`. Both are null until it is `published`, and both appear in every publication response.
 
