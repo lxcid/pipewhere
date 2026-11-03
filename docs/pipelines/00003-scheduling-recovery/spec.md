@@ -228,3 +228,11 @@ Proposed: awaiting operator approval.
 - **Existing publications.** The migration gives each one 1,800 seconds, per publication contract D12.
 
 Seconds, because they are the unit JSON APIs most often use for a duration, and the field's name says so.
+
+### D12 — The channel-status check waits for 00004
+
+D3 and D4 need a channel's status, and the intent's fourth outcome shows it on a waiting publication. That status comes from [intent 00004](../00004-provider-delivery/intent.md), which is still a draft.
+
+The operator chose to build the rest of 00003 first. The channel-status part is 00003's last issue, built once 00004 gives a channel a readable status. 00003 stays `in-progress` until it lands. Neither intent changes.
+
+00003 does not add a channel status of its own. One built here would be a second model of a channel's availability for 00004 to reconcile.
