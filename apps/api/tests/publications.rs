@@ -738,7 +738,7 @@ async fn a_body_api_cannot_read_is_refused() {
             unprocessable,
         ),
         (
-            "a year after 9999",
+            "a year with five digits, which RFC 3339 cannot write",
             json!({ "channel_id": channel_id, "body": "Hello", "planned_at": "+10000-01-01T00:00:00Z" })
                 .to_string(),
             unprocessable,
@@ -756,8 +756,8 @@ async fn a_body_api_cannot_read_is_refused() {
             unprocessable,
         ),
         (
-            "a year before 0000, which PostgreSQL cannot hold",
-            json!({ "channel_id": channel_id, "body": "Hello", "planned_at": "-10000-01-01T00:00:00Z" })
+            "a year 0000 time that is before 0000 in UTC",
+            json!({ "channel_id": channel_id, "body": "Hello", "planned_at": "0000-01-01T00:00:00+00:01" })
                 .to_string(),
             unprocessable,
         ),
