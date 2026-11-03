@@ -146,7 +146,8 @@ Verified:
 - `the_schema_publishes_the_error_codes_and_states_as_fixed_sets` checks the `ErrorCode` and `PublicationState` enums and the `date-time` format of `planned_at`.
 - A throwaway test fetched `/openapi.json` from the router `api serve` runs. It listed both new paths, the required `Idempotency-Key` header, the optional `cursor` query parameter, and `ErrorBody.code` as a reference to `ErrorCode`.
 - `concurrent_use_of_one_key_creates_one_publication` sends 20 requests with one key at once. All answer 201 with one id, and one publication and one content row exist.
-- `a_body_api_cannot_read_is_refused` also refuses with 422 `invalid_body`: an unknown field (`scheduled_at`), `+10000-01-01T00:00:00Z`, `9999-12-31T23:59:59-23:59` (year 10000 in UTC), `9999-12-31T23:59:60Z` (a leap second that carries into 10000 when stored), and `-10000-01-01T00:00:00Z`.
+- `a_body_api_cannot_read_is_refused` also refuses with 422 `invalid_body`: an unknown field (`scheduled_at`), `+10000-01-01T00:00:00Z`, `9999-12-31T23:59:59-23:59` (year 10000 in UTC), `9999-12-31T23:59:60Z` (a leap second that carries into 10000 when stored), and `-10000-01-01T00:00:00Z`. It refuses forms chrono's own deserializer accepts but RFC 3339 does not: `2026-1-1T9:0:0Z`, `2026-12-01T09:00:00+0800`, and `2026-12-01T09:00:00UTC`.
+- `a_missing_or_short_key_is_refused` also refuses a 30-byte key that is not visible ASCII with 400 `invalid_idempotency_key`.
 - `a_request_waits_for_another_transaction_holding_its_key` holds the key in an open transaction. The request is still waiting after 500 ms. When the transaction commits a different request, it answers 422 `idempotency_key_reused`. When the transaction rolls back, it creates.
 - Each of these changes, made by hand and reverted, fails a test:
   - The organization filter removed from the single read, the list, the channel check, or the content lookup: `another_organizations_resources_are_not_found`.
@@ -154,6 +155,7 @@ Verified:
   - The hash comparison skipped: the same test, which then returns the first publication for a different request.
   - `deny_unknown_fields` removed from `PublicationInput`: `a_body_api_cannot_read_is_refused`, where a body with `scheduled_at` answers 201.
   - The `planned_at` year check removed: the same test, where `+10000-01-01T00:00:00Z` answers 201.
+  - The strict RFC 3339 parser removed from `planned_at`: the same test, where `2026-1-1T9:0:0Z` answers 201.
   - The U+0000 check on ids removed: `another_organizations_resources_are_not_found`, with 500 `internal`.
   - The key claimed by checking for it first and then inserting without `ON CONFLICT`: `a_request_waits_for_another_transaction_holding_its_key` fails on every run, with 500 `internal`. `concurrent_use_of_one_key_creates_one_publication` failed on 3 of 5 runs. Racing real requests depends on timing, which is why the held-transaction test exists.
 - The tables refuse an id with another table's prefix (`publication_id_check`), a state outside D3 (`publication_state_check`), an organization that does not exist (`publication_organization_id_fkey`), and a key whose publication is never inserted (`idempotency_key_publication_id_fkey`, at commit). Both foreign keys to `auth.organization` have no delete action, read from `pg_constraint`.

@@ -5,7 +5,7 @@ use axum::extract::{FromRequestParts, Path, Query, State};
 use axum::http::StatusCode;
 use axum::http::request::Parts;
 use chrono::{DateTime, Datelike, Utc};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use sha2::{Digest, Sha256};
 use utoipa::ToSchema;
 
@@ -66,7 +66,20 @@ pub struct PublicationInput {
     content_id: Option<String>,
     /// When to publish, in a year from 0000 to 9999 in UTC. Defaults to the
     /// time of the request.
+    #[serde(default, deserialize_with = "rfc3339")]
     planned_at: Option<DateTime<Utc>>,
+}
+
+// chrono's own deserializer also accepts forms RFC 3339 does not, such as
+// `+0800` or single-digit fields.
+fn rfc3339<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<DateTime<Utc>>, D::Error> {
+    Option::<String>::deserialize(deserializer)?
+        .map(|text| {
+            DateTime::parse_from_rfc3339(&text)
+                .map(|time| time.to_utc())
+                .map_err(serde::de::Error::custom)
+        })
+        .transpose()
 }
 
 impl PublicationInput {
@@ -115,13 +128,13 @@ impl<S: Send + Sync> FromRequestParts<S> for IdempotencyKey {
     path = "/v1/orgs/{organization_id}/publications",
     params(
         ("organization_id" = String, Path),
-        ("Idempotency-Key" = String, Header, description = "At least 128 random bits, such as 16 random bytes in base64url: 22 to 255 characters. Sending the same request with the same key returns the first result."),
+        ("Idempotency-Key" = String, Header, description = "At least 128 random bits, such as 16 random bytes in base64url: 22 to 255 visible ASCII characters. Sending the same request with the same key returns the first result."),
     ),
     request_body = PublicationInput,
     security(("bearer" = [])),
     responses(
         (status = 201, body = Publication, description = "The publication was created, or the key's first request created it"),
-        (status = 400, body = ErrorBody, description = "The request body is not JSON, or the Idempotency-Key is missing or not 22 to 255 characters"),
+        (status = 400, body = ErrorBody, description = "The request body is not JSON, or the Idempotency-Key is missing or not 22 to 255 visible ASCII characters"),
         (status = 401, body = ErrorBody, description = "No valid access token"),
         (status = 404, body = ErrorBody, description = "No such organization, or the caller is not in it"),
         (status = 413, body = ErrorBody, description = "The request body is over 2 MB"),

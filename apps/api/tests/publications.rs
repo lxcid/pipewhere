@@ -464,6 +464,25 @@ async fn a_missing_or_short_key_is_refused() {
             "{case}"
         );
     }
+    let response = instance
+        .request(
+            Method::POST,
+            &format!("/v1/orgs/{organization_id}/publications"),
+            Some(&token),
+        )
+        .header(
+            "idempotency-key",
+            reqwest::header::HeaderValue::from_bytes("é".repeat(15).as_bytes()).unwrap(),
+        )
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        refusal(response).await,
+        invalid,
+        "30 bytes that are not visible ASCII"
+    );
     for key in ["a".repeat(22), "a".repeat(255)] {
         created(create(&instance, &organization_id, &token, &key, body.clone()).await).await;
     }
@@ -739,6 +758,24 @@ async fn a_body_api_cannot_read_is_refused() {
         (
             "a year before 0000, which PostgreSQL cannot hold",
             json!({ "channel_id": channel_id, "body": "Hello", "planned_at": "-10000-01-01T00:00:00Z" })
+                .to_string(),
+            unprocessable,
+        ),
+        (
+            "a planned time with single-digit fields",
+            json!({ "channel_id": channel_id, "body": "Hello", "planned_at": "2026-1-1T9:0:0Z" })
+                .to_string(),
+            unprocessable,
+        ),
+        (
+            "a planned time with an offset that has no colon",
+            json!({ "channel_id": channel_id, "body": "Hello", "planned_at": "2026-12-01T09:00:00+0800" })
+                .to_string(),
+            unprocessable,
+        ),
+        (
+            "a planned time named in UTC rather than offset",
+            json!({ "channel_id": channel_id, "body": "Hello", "planned_at": "2026-12-01T09:00:00UTC" })
                 .to_string(),
             unprocessable,
         ),
