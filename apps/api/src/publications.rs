@@ -489,14 +489,14 @@ pub async fn cancel_publication(
 
 #[derive(Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
-pub struct Retry {
+pub struct RetryInput {
     /// When to publish, in a year from 0000 to 9999 in UTC. Defaults to the
     /// time of the request.
     #[serde(default, deserialize_with = "rfc3339")]
     planned_at: Option<DateTime<Utc>>,
 }
 
-impl Retry {
+impl RetryInput {
     // The publication is part of the request, so one key cannot retry two
     // publications.
     fn request_hash(&self, publication_id: &str) -> Vec<u8> {
@@ -513,7 +513,7 @@ impl Retry {
         ("publication_id" = String, Path),
         ("Idempotency-Key" = String, Header, description = "At least 128 random bits, such as 16 random bytes in base64url: 22 to 255 visible ASCII characters. Sending the same request with the same key returns the publication as it is now, without retrying it again."),
     ),
-    request_body = Retry,
+    request_body = RetryInput,
     security(("bearer" = [])),
     responses(
         (status = 200, body = Publication, description = "The publication is `scheduled` again, or the key's first request retried it"),
@@ -533,7 +533,7 @@ pub async fn retry_publication(
     caller: OrgCaller,
     Path((_, publication_id)): Path<(String, String)>,
     IdempotencyKey(key): IdempotencyKey,
-    JsonBody(input): JsonBody<Retry>,
+    JsonBody(input): JsonBody<RetryInput>,
 ) -> Result<Json<Publication>, ApiError> {
     let planned_at = checked_planned_at(input.planned_at)?;
     if holds_nul(&publication_id) {
@@ -607,7 +607,7 @@ pub async fn retry_publication(
 
 #[derive(Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
-pub enum Outcome {
+pub enum ResolutionOutcome {
     /// A post exists. Send its `remote_id`.
     Published,
     /// Nothing was posted.
@@ -617,7 +617,7 @@ pub enum Outcome {
 #[derive(Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Resolution {
-    outcome: Outcome,
+    outcome: ResolutionOutcome,
     /// The provider's id for the post. Required when `outcome` is
     /// `published`, and refused otherwise.
     remote_id: Option<String>,
@@ -655,7 +655,7 @@ pub async fn resolve_publication(
     let (outcome, remote_id, remote_url) = match (input.outcome, input.remote_id, input.remote_url)
     {
         // PostgreSQL text cannot hold U+0000.
-        (Outcome::Published, Some(remote_id), remote_url)
+        (ResolutionOutcome::Published, Some(remote_id), remote_url)
             if !remote_id.trim().is_empty() && !remote_id.contains('\0') =>
         {
             // A client shows the address as a link, so a `javascript:` one
@@ -669,7 +669,7 @@ pub async fn resolve_publication(
             };
             (PublicationState::Published, Some(remote_id), remote_url)
         }
-        (Outcome::Failed, None, None) => (PublicationState::Failed, None, None),
+        (ResolutionOutcome::Failed, None, None) => (PublicationState::Failed, None, None),
         _ => return Err(invalid),
     };
     if holds_nul(&publication_id) {

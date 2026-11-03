@@ -195,7 +195,7 @@ mod tests {
             ])
         );
         assert_eq!(
-            schemas["Outcome"]["enum"],
+            schemas["ResolutionOutcome"]["enum"],
             serde_json::json!(["published", "failed"])
         );
         assert_eq!(

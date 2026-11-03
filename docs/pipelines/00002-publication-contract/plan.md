@@ -181,7 +181,7 @@ Asserted, not verified:
 - Each action is one conditional `UPDATE` on the states D3 allows. When it changes nothing, `refusal` looks the publication up: missing answers 404, and present answers 409 `state_conflict`, a new `ErrorCode`, per D16.
 - Every publication response gains `remote_id` and `remote_url`, null until `published`.
 - Create's year check on `planned_at` moved to `checked_planned_at`, which create, edit, and retry share. The publication column list is the `columns!` macro, since every query returning a publication now names nine columns.
-- The schema publishes the resolution's `outcome` as the string enum `Outcome`, `published` or `failed`.
+- The schema publishes the resolution's `outcome` as the string enum `ResolutionOutcome`, `published` or `failed`.
 
 Choices made in the build, within the spec:
 
