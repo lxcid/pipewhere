@@ -222,3 +222,27 @@ D3 and D4 need a channel's status, and the intent's fourth outcome shows it on a
 The operator chose to build the rest of 00003 first. The channel-status part is 00003's last issue, built once 00004 gives a channel a readable status. 00003 stays `in-progress` until it lands. Neither intent changes.
 
 00003 does not add a channel status of its own. One built here would be a second model of a channel's availability for 00004 to reconcile.
+
+### D13 — Create's request hash takes the tolerance as the request sent it
+
+Proposed: awaiting operator approval.
+
+[Publication contract D13](../00002-publication-contract/spec.md) hashes create's parsed request. The hash gains `tolerance_seconds` after `planned_at`. An omitted tolerance hashes as omitted, as an omitted `planned_at` does. It does not hash as the 1,800 seconds create fills in.
+
+- A request that omits the tolerance takes the organization's default once #27 adds it. Repeating that request after the default changes is still the same request, so it must match.
+- An omitted tolerance and an explicit 1,800 are therefore different requests. One key sent with both answers 422 `idempotency_key_reused`.
+
+### D14 — A deadline after the year 9999 is tolerated
+
+Proposed: awaiting operator approval.
+
+[Publication contract D12](../00002-publication-contract/spec.md) accepts a planned time up to the end of 9999 in UTC. A tolerance can carry its deadline into 10000. The API then answers the deadline as chrono writes such a year, `+10000-01-01T00:29:59Z`. That is outside the `date-time` format the schema publishes. A create planned for `9999-12-31T23:59:59Z` with the default tolerance answered exactly that.
+
+This is tolerated:
+
+- **Likelihood.** It needs a planned time in the last 24 hours of the year 9999.
+- **Impact.** A client that parses `deadline` strictly fails on that one publication. PostgreSQL holds such a time, so a check of the deadline in SQL, as D2 places it, still works.
+- **Recoverability.** The operator edits the planned time to an earlier one.
+- **Cost.** Keeping the deadline in range means refusing planned times in the last day of 9999. That narrows D12's accepted range, an approved decision of 00002. Doing it per publication needs the edit to check its stored time against its new tolerance, or the reverse, inside the update.
+
+What would bring it back: a client that sends far-future times as a sentinel, such as `9999-12-31T23:59:59Z` for "never".
