@@ -54,14 +54,13 @@ Concurrency and recovery are tested with a transaction held open, or with real r
   - Retry does not touch the tolerance, so it keeps it.
   - `checked_tolerance` refuses a value outside 300 to 86,400 with 422 `invalid_body`, on create and edit.
   - Every publication response shows `tolerance_seconds` and `deadline`. The `columns!` macro computes the deadline as `planned_at + tolerance_seconds * interval '1 second'`. Nothing stores it.
-  - Create's request hash gains `tolerance_seconds`, per D13.
+  - Create's request hash gains `tolerance_seconds` when the request sends one, per D13. A request without one hashes as it did before #26, so keys stored then still match, per 00002 D5. Retry's hash is unchanged.
 - The schema publishes `tolerance_seconds` with `minimum` 300 and `maximum` 86400 on `Publication`, `PublicationInput`, and `PublicationEdit`, and `deadline` as `date-time`. Both are required on `Publication`.
 
 Choices made in the build, within the spec:
 
-- A key stored before #26 no longer matches a repeat of its request. Create's hash now has six elements, so every create hash changes, even for a request that sends no tolerance. A repeat answers 422 `idempotency_key_reused`. No deployment holds real keys yet. Retry's hash is unchanged.
 - The deadline adds a whole number of seconds. An interval of seconds holds no days, so adding it does not depend on the session's time zone.
-- `tolerance_seconds: null` is treated as omitted. Create then uses 1,800, and edit keeps the current tolerance, as 00002 D15 tolerates for `planned_at: null`.
+- `tolerance_seconds: null` is treated as omitted, per D13. Create then uses 1,800, and edit keeps the current tolerance.
 - Tolerated: a planned time in the last day of 9999 can carry its deadline past the published format, per D14.
 - No index added. The deadline is computed per row read.
 
@@ -76,17 +75,26 @@ Verified:
 - `a_body_api_cannot_read_is_refused` refuses 299, 86,401, 0, 4,294,967,296, and `"30m"` on create with 422 `invalid_body`. `an_edit_changes_only_this_channels_copy` refuses 299, 86,401, −1,800, 1,800.5, and `"1800"` on edit. Its two allowed tolerance edits, 300 and 86,400, change only `tolerance_seconds` and `deadline`. Its planned-time edit moves the deadline with it.
 - `each_action_is_allowed_only_in_the_states_d3_lists` gains a tolerance-only edit, `edit tolerance`. It succeeds in `scheduled` and `failed`, and answers 409 `state_conflict` in the other five states, changing nothing. `resolving_records_what_a_person_found` and `another_organizations_publication_is_not_found` run the same edit through their loops.
 - `a_repeated_retry_returns_the_publication_without_retrying_again` retries a publication with a 600-second tolerance. The retry keeps 600, and the deadline moves to the new planned time plus 10 minutes.
-- `a_repeated_request_returns_the_first_result` sends a request's key again with `tolerance_seconds: 1800` added, and gets 422 `idempotency_key_reused`.
+- `a_repeated_request_returns_the_first_result`:
+  - It reads the hash stored for a create without a tolerance. The hash equals SHA-256 of the five-element request that main hashed before #26.
+  - It sends the key again with `tolerance_seconds: null`, and gets the first result.
+  - It sends the key again with `tolerance_seconds: 1800` added, and gets 422 `idempotency_key_reused`.
+- `an_edit_changes_only_this_channels_copy` edits with `tolerance_seconds: null`, and the publication is unchanged.
 - `the_tables_refuse_bad_rows` shows the table refusing 299 and 86,401 (`publication_tolerance_seconds_check`), and an insert that leaves the column out (`23502`, not null).
 - `the_schema_publishes_the_error_codes_and_states_as_fixed_sets` checks the bounds on all three schemas, `deadline`'s format, and which fields are required. `the_schema_lists_every_endpoint` is unchanged and passes.
-- A throwaway test dropped the column, inserted a publication in the old shape, and ran the migration's SQL. The row read 1,800, and `information_schema.columns` showed no default.
-- A throwaway test created a publication planned for `9999-12-31T23:59:59Z`. Its deadline answered `+10000-01-01T00:29:59Z`, as D14 records.
-- Each of these changes, made by a script that copies the file aside and restores it, fails a test:
+- The backfill, by a throwaway test against `pipewhere-test-postgres`, deleted afterwards:
+  1. `ALTER TABLE pipewhere.publication DROP COLUMN tolerance_seconds`, to return the table to its shape before #26.
+  2. Insert a publication without the column.
+  3. Run the migration's two `ALTER TABLE` statements.
+  4. The row's `tolerance_seconds` read 1,800. `information_schema.columns` showed a null `column_default` for the column.
+- D14's year-10000 deadline, by a throwaway test, deleted afterwards. A create with `"planned_at": "9999-12-31T23:59:59Z"` and no tolerance answered `"deadline": "+10000-01-01T00:29:59Z"`.
+- Each of these changes, made by a Python script outside the repository, fails a test. The script copied the file aside, made one change, ran the tests, and restored the file.
   - API's range check skipped: `a_body_api_cannot_read_is_refused` and `an_edit_changes_only_this_channels_copy`, where the table's check answers 500.
   - The table's check removed, or either bound loosened by one: `the_tables_refuse_bad_rows`.
   - The column default kept: the same test.
   - The edit's state guard bypassed when the edit changes only the tolerance: `each_action_is_allowed_only_in_the_states_d3_lists` and `resolving_records_what_a_person_found`.
   - The tolerance dropped from the request hash: `a_repeated_request_returns_the_first_result`.
+  - An omitted tolerance hashed as `null` after the other fields: the same test.
   - The deadline subtracting the tolerance, or counting it in minutes: four tests, among them `a_member_creates_lists_and_reads_publications`.
   - The deadline set to 30 minutes, whatever the tolerance: `a_publication_records_its_tolerance`, `an_edit_changes_only_this_channels_copy`, and the retry test.
   - Create storing 1,800 whatever the request sent: `a_publication_records_its_tolerance`.

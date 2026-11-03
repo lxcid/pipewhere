@@ -223,14 +223,16 @@ The operator chose to build the rest of 00003 first. The channel-status part is 
 
 00003 does not add a channel status of its own. One built here would be a second model of a channel's availability for 00004 to reconcile.
 
-### D13 — Create's request hash takes the tolerance as the request sent it
+### D13 — Create's request hash takes the tolerance only when the request sends one
 
 Proposed: awaiting operator approval.
 
-[Publication contract D13](../00002-publication-contract/spec.md) hashes create's parsed request. The hash gains `tolerance_seconds` after `planned_at`. An omitted tolerance hashes as omitted, as an omitted `planned_at` does. It does not hash as the 1,800 seconds create fills in.
+[Publication contract D13](../00002-publication-contract/spec.md) hashes create's parsed request. A request that sends `tolerance_seconds` hashes it with the other fields. A request that omits it hashes exactly as it did before the tolerance existed. It does not hash as the 1,800 seconds create fills in.
 
+- [Publication contract D5](../00002-publication-contract/spec.md) is binding on this pipeline. A key has no time-based expiry, and the same key and request return the stored result. Before #26, create refused unknown fields, so no stored key was sent with a tolerance. Every stored key therefore keeps matching its request.
 - A request that omits the tolerance takes the organization's default once #27 adds it. Repeating that request after the default changes is still the same request, so it must match.
 - An omitted tolerance and an explicit 1,800 are therefore different requests. One key sent with both answers 422 `idempotency_key_reused`.
+- `tolerance_seconds: null` is an omitted tolerance, as [publication contract D15](../00002-publication-contract/spec.md) tolerates for `planned_at: null`. It hashes as omitted, create fills in 1,800, and edit keeps the current tolerance.
 
 ### D14 — A deadline after the year 9999 is tolerated
 
@@ -241,8 +243,8 @@ Proposed: awaiting operator approval.
 This is tolerated:
 
 - **Likelihood.** It needs a planned time in the last 24 hours of the year 9999.
-- **Impact.** A client that parses `deadline` strictly fails on that one publication. PostgreSQL holds such a time, so a check of the deadline in SQL, as D2 places it, still works.
-- **Recoverability.** The operator edits the planned time to an earlier one.
+- **Impact.** A client that parses `deadline` strictly fails on any response that holds that publication. A list page holds up to 100 publications, so such a client loses the whole page, including its `next_cursor`. A client that reads the JSON without checking the format is unaffected. PostgreSQL holds such a time, so a check of the deadline in SQL, as D2 places it, still works.
+- **Recoverability.** While the publication is `scheduled` or `failed`, the operator edits the planned time to an earlier one. Once it is `cancelled`, the API cannot change it, and it stays in the organization's list. Removing it then needs a change in the database.
 - **Cost.** Keeping the deadline in range means refusing planned times in the last day of 9999. That narrows D12's accepted range, an approved decision of 00002. Doing it per publication needs the edit to check its stored time against its new tolerance, or the reverse, inside the update.
 
 What would bring it back: a client that sends far-future times as a sentinel, such as `9999-12-31T23:59:59Z` for "never".
