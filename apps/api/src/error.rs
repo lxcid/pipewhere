@@ -22,6 +22,7 @@ pub enum ErrorCode {
     IdempotencyKeyReused,
     ChannelNotFound,
     ContentNotFound,
+    StateConflict,
     AuthUnavailable,
     Internal,
 }
@@ -40,6 +41,8 @@ pub enum ApiError {
     IdempotencyKeyReused,
     ChannelNotFound,
     ContentNotFound,
+    /// The publication's state does not allow the action, per 00002 D3.
+    StateConflict,
     AuthUnavailable(String),
     Database(sqlx::Error),
 }
@@ -66,6 +69,7 @@ impl IntoResponse for ApiError {
             ),
             Self::ChannelNotFound => (StatusCode::UNPROCESSABLE_ENTITY, ErrorCode::ChannelNotFound),
             Self::ContentNotFound => (StatusCode::UNPROCESSABLE_ENTITY, ErrorCode::ContentNotFound),
+            Self::StateConflict => (StatusCode::CONFLICT, ErrorCode::StateConflict),
             Self::AuthUnavailable(reason) => {
                 tracing::error!(%reason, "fetching Auth's signing keys failed");
                 (StatusCode::SERVICE_UNAVAILABLE, ErrorCode::AuthUnavailable)

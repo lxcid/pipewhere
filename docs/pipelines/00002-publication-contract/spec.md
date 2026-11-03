@@ -211,3 +211,68 @@ The list needs a cursor now because it grows with every post, and adding one lat
 - Newest first, because a growing list is read from its recent end. Order is by id, which is creation order, per infrastructure D6.
 - The page size is fixed. A `limit` parameter waits for a client that needs smaller pages.
 - No filter by state, channel, or time. Each waits for the first client that needs it.
+
+### D15 — Edit, cancel, retry, and resolve are separate endpoints
+
+A person changes a publication through four operations. Each answers 200 with the publication as the change left it.
+
+- `PATCH /v1/orgs/{organization_id}/publications/{publication_id}` edits `body`, `planned_at`, or both. An omitted field keeps its value. The body follows D10 and D11, and the time follows D12. Any other field answers 422 `invalid_body`, as on create.
+- `POST .../{publication_id}/cancel` takes no body.
+- `POST .../{publication_id}/retry` takes `Idempotency-Key` and a body, per D17. A retry sets its own planned time, so a time edited in `failed` is replaced when the publication is retried. The schema says so on both fields.
+- `POST .../{publication_id}/resolve` takes the outcome a person found, per D18.
+
+A writable `state` field on the edit was rejected:
+
+- The actions take different input. Retry needs a key and a new time, and resolve needs the remote reference. One `PATCH` would need a key for some bodies and not for others.
+- D3 leaves most transitions to the worker. A writable `state` would publish values in the schema that a client may never set.
+- Each action matches rows of D3, so its guard is one condition a reader can check against the table.
+
+Tolerated:
+
+- `planned_at: null` on an edit keeps the current time, as omitting it does. Telling the two apart needs a second deserializer, and a client that wants to publish an edited publication now sends the current time.
+- Cancel and resolve take no key, since D5 requires one only for create and retry. Repeating either after a lost response answers 409 `state_conflict`, per D16. The client reads the publication to see that its first request took effect.
+- The edit reads its body before looking up the publication, as content's edit does. A body D9 or D10 refuses, sent to a missing publication, answers `invalid_body`, not 404.
+
+### D16 — A state that does not allow the action answers 409 `state_conflict`
+
+Each action is one conditional `UPDATE`. Its `WHERE` clause names the states D3 allows the action from:
+
+| Action | From | To |
+| --- | --- | --- |
+| edit | `scheduled`, `failed` | unchanged |
+| cancel | `scheduled`, `preparing` | `cancelled` |
+| retry | `failed` | `scheduled` |
+| resolve | `outcome_unknown` | `published` or `failed` |
+
+When the update changes no row, API looks for the publication in the request's organization. If it is not there, the answer is 404 `not_found`, per D6. If it is there, the answer is 409 `state_conflict`. The error body carries only the code, and the client reads the publication for its state.
+
+A concurrent change loses cleanly. PostgreSQL makes a second `UPDATE` of a row wait for the first transaction to end, then checks its `WHERE` clause against the committed row. A cancel racing the worker's claim of the commit therefore either cancels first or answers 409 after the claim. API takes no lock of its own. Reading the state and then writing would let a cancel overwrite `publishing`.
+
+409 because the request is well formed and would succeed if the publication were in another state. A new code, because `invalid_body` tells the client to fix its request, which cannot help here. The code adds a value to `ErrorCode`, with D8's cost for clients that validate the enum strictly, as #16's codes did.
+
+### D17 — A retry takes a key and a new time, and a repeat answers the publication as it is now
+
+Retry meets D5 the way create does, under D13:
+
+- **The header.** `Idempotency-Key` follows D13's rules. Create and retry share one key space per organization.
+- **The request hash.** SHA-256 of `["retry_publication", publication_id, planned_at]` as JSON, with `planned_at` in UTC. The operation's name differs from create's `create_publication`, so a key cannot pass from one operation to the other. The publication's id is part of the hash, so one key cannot retry two publications.
+- **One transaction.** API claims the key's row first, with `ON CONFLICT DO NOTHING`, naming the retried publication. Then it runs D16's conditional update and commits both together. A retry refused with 404 or 409 rolls the key back, so the client can send it again with the same key.
+- **The stored result.** The same key with the same hash answers 200 with the publication as it is now, and does not retry it again. If the worker has failed it again since, the answer shows `failed`, and the client retries with a new key. This follows D13's reasoning for create.
+
+`planned_at` is optional, and defaults to the time of the request by the database's clock, as on create, per D12. [Scheduling and recovery D1](../00003-scheduling-recovery/spec.md) says a retry chooses a new planned time; omitting it chooses now. It does not fall back to the stored time, even one an edit set in `failed`. A publication that failed late would hold a time already past, and retrying with it would fail late again. A retry keeps the publication's body. An operator who wants to fix the text edits it first, which D3 allows in `failed`. No tolerance or deadline is stored. Scheduling and recovery D2 adds them.
+
+Tolerated: the body is required, so a retry for now sends `{}`. Every action with input then reads one JSON body through `JsonBody`, per D9.
+
+### D18 — Resolving to `published` records the remote id, and the address when given
+
+A publication gains `remote_id` and `remote_url`. Both are null until it is `published`, and both appear in every publication response.
+
+- `{ "outcome": "published", "remote_id": ..., "remote_url": ... }` requires `remote_id`. It must hold a character other than whitespace, and no U+0000, which PostgreSQL text cannot store. `remote_url` is optional.
+- `remote_url` must be an absolute `http` or `https` URL. A client shows it as a link, so a `javascript:` address would run in that client. API stores the URL as parsed. The scheme and host are lowercased, and characters a URL cannot hold are percent-encoded, so the stored address never holds U+0000.
+- `{ "outcome": "failed" }` takes neither field. Sending one answers 422 `invalid_body`.
+
+The id is required because it is what identifies the post at its provider, and the issue names it. The address is optional because it does not identify the post, and requiring it would refuse a resolution a person can otherwise make.
+
+The table checks `(state = 'published') = (remote_id IS NOT NULL)`. A published publication always names its post, and a remote id appears in no other state. Nothing moves a publication out of `published`, and edit is refused there, so D2's rule that its body and remote reference cannot change holds without a trigger.
+
+Tolerated: API cannot check that the id or address names a real post on the channel's account. Under D2 a mistyped reference cannot be corrected through the API. A person resolves only after looking for the post, and a resolution is rare. Correcting a published record would need its own decision against D2.

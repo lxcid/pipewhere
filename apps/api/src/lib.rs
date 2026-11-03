@@ -55,7 +55,13 @@ fn api() -> OpenApiRouter<AppState> {
             publications::create_publication,
             publications::list_publications
         ))
-        .routes(routes!(publications::get_publication))
+        .routes(routes!(
+            publications::get_publication,
+            publications::update_publication
+        ))
+        .routes(routes!(publications::cancel_publication))
+        .routes(routes!(publications::retry_publication))
+        .routes(routes!(publications::resolve_publication))
 }
 
 #[derive(OpenApi)]
@@ -149,6 +155,9 @@ mod tests {
                 "/v1/orgs/{organization_id}/contents/{content_id}",
                 "/v1/orgs/{organization_id}/publications",
                 "/v1/orgs/{organization_id}/publications/{publication_id}",
+                "/v1/orgs/{organization_id}/publications/{publication_id}/cancel",
+                "/v1/orgs/{organization_id}/publications/{publication_id}/resolve",
+                "/v1/orgs/{organization_id}/publications/{publication_id}/retry",
             ]
         );
     }
@@ -168,6 +177,7 @@ mod tests {
                 "idempotency_key_reused",
                 "channel_not_found",
                 "content_not_found",
+                "state_conflict",
                 "auth_unavailable",
                 "internal",
             ])
@@ -183,6 +193,10 @@ mod tests {
                 "outcome_unknown",
                 "cancelled",
             ])
+        );
+        assert_eq!(
+            schemas["ResolutionOutcome"]["enum"],
+            serde_json::json!(["published", "failed"])
         );
         assert_eq!(
             schemas["Publication"]["properties"]["planned_at"]["format"],

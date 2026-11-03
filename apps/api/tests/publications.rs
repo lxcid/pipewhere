@@ -110,6 +110,8 @@ async fn a_member_creates_lists_and_reads_publications() {
             "body": "Hello",
             "state": "scheduled",
             "planned_at": "2026-12-01T09:00:00Z",
+            "remote_id": null,
+            "remote_url": null,
         })
     );
     let content_path = format!("/v1/orgs/{organization_id}/contents/{content_id}");
