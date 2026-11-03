@@ -182,10 +182,12 @@ A publication does not store a tolerance yet. Scheduling and recovery D2 records
 
 ### D13 — Idempotency keys live in their own table, one key space per organization
 
+Binding: 00006, and any pipeline that gates reading or creating publications.
+
 This is how create meets D5.
 
 - **Storage.** `pipewhere.idempotency_key` holds one row per key: its organization, the key, the request hash, and the publication the request produced. Its primary key is `(organization_id, key)`, so a key is unique within an organization whichever member or API key sends it. A table of its own, rather than columns on the publication, because #17's retry also takes a key. A publication can be retried many times, each time with a new key, and both operations must share one key space.
-- **The header.** `Idempotency-Key` is opaque text of 22 to 255 characters. API cannot measure randomness, so it checks only the length. 22 characters is the shortest base64url text that holds 128 bits. A missing key, or one outside that length, answers 400 `invalid_idempotency_key`.
+- **The header.** `Idempotency-Key` is opaque text of 22 to 255 visible ASCII characters, the characters an HTTP header value can carry as text. API cannot measure randomness, so it checks only the length. 22 characters is the shortest base64url text that holds 128 bits. A missing key, or one outside that length, answers 400 `invalid_idempotency_key`.
 - **The request hash.** SHA-256 of the parsed request: the operation's name, then `channel_id`, `body`, `content_id`, and `planned_at` in UTC, as a JSON array. Hashing the parsed request means whitespace, field order, and a timestamp's offset do not make a retry look like a different request. An omitted `planned_at` hashes as omitted, so a retry of a request to publish now matches its first request.
 - **One transaction.** API inserts the key's row first, with `ON CONFLICT DO NOTHING`, then the content and the publication, and commits them together. PostgreSQL makes a second insert of the same key wait until the first transaction ends. If the first commits, the second finds its row. If it rolls back, the second goes ahead. Concurrent use of one key therefore produces one publication, without a lock of API's own. The key's reference to its publication is checked at commit, because the publication is inserted after the key.
 - **Refused requests store nothing.** A request refused after its key is claimed, such as one naming an unknown channel, rolls the key back. The client can fix the request and send it with the same key.
@@ -193,6 +195,10 @@ This is how create meets D5.
 - **Authorization.** A stored result passes the same `OrgCaller` check as any request, so the caller must still be able to act in the organization. Reading a publication is open to every member and key, per infrastructure D10. A pipeline that gates reading publications must apply that gate to a stored result too.
 
 Keys have no expiry, per D5. A key's row lasts as long as its publication.
+
+A later pipeline is in violation if it gates reading publications and a stored result still answers with a publication the caller may not read.
+
+What would overturn this: a stored result that answers with only the publication's id, so that it reveals nothing a read gate protects.
 
 Tolerated: a UUIDv4 passes the length check but holds 122 random bits, fewer than D5 asks for. The header's description asks for 16 random bytes. A key with too little randomness risks colliding only with another key in the same organization, and a collision either answers 422 or returns that organization's own publication.
 
