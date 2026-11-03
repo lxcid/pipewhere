@@ -7,7 +7,23 @@ use serde::Serialize;
 
 #[derive(Serialize, utoipa::ToSchema)]
 pub struct ErrorBody {
-    code: &'static str,
+    code: ErrorCode,
+}
+
+/// Every code API answers with. A client can match on the whole set.
+#[derive(Clone, Copy, Debug, Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ErrorCode {
+    Unauthorized,
+    NotFound,
+    MethodNotAllowed,
+    InvalidBody,
+    InvalidIdempotencyKey,
+    IdempotencyKeyReused,
+    ChannelNotFound,
+    ContentNotFound,
+    AuthUnavailable,
+    Internal,
 }
 
 #[derive(Debug)]
@@ -20,6 +36,10 @@ pub enum ApiError {
     /// for JSON of the wrong shape), or 422 for a body an endpoint's own
     /// checks refuse.
     InvalidBody(StatusCode),
+    InvalidIdempotencyKey,
+    IdempotencyKeyReused,
+    ChannelNotFound,
+    ContentNotFound,
     AuthUnavailable(String),
     Database(sqlx::Error),
 }
@@ -33,17 +53,26 @@ impl From<sqlx::Error> for ApiError {
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let (status, code) = match &self {
-            Self::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized"),
-            Self::NotFound => (StatusCode::NOT_FOUND, "not_found"),
-            Self::MethodNotAllowed => (StatusCode::METHOD_NOT_ALLOWED, "method_not_allowed"),
-            Self::InvalidBody(status) => (*status, "invalid_body"),
+            Self::Unauthorized => (StatusCode::UNAUTHORIZED, ErrorCode::Unauthorized),
+            Self::NotFound => (StatusCode::NOT_FOUND, ErrorCode::NotFound),
+            Self::MethodNotAllowed => (StatusCode::METHOD_NOT_ALLOWED, ErrorCode::MethodNotAllowed),
+            Self::InvalidBody(status) => (*status, ErrorCode::InvalidBody),
+            Self::InvalidIdempotencyKey => {
+                (StatusCode::BAD_REQUEST, ErrorCode::InvalidIdempotencyKey)
+            }
+            Self::IdempotencyKeyReused => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                ErrorCode::IdempotencyKeyReused,
+            ),
+            Self::ChannelNotFound => (StatusCode::UNPROCESSABLE_ENTITY, ErrorCode::ChannelNotFound),
+            Self::ContentNotFound => (StatusCode::UNPROCESSABLE_ENTITY, ErrorCode::ContentNotFound),
             Self::AuthUnavailable(reason) => {
                 tracing::error!(%reason, "fetching Auth's signing keys failed");
-                (StatusCode::SERVICE_UNAVAILABLE, "auth_unavailable")
+                (StatusCode::SERVICE_UNAVAILABLE, ErrorCode::AuthUnavailable)
             }
             Self::Database(error) => {
                 tracing::error!(%error, "database query failed");
-                (StatusCode::INTERNAL_SERVER_ERROR, "internal")
+                (StatusCode::INTERNAL_SERVER_ERROR, ErrorCode::Internal)
             }
         };
         let body = Json(ErrorBody { code });

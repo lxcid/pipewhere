@@ -7,7 +7,7 @@ The build runs as one small PR per issue. Each issue carries its own scope and d
 1. **#13 API's id generator.** Built in PR #19.
 2. **#14 Channels table and read endpoints.** Built in PR #20.
 3. **#15 Content create, read, and edit.** Built in PR #21.
-4. **#16 Create and read publications.** Not started. Needs #14 and #15.
+4. **#16 Create and read publications.** Built in PR #22.
 5. **#17 Edit, cancel, retry, and resolve publications.** Not started. Needs #16.
 6. **#18 Publication attempts table and read endpoint.** Not started. Needs #16.
 
@@ -113,3 +113,51 @@ Verified:
 Asserted, not verified:
 
 - The API Docker image embeds the new migration. The image was not built, as for #13 and #14.
+
+## #16 — what was built
+
+- The migration `20261103052937_publication.sql` adds two tables:
+  - `pipewhere.publication` holds `id`, `organization_id`, `channel_id`, `content_id`, `body`, `state`, and `planned_at`. The id is checked with `pipewhere.is_typeid(id, 'pub')`. `state` is checked against D3's seven states. `organization_id` references `auth.organization` without a cascade, per 00001 D2.
+  - `pipewhere.idempotency_key` holds `organization_id`, `key`, `request_hash`, and `publication_id`, keyed by `(organization_id, key)`, per D13. It has no id of its own, per 00001 D6. Its reference to the publication is checked at commit.
+- `apps/api/src/publications.rs` serves three operations. All take `OrgCaller`, and every query filters on the path's organization, per D6:
+  - `POST /v1/orgs/{organization_id}/publications` requires `Idempotency-Key`, and answers 201 with the publication, per D11–D13.
+  - `GET /v1/orgs/{organization_id}/publications` lists them newest first, 100 to a page, with `next_cursor`, per D14.
+  - `GET /v1/orgs/{organization_id}/publications/{publication_id}` reads one.
+- `ErrorBody.code` is now `ErrorCode`, so the schema publishes every code as a string enum. #16 adds four codes: `invalid_idempotency_key` (400), `idempotency_key_reused` (422), `channel_not_found` (422), and `content_not_found` (422).
+- `PublicationState` publishes D3's seven states. Create sets only `scheduled`.
+- D10's text check moved to `contents::checked_body`, which content and publication create share.
+- `support::Instance` gains `request`, which returns a request builder so a test can add headers.
+
+Choices made in the build, within the spec:
+
+- API moves timestamps through `chrono` 0.4.45, with sqlx's and utoipa's `chrono` features. The request hash uses `sha2` 0.11.1, the version sqlx already pulls in.
+- Each new error code adds a value to the published `ErrorCode` enum, with D8's cost: a client that validates the enum strictly fails to read an error with a code added after it was generated.
+- The list reads `?cursor=` through a map, which cannot fail to deserialize. A struct would answer a repeated `cursor` with axum's plain-text rejection.
+- Tolerated: the database does not check that a publication's channel and content belong to its organization. API checks both in the transaction that inserts it, and API is the only writer. A composite foreign key would need a second unique index on `channel` and on `content`.
+- Tolerated: a cursor that is not a publication id is compared as text. It answers a page, possibly empty, instead of a refusal.
+- No index beyond the primary keys. The list walks the publication primary key backwards and filters by organization. Add an index on `(organization_id, id)` when a measured list query needs it, as for #14.
+
+Verified:
+
+- `cargo test -p pipewhere-api`: 6 unit tests and 37 integration tests pass, 10 of them in `tests/publications.rs`.
+- `pnpm --filter @pipewhere/auth test`: 20 tests pass.
+- `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all --check`: clean.
+- `the_schema_publishes_the_error_codes_and_states_as_fixed_sets` checks the `ErrorCode` and `PublicationState` enums and the `date-time` format of `planned_at`.
+- A throwaway test fetched `/openapi.json` from the router `api serve` runs. It listed both new paths, the required `Idempotency-Key` header, the optional `cursor` query parameter, and `ErrorBody.code` as a reference to `ErrorCode`.
+- `concurrent_use_of_one_key_creates_one_publication` sends 20 requests with one key at once. All answer 201 with one id, and one publication and one content row exist.
+- `a_request_waits_for_another_transaction_holding_its_key` holds the key in an open transaction. The request is still waiting after 500 ms. When the transaction commits a different request, it answers 422 `idempotency_key_reused`. When the transaction rolls back, it creates.
+- Each of these changes, made by hand and reverted, fails a test:
+  - The organization filter removed from the single read, the list, the channel check, or the content lookup: `another_organizations_resources_are_not_found`.
+  - The organization filter removed from the stored key's lookup: `a_repeated_request_returns_the_first_result`.
+  - The hash comparison skipped: the same test, which then returns the first publication for a different request.
+  - The key claimed by checking for it first and then inserting without `ON CONFLICT`: `a_request_waits_for_another_transaction_holding_its_key` fails on every run, with 500 `internal`. `concurrent_use_of_one_key_creates_one_publication` failed on 3 of 5 runs. Racing real requests depends on timing, which is why the held-transaction test exists.
+- The tables refuse an id with another table's prefix (`publication_id_check`), a state outside D3 (`publication_state_check`), an organization that does not exist (`publication_organization_id_fkey`), and a key whose publication is never inserted (`idempotency_key_publication_id_fkey`, at commit). Both foreign keys to `auth.organization` have no delete action, read from `pg_constraint`.
+
+Not isolated by a test:
+
+- The organization filter on the stored publication's read. A stored key's publication id comes from a lookup that already filters on the organization, so removing the second filter changes nothing a test can see. It stays because every query filters on the organization.
+
+Asserted, not verified:
+
+- The API Docker image embeds the new migration. The image was not built, as for #13–#15.
+- `api serve` was not run by hand. The schema was read from the same router through the test harness.

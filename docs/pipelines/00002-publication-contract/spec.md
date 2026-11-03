@@ -152,3 +152,61 @@ No other limit applies. Content has no channel, so provider length limits belong
 The table does not check the body. PostgreSQL's whitespace classes differ from Rust's, and a check that disagrees with API would refuse text API accepted. API is the only writer, since Worker runs the same application layer.
 
 What would overturn this: a client that saves a draft before any text is typed, such as an editor that autosaves.
+
+### D11 — A publication request supplies its text or names content
+
+Proposed: awaiting operator approval.
+
+`POST /v1/orgs/{organization_id}/publications` takes a `channel_id`, and either `body` or `content_id`:
+
+- `body` creates content with that text, in the same transaction as the publication, per D2. The text follows D10.
+- `content_id` names existing content. The publication copies its body as it is at that moment.
+- A request with both, or with neither, answers 422 `invalid_body`, as D10 answers text it refuses.
+
+A publication's body follows D10 as well: at least one character that is not whitespace, and no U+0000. D10's reasons hold for it. Mastodon and Threads refuse a blank post, and PostgreSQL text cannot store U+0000. On create, the body is always content's text, which D10 has already checked. #17's edit applies the same check. Provider length limits belong to the adapter pipelines, 00004 and 00008.
+
+A `channel_id` or `content_id` outside the request's organization answers 422 `channel_not_found` or `content_not_found`. Another organization's channel gets the same answer as a channel that does not exist, per D6. The body's references do not answer 404, because 404 says the path's organization or publication was not found.
+
+Create does not check the channel's status. [Scheduling and recovery D3 and D4](../00003-scheduling-recovery/spec.md) fail a publication whose channel cannot publish when its commit is claimed, not when it is created. Channels have no status until 00004.
+
+### D12 — The planned time defaults to the time of the request
+
+Proposed: awaiting operator approval.
+
+`planned_at` is an RFC 3339 timestamp with an offset. The schema publishes it as a `date-time` string, and API answers it in UTC. PostgreSQL keeps microseconds, so finer precision is dropped.
+
+When the request omits it, the planned time is the time of the request, by the database's clock. That is how a client publishes now, per D3. Making it required would tie publishing now to the client's clock.
+
+Any time is accepted, including one in the past. Lateness belongs to [scheduling and recovery D1 and D2](../00003-scheduling-recovery/spec.md): a publication whose commit cannot start by its planned time plus its tolerance fails as late. Refusing a past time here would need an allowance for clock skew, which is that tolerance under another name.
+
+A publication does not store a tolerance yet. Scheduling and recovery D2 records one at create, from the organization's default of 30 minutes. No organization can change that default until 00003 adds the setting, so 00003's migration can give existing publications 30 minutes, which is what each would have recorded. Nothing runs a publication before 00003.
+
+### D13 — Idempotency keys live in their own table, one key space per organization
+
+Proposed: awaiting operator approval.
+
+This is how create meets D5.
+
+- **Storage.** `pipewhere.idempotency_key` holds one row per key: its organization, the key, the request hash, and the publication the request produced. Its primary key is `(organization_id, key)`, so a key is unique within an organization whichever member or API key sends it. A table of its own, rather than columns on the publication, because #17's retry also takes a key. A publication can be retried many times, each time with a new key, and both operations must share one key space.
+- **The header.** `Idempotency-Key` is opaque text of 22 to 255 characters. API cannot measure randomness, so it checks only the length. 22 characters is the shortest base64url text that holds 128 bits. A missing key, or one outside that length, answers 400 `invalid_idempotency_key`.
+- **The request hash.** SHA-256 of the parsed request: the operation's name, then `channel_id`, `body`, `content_id`, and `planned_at` in UTC, as a JSON array. Hashing the parsed request means whitespace, field order, and a timestamp's offset do not make a retry look like a different request. An omitted `planned_at` hashes as omitted, so a retry of a request to publish now matches its first request.
+- **One transaction.** API inserts the key's row first, with `ON CONFLICT DO NOTHING`, then the content and the publication, and commits them together. PostgreSQL makes a second insert of the same key wait until the first transaction ends. If the first commits, the second finds its row. If it rolls back, the second goes ahead. Concurrent use of one key therefore produces one publication, without a lock of API's own. The key's reference to its publication is checked at commit, because the publication is inserted after the key.
+- **Refused requests store nothing.** A request refused after its key is claimed, such as one naming an unknown channel, rolls the key back. The client can fix the request and send it with the same key.
+- **The stored result.** The same key with the same hash answers 201 with the publication the key produced, as the publication is now. The same key with a different hash answers 422 `idempotency_key_reused`. API stores the publication's id, not a copy of the first response. A client retrying after a lost response therefore sees the publication's current state, and no second copy of its body is kept.
+- **Authorization.** A stored result passes the same `OrgCaller` check as any request, so the caller must still be able to act in the organization. Reading a publication is open to every member and key, per infrastructure D10. A pipeline that gates reading publications must apply that gate to a stored result too.
+
+Keys have no expiry, per D5. A key's row lasts as long as its publication.
+
+Tolerated: a UUIDv4 passes the length check but holds 122 random bits, fewer than D5 asks for. The header's description asks for 16 random bytes. A key with too little randomness risks colliding only with another key in the same organization, and a collision either answers 422 or returns that organization's own publication.
+
+### D14 — The publication list pages by cursor
+
+Proposed: awaiting operator approval.
+
+`GET /v1/orgs/{organization_id}/publications` answers `{ "publications": [...], "next_cursor": ... }`, newest first, 100 to a page. `next_cursor` is null on the last page. Otherwise the client sends it back as `?cursor=` for the next page. The cursor is opaque to clients.
+
+The list needs a cursor now because it grows with every post, and adding one later changes what an existing request returns. A client written before the cursor would see only the first page, without noticing. As an estimate, a publication with a 500-character body, the default limit on Mastodon and on Threads, is about 800 bytes of JSON. At 10 publications a day, an unpaged list grows by about 3 MB a year. The channel list does without a cursor because an organization has a handful of channels. Content has no list, per #15.
+
+- Newest first, because a growing list is read from its recent end. Order is by id, which is creation order, per infrastructure D6.
+- The page size is fixed. A `limit` parameter waits for a client that needs smaller pages.
+- No filter by state, channel, or time. Each waits for the first client that needs it.

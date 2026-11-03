@@ -25,15 +25,15 @@ pub struct ContentInput {
     body: String,
 }
 
-impl ContentInput {
-    fn into_body(self) -> Result<String, ApiError> {
-        // PostgreSQL text cannot hold U+0000, so the insert would fail as a
-        // server error.
-        if self.body.trim().is_empty() || self.body.contains('\0') {
-            return Err(ApiError::InvalidBody(StatusCode::UNPROCESSABLE_ENTITY));
-        }
-        Ok(self.body)
+/// Refuses text that 00002 D10 rules out of content, and D11 out of a
+/// publication.
+pub fn checked_body(body: String) -> Result<String, ApiError> {
+    // PostgreSQL text cannot hold U+0000, so the insert would fail as a
+    // server error.
+    if body.trim().is_empty() || body.contains('\0') {
+        return Err(ApiError::InvalidBody(StatusCode::UNPROCESSABLE_ENTITY));
     }
+    Ok(body)
 }
 
 #[utoipa::path(
@@ -65,7 +65,7 @@ pub async fn create_content(
     )
     .bind(new_id("content"))
     .bind(&caller.organization_id)
-    .bind(input.into_body()?)
+    .bind(checked_body(input.body)?)
     .fetch_one(&state.db)
     .await?;
     Ok((StatusCode::CREATED, Json(content)))
@@ -130,7 +130,7 @@ pub async fn update_content(
     )
     .bind(&content_id)
     .bind(&caller.organization_id)
-    .bind(input.into_body()?)
+    .bind(checked_body(input.body)?)
     .fetch_optional(&state.db)
     .await?
     .map(Json)
