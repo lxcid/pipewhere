@@ -168,6 +168,21 @@ mod tests {
     }
 
     #[test]
+    fn the_schema_publishes_the_overdue_filter() {
+        let schema = serde_json::to_value(api().into_openapi()).unwrap();
+        let list = &schema["paths"]["/v1/orgs/{organization_id}/publications"]["get"];
+        let overdue = list["parameters"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|parameter| parameter["name"] == "overdue")
+            .unwrap();
+        assert_eq!(overdue["in"], "query");
+        assert_eq!(overdue["required"], false);
+        assert!(list["responses"]["422"].is_object());
+    }
+
+    #[test]
     fn the_schema_publishes_the_error_codes_and_states_as_fixed_sets() {
         let schema = serde_json::to_value(api().into_openapi()).unwrap();
         let schemas = &schema["components"]["schemas"];
@@ -178,6 +193,7 @@ mod tests {
                 "not_found",
                 "method_not_allowed",
                 "invalid_body",
+                "invalid_query",
                 "invalid_idempotency_key",
                 "idempotency_key_reused",
                 "channel_not_found",

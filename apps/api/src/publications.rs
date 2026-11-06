@@ -316,13 +316,15 @@ pub async fn create_publication(
     path = "/v1/orgs/{organization_id}/publications",
     params(
         ("organization_id" = String, Path),
-        ("cursor" = Option<String>, Query, description = "The previous page's `next_cursor`"),
+        ("cursor" = Option<String>, Query, description = "The previous page's `next_cursor`. Send the same `overdue` with it, because the cursor does not carry the filter."),
+        ("overdue" = Option<bool>, Query, description = "`true` lists only `scheduled` publications whose planned time has passed. A publication appears as soon as that time passes, so work about to start is listed too. `false`, or leaving this out, lists every publication. Any other value answers 422 `invalid_query`."),
     ),
     security(("bearer" = [])),
     responses(
         (status = 200, body = Publications, description = "The organization's publications, newest first, 100 to a page"),
         (status = 401, body = ErrorBody, description = "No valid access token"),
         (status = 404, body = ErrorBody, description = "No such organization, or the caller is not in it"),
+        (status = 422, body = ErrorBody, description = "`overdue` is neither `true` nor `false`"),
         (status = 500, body = ErrorBody, description = "A database query failed"),
         (status = 503, body = ErrorBody, description = "Auth's signing keys could not be fetched"),
     )
@@ -335,6 +337,11 @@ pub async fn list_publications(
     Query(query): Query<HashMap<String, String>>,
 ) -> Result<Json<Publications>, ApiError> {
     let cursor = query.get("cursor");
+    let overdue = match query.get("overdue").map(String::as_str) {
+        None | Some("false") => false,
+        Some("true") => true,
+        Some(_) => return Err(ApiError::InvalidQuery),
+    };
     if cursor.is_some_and(|cursor| holds_nul(cursor)) {
         return Ok(Json(Publications {
             publications: Vec::new(),
@@ -345,10 +352,12 @@ pub async fn list_publications(
         "SELECT ",
         columns!(),
         " FROM pipewhere.publication WHERE organization_id = $1 AND ($2::text IS NULL OR id < $2)
-         ORDER BY id DESC LIMIT $3"
+         AND (NOT $3 OR (state = 'scheduled' AND planned_at < now()))
+         ORDER BY id DESC LIMIT $4"
     ))
     .bind(&caller.organization_id)
     .bind(cursor)
+    .bind(overdue)
     .bind(PAGE_SIZE as i64 + 1)
     .fetch_all(&state.db)
     .await?;

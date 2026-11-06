@@ -244,3 +244,32 @@ This is tolerated:
 - **Cost.** Keeping the deadline in range means refusing planned times in the last day of 9999. That narrows D12's accepted range, an approved decision of 00002. Doing it per publication needs the edit to check its stored time against its new tolerance, or the reverse, inside the update.
 
 What would bring it back: a client that sends far-future times as a sentinel, such as `9999-12-31T23:59:59Z` for "never".
+
+### D15 — The overdue filter refuses a value it cannot read
+
+D10 names `?overdue=true`. This decision says what the parameter's other values do.
+
+- `true` lists the overdue publications.
+- `false`, or leaving the parameter out, lists every publication.
+- Any other value answers 422 `invalid_query`. That includes `True`, `1`, and an empty value.
+- The caller is checked first, as [publication contract D9](../00002-publication-contract/spec.md) does for a body. An outsider sending a bad value gets not found.
+
+The schema publishes `overdue` as a boolean, and a common client writes a boolean another way. Python's `requests` 2.32.5 and standard `urlencode` both send `overdue=True`. Node's `URLSearchParams` sends `overdue=true`. A client that sends `True` must not get the whole list, because:
+
+- The answer would be a 200 in the same shape as the filtered list. In a probe, 50 of the 100 rows answered were not overdue, and they were also `scheduled`. Only comparing `planned_at` with the clock would show the mistake.
+- D10's list exists so an operator can trust which publications missed their time. A false report damages that.
+- A script that acts on the list could cancel a publication that was on time. The API cannot change a cancelled publication afterwards.
+
+Rejected alternatives:
+
+- **Listing every publication for any other value.** It needs no new code, but it fails silently, as above.
+- **Accepting more spellings, such as `True`, `TRUE`, and `1`.** Each one becomes part of the contract, and `overdue=yes` would still get the wrong list.
+
+The cost is a new value in `ErrorCode`, with [publication contract D8](../00002-publication-contract/spec.md)'s cost for a client that validates the enum strictly. No client exists yet. `invalid_body` was not reused, because it tells the client to fix a body this request does not have.
+
+Tolerated:
+
+- A misspelt name, such as `overdu=true`, is still ignored and answers the whole list. The list ignores every parameter it does not know.
+- When `overdue` is repeated, the last value decides.
+
+This decision covers this parameter. A later query parameter decides its own answer.

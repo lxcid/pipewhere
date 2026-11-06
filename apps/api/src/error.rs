@@ -18,6 +18,7 @@ pub enum ErrorCode {
     NotFound,
     MethodNotAllowed,
     InvalidBody,
+    InvalidQuery,
     InvalidIdempotencyKey,
     IdempotencyKeyReused,
     ChannelNotFound,
@@ -37,6 +38,8 @@ pub enum ApiError {
     /// for JSON of the wrong shape), or 422 for a body an endpoint's own
     /// checks refuse.
     InvalidBody(StatusCode),
+    /// A query parameter holds a value the endpoint cannot read.
+    InvalidQuery,
     InvalidIdempotencyKey,
     IdempotencyKeyReused,
     ChannelNotFound,
@@ -60,6 +63,7 @@ impl IntoResponse for ApiError {
             Self::NotFound => (StatusCode::NOT_FOUND, ErrorCode::NotFound),
             Self::MethodNotAllowed => (StatusCode::METHOD_NOT_ALLOWED, ErrorCode::MethodNotAllowed),
             Self::InvalidBody(status) => (*status, ErrorCode::InvalidBody),
+            Self::InvalidQuery => (StatusCode::UNPROCESSABLE_ENTITY, ErrorCode::InvalidQuery),
             Self::InvalidIdempotencyKey => {
                 (StatusCode::BAD_REQUEST, ErrorCode::InvalidIdempotencyKey)
             }
