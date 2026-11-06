@@ -342,6 +342,50 @@ async fn a_repeated_request_returns_the_first_result() {
         );
     }
 
+    let tolerated_key = new_key();
+    let with_tolerance = |seconds: i32| json!({ "channel_id": channel_id, "body": "Once", "tolerance_seconds": seconds });
+    let tolerated = created(
+        create(
+            &instance,
+            &organization_id,
+            &token,
+            &tolerated_key,
+            with_tolerance(300),
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(
+        created(
+            create(
+                &instance,
+                &organization_id,
+                &token,
+                &tolerated_key,
+                with_tolerance(300),
+            )
+            .await,
+        )
+        .await,
+        tolerated,
+        "the same tolerance is the same request"
+    );
+    assert_eq!(
+        refusal(
+            create(
+                &instance,
+                &organization_id,
+                &token,
+                &tolerated_key,
+                with_tolerance(600),
+            )
+            .await,
+        )
+        .await,
+        reused,
+        "another tolerance is another request"
+    );
+
     // Whitespace, field order, and a timestamp's offset do not make a request
     // different.
     let timed_key = new_key();
@@ -408,8 +452,8 @@ async fn a_repeated_request_returns_the_first_result() {
         first
     );
 
-    assert_eq!(count(&instance, "publication").await, 3);
-    assert_eq!(count(&instance, "content").await, 3);
+    assert_eq!(count(&instance, "publication").await, 4);
+    assert_eq!(count(&instance, "content").await, 4);
     instance.close().await;
 }
 
