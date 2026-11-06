@@ -339,3 +339,28 @@ An adapter's answer reaches the same columns through `CommitResult::Published`, 
 A later pipeline is in violation if its adapter can answer `Published` with a blank `remote_id`, or with a `remote_url` that is not http or https.
 
 What would overturn this: a shared check in the steps that the adapter's pipeline chooses instead, or a table check that makes the rule hold for every writer.
+
+### D19 — An adapter's call to its provider has a time limit
+
+Proposed: awaiting operator approval.
+
+Binding: 00004, 00008, and later pipelines that add a provider adapter.
+
+An old adapter call can outlast the run it belongs to, and a person's decision about that run:
+
+1. Restate replaces a stalled execution while its adapter call is still open. The new execution records `outcome_unknown`, per D8.
+2. A person checks the provider, finds no post, and resolves the publication as `failed`.
+3. The person retries it, and a new run posts.
+4. The old call then posts too.
+
+The post now exists twice. Tying an answer to its attempt protects the record, not the post. [Publication contract D4](../00002-publication-contract/spec.md) treats a duplicate post as the failure that cannot be undone, and it asks the adapter's pipeline for a commit guard. This case is a person's retry, not an automatic one, so a guard built only for automatic retries would miss it.
+
+So an adapter must give its provider call a time limit, and answer `Ambiguous` when the limit passes. The limit should be short compared with how long a person takes to check the provider and resolve.
+
+A limit narrows this case and does not close it. A provider can still act on a request after the adapter stops waiting.
+
+00003 does not set the limit in the steps. It has no adapter to test against, and the right length depends on the provider.
+
+A later pipeline is in violation if its adapter can hold a provider call open with no time limit.
+
+What would overturn this: a commit guard, such as an idempotency key a retry shares with the old call, shown to leave one post when an old call and a retry both reach the provider.

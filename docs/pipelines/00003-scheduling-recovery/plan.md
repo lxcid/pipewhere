@@ -278,7 +278,7 @@ Tolerated:
 
 Left for #30: the handler's loop, `Deserialize` on `PublicationState` for the journal, and Worker's dependency on this crate.
 
-Left for 00004: a person who resolves a `failed` publication while an old adapter call is still open can retry, and that call could still post. The post would then exist twice. Tying an answer to its attempt protects the record, not the post. Adapter timeouts should bound this.
+Left for 00004: D19, a time limit on an adapter's provider call, because an old call can post after a person resolves and retries.
 
 Verified, at `19b849f`:
 
