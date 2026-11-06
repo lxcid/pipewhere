@@ -273,3 +273,67 @@ Tolerated:
 - When `overdue` is repeated, the last value decides.
 
 This decision covers this parameter. A later query parameter decides its own answer.
+
+### D16 — A claim waits for the planned time
+
+D7 says a run's first step claims the publication. This decision adds a condition: the claim also requires the planned time to have come.
+
+D5's poller sends a run only for due work, but a run can outlive the time it was sent for:
+
+- An edit can move the planned time later while the run waits in Restate's queue.
+- A retry can set a later time while an older invocation of the same publication is still queued.
+
+Without the condition, such a run would publish early. The intent rules that out: "A pinned time never moves unless the operator changes it."
+
+A run that finds the time has not come stops, and writes nothing. The publication stays `scheduled`, and the poller sends a new run when its time comes.
+
+### D17 — A step that loses its move answers the state it found or claimed
+
+D5 and [infrastructure D4](../00001-infrastructure/spec.md) say that a claim's loser stops. D6 says a step returns the publication's new state, and the run continues from `preparing`. A claim that lost to another run could read `preparing`, and would then continue instead of stopping.
+
+A claim that changes no row therefore answers `scheduled`, the state it found, whatever the publication holds now. The run does not continue from `scheduled`, so it stops. The answer can be out of date. In a race with a cancel, the step answers `scheduled` while the publication is `cancelled`.
+
+A provider's answer that finds its attempt already ended does the same, for the same reason. It answers `publishing`, the state its step claimed. The publication may by then be `preparing` in a later run, and that run is not this execution's to continue.
+
+These are the two cases where a step's answer narrows D6's "new state". Nothing reads the answer except the handler that decides whether to take another step.
+
+A return type that says "stop" or "continue" was rejected. It would keep D6's "new state" true, but it adds a type to the journal for cases D6's exclusivity already makes rare.
+
+Tolerated: a loser stops even if the winner's handler has died. Restate can start a new execution while an earlier one is still inside its claim. If the earlier one wins, the new one stops, and no handler goes on with the publication.
+
+- **Likelihood.** It needs an execution stalled long enough for Restate to replace it, and then a claim that commits within milliseconds of the replacement's read. How often this happens is unmeasured.
+- **Impact.** One post is missed, without any signal:
+  - D10's overdue list and D5's poller cover only `scheduled`.
+  - The publication stays `preparing` with a running attempt, and does not fail when its deadline passes, because no step runs again.
+  - The scheduler's tick keeps running.
+  - The only sign is a `preparing` publication whose `deadline` has passed. A client sees that only if it looks.
+- **Recoverability.** `worker recover` continues or fails it, per D9. D9 does not list this case among the reasons to run the command, so a runbook built from D9 will not prompt it.
+- **Cost of the alternatives.** Letting a loser continue from `preparing` needs an approved decision against D5 and infrastructure D4, and can record a false `outcome_unknown` if two live executions both reach the commit claim. Adding the case to D9 changes an approved decision.
+
+What would bring it back: a `preparing` publication past its deadline appearing in operation.
+
+Also tolerated: a stalled execution can act on a later run's state. A step holds no memory of earlier steps, and D6 rules this out only while Restate keeps one invocation per key.
+
+- **Likelihood.** An execution must stall until Restate replaces it, and stay stalled while a person resolves and retries the publication and a new run claims it. How often this happens is unmeasured.
+- **Impact.** The stalled execution treats whatever it finds as its own run's. These are the shapes found so far, and the list may not be complete:
+  - An execution paused between its read and its commit claim claims the later run's commit. The provider is still called once, and the later run's step records `outcome_unknown`.
+  - An execution that loses its move while recording an interrupted commit reads the state again, and can answer the later run's `preparing`. It can then take that run's commit claim, with the same result.
+  - An execution that read `publishing` from an earlier run records `outcome_unknown` on the later run's attempt, and calls no provider. The later run's adapter may still be in its call, and its answer then reaches only the log.
+- **Recoverability.** Each commit claim calls the provider once, so none of these posts twice. `outcome_unknown` asks a person to check the provider.
+- **Cost of the alternative.** Carrying the attempt id across steps would change the journal's shape, which D6 makes costly.
+
+What would bring it back: a later run's `outcome_unknown` traced to a stalled execution.
+
+### D18 — An adapter's post reference meets the rules a person's does
+
+Binding: 00004, 00008, and later pipelines that add a provider adapter.
+
+[Publication contract D18](../00002-publication-contract/spec.md) refuses a blank `remote_id`, and any `remote_url` that is not http or https, when a person resolves a publication. A client shows the address as a link, so a `javascript:` one would run in it.
+
+An adapter's answer reaches the same columns through `CommitResult::Published`, and the table checks neither. A provider's answer is not trusted input, least of all from an instance anyone can run. So an adapter must meet the same rules before it answers `Published`.
+
+00003 does not check this in the steps. No adapter exists to test against, and the failure needs a policy of its own: refusing a `Published` answer throws away the record of a post that exists. The adapter's pipeline owns that policy.
+
+A later pipeline is in violation if its adapter can answer `Published` with a blank `remote_id`, or with a `remote_url` that is not http or https.
+
+What would overturn this: a shared check in the steps that the adapter's pipeline chooses instead, or a table check that makes the rule hold for every writer.

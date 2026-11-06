@@ -276,10 +276,7 @@ async fn the_table_refuses_an_attempt_it_cannot_explain() {
     );
     let id = new_id("publication_attempt");
     assert_eq!(
-        insert(&id, Some("cancelled"), Some(at))
-            .await
-            .err()
-            .flatten(),
+        insert(&id, Some("running"), Some(at)).await.err().flatten(),
         constraint("publication_attempt_result_check"),
         "a result outside the list"
     );
@@ -302,6 +299,11 @@ async fn the_table_refuses_an_attempt_it_cannot_explain() {
             constraint("publication_attempt_reason_check"),
             "{result} without a reason"
         );
+    }
+    for result in ["published", "cancelled"] {
+        insert_attempt(db, &publication_id, Some(result), None, at)
+            .await
+            .unwrap_or_else(|error| panic!("{result} needs no reason: {error:?}"));
     }
     assert_eq!(
         insert_attempt(db, &new_id("publication"), None, None, at)

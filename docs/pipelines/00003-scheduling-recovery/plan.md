@@ -15,7 +15,7 @@ The build runs as one small PR per issue, as 00002's did. Each issue carries its
 1. **#26 Tolerance and deadline on a publication.** `tolerance_seconds` on create and edit, `deadline` in every publication response. The migration gives existing publications 1,800 seconds. D1, D2, D11. Built in PR #35.
 2. **#27 An organization's default tolerance.** `pipewhere.organization_setting`, `GET` and `PATCH .../settings`. Create reads the default. D1, D2, D11. Built in PR #36.
 3. **#28 The overdue list.** `?overdue=true` on the publication list. D10, D15. Depends on #26 only for the response shape. Built in PR #37.
-4. **#29 The run's steps in API's library.** The claim with its attempt, the commit claim with its deadline check, the adapter seam with no adapter, result recording, and the `cancelled` attempt result. Tested against PostgreSQL without Restate. D7, D8. Depends on #26.
+4. **#29 The run's steps in API's library.** The claim with its attempt, the commit claim with its deadline check, the adapter seam with no adapter, result recording, and the `cancelled` attempt result. Tested against PostgreSQL without Restate. D7, D8. Depends on #26. Built in PR #38.
 5. **#30 Worker's first handler and the poller.** The `Publication` virtual object, Worker's database connection, the poller and its partial index, Compose changes, and a Restate test harness. Carries infrastructure D14's upgrade test and D15's dependency. D5, D6. Depends on #29.
 6. **#31 The scheduler's stall.** `pipewhere.scheduler_tick`, written by the poller, and `GET .../scheduler`. D10. Depends on #30.
 7. **#32 `worker recover`.** Tested after losing Restate, and while the original invocation is live. README runbook. D9. Depends on #30.
@@ -241,6 +241,92 @@ Not verified:
 - Whether generated clients, PHP, or .NET send `true`. D15 refuses anything else, so a client that sends another spelling finds out on its first request.
 - The one failure seen in this build. In one full run, three tests in `tests/contents.rs` panicked because Auth did not answer `/health` within the test harness's 10 seconds. That file and the harness did not change. The cause is not known, and later runs of that file passed.
 
+## #29 — what was built
+
+- `apps/api/src/runs.rs` holds `step(db, adapter, publication_id)`, which reads the publication's state and takes the one step that state calls for. It answers the state the run goes on from. The run takes another step only from `preparing`. Nothing calls it yet, because #30 adds the handler.
+
+| State found | What the step does |
+| --- | --- |
+| `scheduled` | The claim, per D7. Within the deadline: `preparing` with a running attempt. Past it: `failed`, with an attempt that starts and ends at the same time. |
+| `preparing` | The commit, per D8: the commit claim, the adapter, then the result. Past the deadline: `failed`, and the adapter is not called. |
+| `publishing` | `outcome_unknown`, and the attempt ends with it. The adapter is not called. |
+| `cancelled` | Any running attempt ends `cancelled`, with no reason. |
+| `published`, `failed`, `outcome_unknown` | Nothing. |
+
+- The commit claim locks the row and reads its state in one transaction. A state other than `preparing` goes back to this table. A publication past its deadline fails in that same transaction.
+- The adapter seam is the `Adapter` trait. `commit` takes the provider and body, and answers `Published`, `Refused`, or `Ambiguous`. `NoAdapter` is what production runs until 00004. It refuses with "Pipewhere cannot publish to Mastodon yet."
+- The migration `20261107000000_attempt_cancelled.sql` adds `cancelled` to the attempt's result check, and lets it have no reason. `AttemptResult` gains the value, with 00002 D8's cost.
+- D16, D17, and D18 record what these steps added to the spec. The operator approved all three:
+  - D16: a claim waits for the planned time.
+  - D17: a claim's loser, and an answer that finds its attempt ended, each answer the state the step found or claimed. It also tolerates two cases: a claim's winner dying, and a stalled execution acting on a later run's state.
+  - D18: an adapter's post reference must meet 00002 D18's rules.
+
+Choices made in the build, within the spec:
+
+- The commit claim takes the row's lock first, then checks the deadline against `clock_timestamp()`, so D2's check still sits in the update that claims the commit. A waiting update does not check its conditions again when the lock's owner rolls back, so the check would otherwise use a time from before the wait. Changing `now()` to `clock_timestamp()` alone does not fix this.
+- A missed deadline fails under that same lock. Reading the state after releasing it could find a later run in `preparing`, and fail that run with a false reason.
+- The commit claim returns the provider and body, so the adapter gets what the claim committed. It also returns the running attempt's id.
+- A provider's answer applies only while that attempt is still running. The publication being `publishing` does not show this, because a person can resolve and retry it while an old execution waits for its answer. An answer that finds its attempt ended changes nothing, and the step answers `publishing`, per D17, so an old handler stops.
+- A commit claim finds no row when no attempt is running, and the adapter is not called. Nothing could record what the provider did. The step then fails with an error, as below.
+- A result that cannot be recorded logs the provider's answer at `error`, including the remote id. That log is the only record of the id.
+- A move into `failed`, `outcome_unknown`, or `published` with no running attempt to end is an error and rolls back, per 00002 D19. No path reaches that state. A hand-edited row would make the invocation keep failing.
+
+Tolerated:
+
+- A provider answer holding U+0000 cannot be stored, so recording it fails, and the next step records `outcome_unknown`. 00004's adapters own what they send.
+- A claim's winner dying, and a stalled execution acting on a later run's state, are D17's two tolerated cases.
+
+Left for #30: the handler's loop, `Deserialize` on `PublicationState` for the journal, and Worker's dependency on this crate.
+
+Left for 00004: a person who resolves a `failed` publication while an old adapter call is still open can retry, and that call could still post. The post would then exist twice. Tying an answer to its attempt protects the record, not the post. Adapter timeouts should bound this.
+
+Verified, at `19b849f`:
+
+- `cargo test -p pipewhere-api`: 7 unit tests and 83 integration tests pass. `tests/publication_runs.rs` is new, with 25 tests.
+- `pnpm --filter @pipewhere/auth test`: 20 tests pass.
+- `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all --check`: clean.
+- `tests/publication_runs.rs`, `tests/publication_attempts.rs`, and `tests/publication_transitions.rs` passed 3 runs in a row.
+- Two claims racing: a held transaction keeps both waiting at their updates, checked in `pg_stat_activity`. Once it commits, one claim answers `preparing` and the other `scheduled`, with one attempt.
+- The claim's one transaction: with the attempt table locked, the claim waits at its insert, and the publication still reads `scheduled`.
+- A cancel racing the commit claim:
+  - A cancel held open and then committed: the step answers `cancelled`, the attempt ends `cancelled`, and the adapter is not called. If it rolls back, the step publishes.
+  - A commit claim already committed, with the adapter held mid-call: the publication reads `publishing`, and both cancel and edit answer 409.
+  - 25 rounds of a real cancel request against a real step agree on who won, in the state, the attempt, and the number of adapter calls. This is weak evidence for the cancel's side. In a review probe at `bd1d440`, the cancel won 5, 2, and 1 of 25 rounds in 3 runs, and the test does not require it to win any. The held tests are what force each order.
+- A commit claim that waits past the deadline: with 3 seconds left, a held cancel keeps the step waiting until the deadline passes, then rolls back. The step answers `failed`, without an adapter call.
+- A cancel held open while the step fails a publication past its deadline: the outcome follows the cancel's commit or rollback.
+- A step that loses its move: another transaction moves `publishing` to `published` while the step waits. The step answers `published`, and changes nothing.
+- An edit moving the time later, racing a claim: the claim loses, and no attempt is written.
+- An interrupted commit: the step's task is aborted while the fake adapter holds the call. The next step records `outcome_unknown`, and the adapter's call count stays 1. A later step changes nothing.
+- A late answer, in two cases:
+  - A second step records `outcome_unknown` while the first holds the adapter. When the first gets `Published`, it changes nothing, leaves no remote id, and answers `publishing`.
+  - A person then resolves and retries, and a new run holds a second adapter. The old refusal arrives and changes nothing. The new run still publishes, with its remote id, and each attempt keeps its own result.
+- A commit past its deadline fails without an adapter call. A commit whose deadline passes during the adapter's call still records `published`.
+- Ending a run or cancelling one leaves another publication's running attempt running.
+- The claim's bounds, with tolerances of 300, 600, and 86,400 seconds, on each side of the deadline.
+- A retry after a late failure runs again, and leaves 2 attempts.
+- Reading through the API: a running attempt, a `cancelled` attempt, and a `published` publication's remote id.
+- Each of these changes, made by a Python script outside the repository, fails a test. The script copied the file aside, made one change, ran the unit tests, `tests/publication_runs.rs`, and `tests/publication_attempts.rs`, and restored the file. 24 ran at `3d28600`, on the commit path and the ending it shares. The rest ran at `389adf5`, on code that has not changed since.
+  - At `19b849f`, failing a missed deadline after the commit claim's transaction commits. It failed `a_cancel_queued_behind_a_missed_deadline_finds_it_failed` in 3 of 3 runs, and no other test in `tests/publication_runs.rs`. That test passes at this head.
+  - At `3d28600`, the commit claim: ignoring the state or the deadline; its deadline reversed; leaving the state at `preparing`; not taking the lock; reading the transaction's time; not committing; needing no running attempt; taking another publication's attempt; a missed deadline moving nothing; failing a state other than `preparing`.
+  - At `3d28600`, an answer: claiming its own ending when it lost; answering the current state; ending what it finds; ignoring its own attempt.
+  - At `3d28600`, the ending: an interrupted commit becoming `failed`; not reading the state again after losing a race; ignoring the state; a missing attempt passing; rewriting ended attempts; ending other publications' attempts; adding a reason where there is none; two transactions in place of one; not committing.
+  - At `389adf5`, the claim: ignoring the planned time, the state, or the tolerance; its deadline reversed; always `preparing`; always `failed`; a loser continuing the run; a late failure ending later than it started, or leaving its attempt running; not committing; two transactions in place of one.
+  - At `389adf5`, the result: refused and ambiguous swapped; the address dropped; a published attempt recorded as failed; the provider's reason replaced; the adapter called twice; an interrupted commit calling the adapter again.
+  - At `389adf5`, a cancelled run: leaving its attempt running, ending it with another result, rewriting ended attempts, or ending other publications' attempts.
+  - At `389adf5`, `NoAdapter`: naming the wrong provider, or answering ambiguous.
+  - At `389adf5`, the table: refusing the new result; requiring a reason for it; allowing any result; dropping the reason for `failed` and `outcome_unknown`.
+  - At `389adf5`, the schema publishing another name for the new result.
+
+Not verified:
+
+- Restate. Nothing runs a step through a handler until #30. That includes the Send bound on a real `ctx.run`, although the tests run `step` inside `tokio::spawn`, which needs `Send`.
+- The running stack. The local Compose stack still runs #26's build, and neither this migration nor #27's has been applied to its database. No request reaches the new code there.
+- The log line for a result that cannot be recorded. No test reads the log. The late-answer tests run that path.
+- A real provider. The results other than `NoAdapter`'s refusal come from a fake adapter.
+- `<=` differing from `<` at either time check, which a test cannot observe.
+- The deadline being rechecked between the commit claim's update and its commit. That window is one round trip, and the claim then counts as started.
+- Why Auth sometimes misses the harness's 10-second `/health` wait. Review runs saw this four times: once in `tests/publications.rs`, twice in `tests/publication_attempts.rs`, and once in `tests/publication_runs.rs`. One, lasting 10.85 seconds, saved no message, so it is only probably the same failure. The others show it during setup, before the test's own code runs. Two full reruns with fewer test threads passed. Load was not measured, the harness is unchanged from `main`, and the cause is still not known. A repeat run can therefore fail for a reason other than the code.
+
 ## Not yet built
 
-#29–#33. #33 is blocked on 00004, per D12.
+#30–#33. #33 is blocked on 00004, per D12.

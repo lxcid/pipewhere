@@ -19,6 +19,7 @@ pub mod contents;
 pub mod error;
 pub mod ids;
 pub mod publications;
+pub mod runs;
 pub mod settings;
 pub mod tokens;
 
@@ -221,7 +222,7 @@ mod tests {
         );
         assert_eq!(
             schemas["AttemptResult"]["enum"],
-            serde_json::json!(["published", "failed", "outcome_unknown"])
+            serde_json::json!(["published", "failed", "outcome_unknown", "cancelled"])
         );
         assert_eq!(
             schemas["Publication"]["properties"]["planned_at"]["format"],
