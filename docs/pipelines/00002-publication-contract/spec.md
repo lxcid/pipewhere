@@ -178,7 +178,7 @@ When the request omits it, the planned time is the time of the request, by the d
 
 Any time within those years is accepted, including one in the past. Lateness belongs to [scheduling and recovery D1 and D2](../00003-scheduling-recovery/spec.md): a publication whose commit cannot start by its planned time plus its tolerance fails as late. Refusing a past time here would need an allowance for clock skew, which is that tolerance under another name. A time in the last day of 9999 can carry its deadline past that year, which [scheduling and recovery D14](../00003-scheduling-recovery/spec.md) tolerates.
 
-A publication stores the tolerance it was created with, per [scheduling and recovery D2 and D11](../00003-scheduling-recovery/spec.md). Publications that existed before the column took 30 minutes, which is what each would have recorded, since no organization could change that default before then. Nothing runs a publication before 00003.
+A publication stores its own tolerance, set at create and changeable by an edit, per [scheduling and recovery D2 and D11](../00003-scheduling-recovery/spec.md). Publications that existed before the column took 30 minutes, which is what each would have recorded, since no organization could change that default before then. Nothing runs a publication before 00003.
 
 ### D13 — Idempotency keys live in their own table, one key space per organization
 

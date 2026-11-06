@@ -79,6 +79,7 @@ Verified:
   - It reads the hash stored for a create without a tolerance. The hash equals SHA-256 of the five-element request that main hashed before #26.
   - It sends the key again with `tolerance_seconds: null`, and gets the first result.
   - It sends the key again with `tolerance_seconds: 1800` added, and gets 422 `idempotency_key_reused`.
+  - It creates with a new key and a tolerance of 300. Repeating with 300 gets the first result, and repeating with 600 gets 422 `idempotency_key_reused`.
 - `an_edit_changes_only_this_channels_copy` edits with `tolerance_seconds: null`, and the publication is unchanged.
 - `the_tables_refuse_bad_rows` shows the table refusing 299 and 86,401 (`publication_tolerance_seconds_check`), and an insert that leaves the column out (`23502`, not null).
 - `the_schema_publishes_the_error_codes_and_states_as_fixed_sets` checks the bounds on all three schemas, `deadline`'s format, and which fields are required. `the_schema_lists_every_endpoint` is unchanged and passes.
@@ -95,6 +96,7 @@ Verified:
   - The edit's state guard bypassed when the edit changes only the tolerance: `each_action_is_allowed_only_in_the_states_d3_lists` and `resolving_records_what_a_person_found`.
   - The tolerance dropped from the request hash: `a_repeated_request_returns_the_first_result`.
   - An omitted tolerance hashed as `null` after the other fields: the same test.
+  - The hash recording only that a tolerance was sent, not its value: the same test.
   - The deadline subtracting the tolerance, or counting it in minutes: four tests, among them `a_member_creates_lists_and_reads_publications`.
   - The deadline set to 30 minutes, whatever the tolerance: `a_publication_records_its_tolerance`, `an_edit_changes_only_this_channels_copy`, and the retry test.
   - Create storing 1,800 whatever the request sent: `a_publication_records_its_tolerance`.

@@ -129,7 +129,7 @@ Asserted, not verified:
 ## #16 — what was built
 
 - The migration `20261103052937_publication.sql` adds two tables:
-  - `pipewhere.publication` holds `id`, `organization_id`, `channel_id`, `content_id`, `body`, `state`, and `planned_at`. The id is checked with `pipewhere.is_typeid(id, 'pub')`. `state` is checked against D3's seven states. `organization_id` references `auth.organization` without a cascade, per 00001 D2.
+  - `pipewhere.publication` holds `id`, `organization_id`, `channel_id`, `content_id`, `body`, `state`, and `planned_at`. Later issues add `remote_id`, `remote_url`, and `tolerance_seconds`. The id is checked with `pipewhere.is_typeid(id, 'pub')`. `state` is checked against D3's seven states. `organization_id` references `auth.organization` without a cascade, per 00001 D2.
   - `pipewhere.idempotency_key` holds `organization_id`, `key`, `request_hash`, and `publication_id`, keyed by `(organization_id, key)`, per D13. It has no id of its own, per 00001 D6. Its reference to the publication is checked at commit.
 - `apps/api/src/publications.rs` serves three operations. All take `OrgCaller`, and every query filters on the path's organization, per D6:
   - `POST /v1/orgs/{organization_id}/publications` requires `Idempotency-Key`, and answers 201 with the publication, per D11–D13.
@@ -186,13 +186,13 @@ Asserted, not verified:
 
 - The migration `20261103083748_publication_remote.sql` adds `remote_id` and `remote_url` to `pipewhere.publication`. `publication_remote_id_check` requires `remote_id` exactly when the state is `published`, per D18.
 - `apps/api/src/publications.rs` serves four operations, per D15. All take `OrgCaller`, and every query filters on the path's organization, per D6:
-  - `PATCH /v1/orgs/{organization_id}/publications/{publication_id}` edits `body`, `planned_at`, or both, in `scheduled` or `failed`.
+  - `PATCH /v1/orgs/{organization_id}/publications/{publication_id}` edits `body`, `planned_at`, or both, in `scheduled` or `failed`. 00003's #26 adds `tolerance_seconds`, under the same guard.
   - `POST .../{publication_id}/cancel` cancels from `scheduled` or `preparing`.
   - `POST .../{publication_id}/retry` requires `Idempotency-Key`, and moves `failed` to `scheduled`, per D17.
   - `POST .../{publication_id}/resolve` moves `outcome_unknown` to `published`, with a remote id and an optional address, or to `failed`, per D18.
 - Each action is one conditional `UPDATE` on the states D3 allows. When it changes nothing, `refusal` looks the publication up: missing answers 404, and present answers 409 `state_conflict`, a new `ErrorCode`, per D16.
 - Every publication response gains `remote_id` and `remote_url`, null until `published`.
-- Create's year check on `planned_at` moved to `checked_planned_at`, which create, edit, and retry share. The publication column list is the `columns!` macro, since every query returning a publication now names nine columns.
+- Create's year check on `planned_at` moved to `checked_planned_at`, which create, edit, and retry share. The publication column list is the `columns!` macro, since every query returning a publication names the same columns.
 - The schema publishes the resolution's `outcome` as the string enum `ResolutionOutcome`, `published` or `failed`.
 
 Choices made in the build, within the spec:
