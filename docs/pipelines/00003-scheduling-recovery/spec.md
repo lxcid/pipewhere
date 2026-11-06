@@ -276,8 +276,6 @@ This decision covers this parameter. A later query parameter decides its own ans
 
 ### D16 — A claim waits for the planned time
 
-Proposed: awaiting operator approval.
-
 D7 says a run's first step claims the publication. This decision adds a condition: the claim also requires the planned time to have come.
 
 D5's poller sends a run only for due work, but a run can outlive the time it was sent for:
@@ -290,8 +288,6 @@ Without the condition, such a run would publish early. The intent rules that out
 A run that finds the time has not come stops, and writes nothing. The publication stays `scheduled`, and the poller sends a new run when its time comes.
 
 ### D17 — A step that loses its move answers the state it found or claimed
-
-Proposed: awaiting operator approval.
 
 D5 and [infrastructure D4](../00001-infrastructure/spec.md) say that a claim's loser stops. D6 says a step returns the publication's new state, and the run continues from `preparing`. A claim that lost to another run could read `preparing`, and would then continue instead of stopping.
 
@@ -329,8 +325,6 @@ Also tolerated: a stalled execution can act on a later run's state. A step holds
 What would bring it back: a later run's `outcome_unknown` traced to a stalled execution.
 
 ### D18 — An adapter's post reference meets the rules a person's does
-
-Proposed: awaiting operator approval.
 
 Binding: 00004, 00008, and later pipelines that add a provider adapter.
 

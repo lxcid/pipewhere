@@ -256,7 +256,7 @@ Not verified:
 - The commit claim locks the row and reads its state in one transaction. A state other than `preparing` goes back to this table. A publication past its deadline fails in that same transaction.
 - The adapter seam is the `Adapter` trait. `commit` takes the provider and body, and answers `Published`, `Refused`, or `Ambiguous`. `NoAdapter` is what production runs until 00004. It refuses with "Pipewhere cannot publish to Mastodon yet."
 - The migration `20261107000000_attempt_cancelled.sql` adds `cancelled` to the attempt's result check, and lets it have no reason. `AttemptResult` gains the value, with 00002 D8's cost.
-- D16, D17, and D18 record what these steps added to the spec. All three await the operator's approval:
+- D16, D17, and D18 record what these steps added to the spec. The operator approved all three:
   - D16: a claim waits for the planned time.
   - D17: a claim's loser, and an answer that finds its attempt ended, each answer the state the step found or claimed. It also tolerates two cases: a claim's winner dying, and a stalled execution acting on a later run's state.
   - D18: an adapter's post reference must meet 00002 D18's rules.
@@ -277,6 +277,8 @@ Tolerated:
 - A claim's winner dying, and a stalled execution acting on a later run's state, are D17's two tolerated cases.
 
 Left for #30: the handler's loop, `Deserialize` on `PublicationState` for the journal, and Worker's dependency on this crate.
+
+Left for 00004: a person who resolves a `failed` publication while an old adapter call is still open can retry, and that call could still post. The post would then exist twice. Tying an answer to its attempt protects the record, not the post. Adapter timeouts should bound this.
 
 Verified, at `19b849f`:
 
