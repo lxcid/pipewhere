@@ -959,6 +959,47 @@ async fn a_cancel_committed_first_stops_the_commit_claim() {
     instance.close().await;
 }
 
+// The state a step read can change before its update reaches the row. The update
+// then changes nothing, and the step answers what the publication holds now.
+#[tokio::test]
+async fn a_step_that_loses_its_move_answers_what_the_publication_holds_now() {
+    let instance = Instance::start().await;
+    let (organization_id, _) = set_up(&instance).await;
+    let db = &instance.api_db;
+    let adapter = FakeAdapter::answering(Answer::Published);
+
+    let id = insert_publication(db, &organization_id, Publishing, "-1 minute").await;
+    let mut held = db.begin().await.unwrap();
+    sqlx::query(
+        "UPDATE pipewhere.publication SET state = 'published', remote_id = '109' WHERE id = $1",
+    )
+    .bind(&id)
+    .execute(&mut *held)
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE pipewhere.publication_attempt SET result = 'published', ended_at = now()
+         WHERE publication_id = $1",
+    )
+    .bind(&id)
+    .execute(&mut *held)
+    .await
+    .unwrap();
+    let running = run_step(db, &adapter, &id);
+    wait_for_blocked(&instance, 1).await;
+    held.commit().await.unwrap();
+
+    assert_eq!(running.await.unwrap(), Published);
+    assert_eq!(state_of(db, &id).await, Published);
+    assert_eq!(remote_of(db, &id).await.0.as_deref(), Some("109"));
+    assert_eq!(
+        only_attempt(db, &id).await,
+        (Some("published".to_owned()), None)
+    );
+    assert_eq!(adapter.calls(), 0);
+    instance.close().await;
+}
+
 // A commit claim tests its deadline without waiting for the row, so it can fail
 // a publication that a cancel still holds. The cancel then decides.
 #[tokio::test]
