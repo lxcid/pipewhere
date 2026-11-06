@@ -111,28 +111,23 @@ async fn claim(db: &PgPool, publication_id: &str) -> Result<PublicationState, sq
     Ok(state)
 }
 
+#[derive(sqlx::FromRow)]
+struct ClaimedCommit {
+    #[sqlx(flatten)]
+    commit: Commit,
+    attempt_id: String,
+}
+
 async fn commit(
     db: &PgPool,
     adapter: &impl Adapter,
     publication_id: &str,
 ) -> Result<PublicationState, sqlx::Error> {
-    // This commits before the provider is called, so a cancel racing it either
-    // cancels first or answers 409, per 00002 D16.
-    let claimed: Option<Commit> = sqlx::query_as(concat!(
-        "UPDATE pipewhere.publication p SET state = 'publishing'
-         FROM pipewhere.channel c
-         WHERE p.id = $1 AND c.id = p.channel_id AND p.state = 'preparing' AND now() <= ",
-        deadline!(),
-        " RETURNING c.provider, p.body"
-    ))
-    .bind(publication_id)
-    .fetch_optional(db)
-    .await?;
-    let Some(claimed) = claimed else {
+    let Some(claimed) = claim_commit(db, publication_id).await? else {
         let state = read_state(db, publication_id).await?;
         return settle(db, publication_id, state).await;
     };
-    let ending = match adapter.commit(&claimed).await {
+    let ending = match adapter.commit(&claimed.commit).await {
         CommitResult::Published {
             remote_id,
             remote_url,
@@ -143,18 +138,19 @@ async fn commit(
             remote_id: Some(remote_id),
             remote_url,
         },
-        CommitResult::Refused { reason } => {
-            Ending::without_post(PublicationState::Failed, AttemptResult::Failed, reason)
-        }
-        CommitResult::Ambiguous { reason } => Ending::without_post(
-            PublicationState::OutcomeUnknown,
-            AttemptResult::OutcomeUnknown,
-            reason,
-        ),
+        CommitResult::Refused { reason } => Ending::failed(reason),
+        CommitResult::Ambiguous { reason } => Ending::outcome_unknown(reason),
     };
-    let recorded = end_run(db, publication_id, PublicationState::Publishing, &ending).await;
-    // The publication goes on to `outcome_unknown`, which names no post, so the
-    // log is the only record of the provider's answer.
+    let recorded = end_run(
+        db,
+        publication_id,
+        PublicationState::Publishing,
+        Some(&claimed.attempt_id),
+        &ending,
+    )
+    .await;
+    // The publication holds no record of this answer, so the log is the only
+    // one, and a post it names may exist.
     if !matches!(recorded, Ok(true)) {
         tracing::error!(
             publication_id,
@@ -168,8 +164,41 @@ async fn commit(
     if recorded? {
         return Ok(ending.state);
     }
-    let state = read_state(db, publication_id).await?;
-    settle(db, publication_id, state).await
+    // Another execution ended this attempt. What the publication holds now is
+    // no longer this execution's to end.
+    read_state(db, publication_id).await
+}
+
+// This commits before the provider is called, so a cancel racing it either
+// cancels first or answers 409, per 00002 D16. It finds no row without a running
+// attempt, because nothing could then record what the provider did.
+//
+// A row lock's owner can roll back, and PostgreSQL then does not check a waiting
+// update's conditions again. So the lock comes first, and the deadline is read
+// from the clock once it is held.
+async fn claim_commit(
+    db: &PgPool,
+    publication_id: &str,
+) -> Result<Option<ClaimedCommit>, sqlx::Error> {
+    let mut tx = db.begin().await?;
+    sqlx::query("SELECT 1 FROM pipewhere.publication WHERE id = $1 FOR UPDATE")
+        .bind(publication_id)
+        .execute(&mut *tx)
+        .await?;
+    let claimed = sqlx::query_as(concat!(
+        "UPDATE pipewhere.publication p SET state = 'publishing'
+         FROM pipewhere.channel c, pipewhere.publication_attempt a
+         WHERE p.id = $1 AND c.id = p.channel_id
+             AND a.publication_id = p.id AND a.result IS NULL
+             AND p.state = 'preparing' AND clock_timestamp() <= ",
+        deadline!(),
+        " RETURNING c.provider, p.body, a.id AS attempt_id"
+    ))
+    .bind(publication_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(claimed)
 }
 
 struct Ending {
@@ -181,14 +210,20 @@ struct Ending {
 }
 
 impl Ending {
-    fn without_post(
-        state: PublicationState,
-        result: AttemptResult,
-        reason: impl Into<String>,
-    ) -> Self {
+    fn failed(reason: impl Into<String>) -> Self {
         Self {
-            state,
-            result,
+            state: PublicationState::Failed,
+            result: AttemptResult::Failed,
+            reason: Some(reason.into()),
+            remote_id: None,
+            remote_url: None,
+        }
+    }
+
+    fn outcome_unknown(reason: impl Into<String>) -> Self {
+        Self {
+            state: PublicationState::OutcomeUnknown,
+            result: AttemptResult::OutcomeUnknown,
             reason: Some(reason.into()),
             remote_id: None,
             remote_url: None,
@@ -204,28 +239,14 @@ async fn settle(
     mut state: PublicationState,
 ) -> Result<PublicationState, sqlx::Error> {
     loop {
-        let (from, ending) = match state {
+        let ending = match state {
             // A commit claim that changed no row leaves `preparing` only past
-            // its deadline.
-            PublicationState::Preparing => (
-                PublicationState::Preparing,
-                Ending::without_post(
-                    PublicationState::Failed,
-                    AttemptResult::Failed,
-                    MISSED_ITS_TIME,
-                ),
-            ),
+            // its deadline, or with no running attempt, which `end_run` refuses.
+            PublicationState::Preparing => Ending::failed(MISSED_ITS_TIME),
             // 00003 D6 runs one invocation per publication at a time, so this
             // is an earlier execution's claim, and that execution was
             // interrupted.
-            PublicationState::Publishing => (
-                PublicationState::Publishing,
-                Ending::without_post(
-                    PublicationState::OutcomeUnknown,
-                    AttemptResult::OutcomeUnknown,
-                    STOPPED_DURING_COMMIT,
-                ),
-            ),
+            PublicationState::Publishing => Ending::outcome_unknown(STOPPED_DURING_COMMIT),
             PublicationState::Cancelled => {
                 // A publication cancelled while `scheduled` never had an attempt.
                 sqlx::query(
@@ -241,7 +262,7 @@ async fn settle(
             }
             state => return Ok(state),
         };
-        if end_run(db, publication_id, from, &ending).await? {
+        if end_run(db, publication_id, state, None, &ending).await? {
             return Ok(ending.state);
         }
         state = read_state(db, publication_id).await?;
@@ -249,23 +270,28 @@ async fn settle(
 }
 
 /// Moves the publication and ends its attempt in one transaction, per 00002
-/// D19. Answers false when the publication had left `from`.
+/// D19. Answers false when the publication had left `from`, or when
+/// `only_attempt` names an attempt that has already ended.
 async fn end_run(
     db: &PgPool,
     publication_id: &str,
     from: PublicationState,
+    only_attempt: Option<&str>,
     ending: &Ending,
 ) -> Result<bool, sqlx::Error> {
     let mut tx = db.begin().await?;
     let moved = sqlx::query(
         "UPDATE pipewhere.publication SET state = $3, remote_id = $4, remote_url = $5
-         WHERE id = $1 AND state = $2",
+         WHERE id = $1 AND state = $2 AND ($6::text IS NULL OR EXISTS (
+             SELECT 1 FROM pipewhere.publication_attempt WHERE id = $6 AND result IS NULL
+         ))",
     )
     .bind(publication_id)
     .bind(from)
     .bind(ending.state)
     .bind(&ending.remote_id)
     .bind(&ending.remote_url)
+    .bind(only_attempt)
     .execute(&mut *tx)
     .await?
     .rows_affected()

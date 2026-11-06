@@ -651,6 +651,155 @@ async fn a_late_answer_does_not_overwrite_outcome_unknown() {
     instance.close().await;
 }
 
+// An answer belongs to the execution that asked. By the time it arrives, a person
+// can have resolved the publication and retried it, so that `publishing` is a
+// later run's.
+#[tokio::test]
+async fn a_late_answer_does_not_end_a_later_runs_attempt() {
+    let instance = Instance::start().await;
+    let (organization_id, token) = set_up(&instance).await;
+    let db = &instance.api_db;
+    let old = FakeAdapter::holding(Answer::Refused);
+    let new = FakeAdapter::holding(Answer::Published);
+
+    let id = insert_publication(db, &organization_id, Preparing, "-1 minute").await;
+    let first = run_step(db, &old, &id);
+    old.wait_until_called().await;
+    assert_eq!(step(db, &*old, &id).await.unwrap(), OutcomeUnknown);
+
+    let path = publication_path(&organization_id, &id);
+    let resolve = instance
+        .post(
+            &format!("{path}/resolve"),
+            Some(&token),
+            json!({ "outcome": "failed" }),
+        )
+        .await;
+    assert_eq!(ok_json(resolve).await["state"], "failed");
+    let retry = instance
+        .request(Method::POST, &format!("{path}/retry"), Some(&token))
+        .header("idempotency-key", uuid::Uuid::now_v7().simple().to_string())
+        .json(&json!({}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(ok_json(retry).await["state"], "scheduled");
+    assert_eq!(step(db, &*new, &id).await.unwrap(), Preparing);
+    let second = run_step(db, &new, &id);
+    new.wait_until_called().await;
+
+    old.release();
+    assert_eq!(
+        first.await.unwrap(),
+        Publishing,
+        "the late answer changes nothing"
+    );
+    assert_eq!(state_of(db, &id).await, Publishing);
+    assert_eq!(attempts_of(db, &id).await[1].result, None);
+
+    new.release();
+    assert_eq!(second.await.unwrap(), Published);
+    assert_eq!(remote_of(db, &id).await.0.as_deref(), Some("109"));
+    let attempts = attempts_of(db, &id).await;
+    assert_eq!(attempts.len(), 2, "{attempts:?}");
+    assert_eq!(attempts[0].result.as_deref(), Some("outcome_unknown"));
+    assert_eq!(attempts[1].result.as_deref(), Some("published"));
+    assert_eq!(attempts[1].reason, None);
+    instance.close().await;
+}
+
+// A held lock's owner can roll back. PostgreSQL then does not check a waiting
+// update's conditions again, so the deadline must be read once the lock is held.
+#[tokio::test]
+async fn a_commit_claim_that_waits_past_the_deadline_fails() {
+    let instance = Instance::start().await;
+    let (organization_id, _) = set_up(&instance).await;
+    let db = &instance.api_db;
+    let adapter = FakeAdapter::answering(Answer::Published);
+
+    let id = insert_publication(db, &organization_id, Preparing, "-597 seconds").await;
+    let mut held = db.begin().await.unwrap();
+    sqlx::query("UPDATE pipewhere.publication SET state = 'cancelled' WHERE id = $1")
+        .bind(&id)
+        .execute(&mut *held)
+        .await
+        .unwrap();
+    let commit = run_step(db, &adapter, &id);
+    wait_for_blocked(&instance, 1).await;
+    loop {
+        let passed: bool = sqlx::query_scalar(
+            "SELECT clock_timestamp() > planned_at + tolerance_seconds * interval '1 second'
+             FROM pipewhere.publication WHERE id = $1",
+        )
+        .bind(&id)
+        .fetch_one(&instance.admin)
+        .await
+        .unwrap();
+        if passed {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    held.rollback().await.unwrap();
+
+    assert_eq!(commit.await.unwrap(), Failed);
+    assert_eq!(state_of(db, &id).await, Failed);
+    assert_eq!(
+        only_attempt(db, &id).await,
+        (Some("failed".to_owned()), Some(MISSED_ITS_TIME.to_owned()))
+    );
+    assert_eq!(adapter.calls(), 0);
+    instance.close().await;
+}
+
+#[tokio::test]
+async fn a_claim_moves_the_publication_and_starts_its_attempt_in_one_transaction() {
+    let instance = Instance::start().await;
+    let (organization_id, _) = set_up(&instance).await;
+    let db = &instance.api_db;
+    let adapter = FakeAdapter::answering(Answer::Published);
+
+    let id = insert_publication(db, &organization_id, Scheduled, "-1 minute").await;
+    // The claim's insert waits here, after its update has run.
+    let mut held = instance.admin.begin().await.unwrap();
+    sqlx::query("LOCK TABLE pipewhere.publication_attempt IN ACCESS EXCLUSIVE MODE")
+        .execute(&mut *held)
+        .await
+        .unwrap();
+    let claim = run_step(db, &adapter, &id);
+    wait_for_blocked(&instance, 1).await;
+    assert_eq!(state_of(db, &id).await, Scheduled);
+    held.commit().await.unwrap();
+
+    assert_eq!(claim.await.unwrap(), Preparing);
+    assert_eq!(state_of(db, &id).await, Preparing);
+    assert_eq!(only_attempt(db, &id).await, (None, None));
+    instance.close().await;
+}
+
+#[tokio::test]
+async fn ending_a_run_leaves_another_publications_attempt_running() {
+    let instance = Instance::start().await;
+    let (organization_id, _) = set_up(&instance).await;
+    let db = &instance.api_db;
+    let adapter = FakeAdapter::answering(Answer::Published);
+
+    let other = insert_publication(db, &organization_id, Preparing, "-1 minute").await;
+    let published = insert_publication(db, &organization_id, Preparing, "-1 minute").await;
+    assert_eq!(step(db, &*adapter, &published).await.unwrap(), Published);
+    assert_eq!(only_attempt(db, &other).await, (None, None));
+
+    let cancelled = insert_publication(db, &organization_id, Preparing, "-1 minute").await;
+    sqlx::query("UPDATE pipewhere.publication SET state = 'cancelled' WHERE id = $1")
+        .bind(&cancelled)
+        .execute(db)
+        .await
+        .unwrap();
+    assert_eq!(step(db, &*adapter, &cancelled).await.unwrap(), Cancelled);
+    assert_eq!(only_attempt(db, &other).await, (None, None));
+    instance.close().await;
+}
+
 // 00002 D19 requires an ended attempt for every move into `failed` or
 // `outcome_unknown`.
 #[tokio::test]
@@ -661,8 +810,9 @@ async fn a_move_with_no_running_attempt_to_end_is_an_error_and_changes_nothing()
     let adapter = FakeAdapter::answering(Answer::Published);
 
     let unclaimed = insert_publication(db, &organization_id, Preparing, "-1 hour").await;
+    let in_time = insert_publication(db, &organization_id, Preparing, "-1 minute").await;
     let interrupted = insert_publication(db, &organization_id, Publishing, "-1 minute").await;
-    for id in [&unclaimed, &interrupted] {
+    for id in [&unclaimed, &in_time, &interrupted] {
         sqlx::query("DELETE FROM pipewhere.publication_attempt WHERE publication_id = $1")
             .bind(id)
             .execute(db)
@@ -674,6 +824,12 @@ async fn a_move_with_no_running_attempt_to_end_is_an_error_and_changes_nothing()
         Err(sqlx::Error::RowNotFound)
     ));
     assert_eq!(state_of(db, &unclaimed).await, Preparing);
+    assert!(matches!(
+        step(db, &*adapter, &in_time).await,
+        Err(sqlx::Error::RowNotFound)
+    ));
+    assert_eq!(state_of(db, &in_time).await, Preparing);
+    assert_eq!(adapter.calls(), 0, "nothing would record what a post did");
     assert!(matches!(
         step(db, &*adapter, &interrupted).await,
         Err(sqlx::Error::RowNotFound)
