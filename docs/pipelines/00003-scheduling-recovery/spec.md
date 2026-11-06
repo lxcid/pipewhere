@@ -295,7 +295,11 @@ Proposed: awaiting operator approval.
 
 D5 and [infrastructure D4](../00001-infrastructure/spec.md) say that a claim's loser stops. D6 says a step returns the publication's new state, and the run continues from `preparing`. A claim that lost to another run could read `preparing`, and would then continue instead of stopping.
 
-A claim that changes no row therefore answers `scheduled`, the state it found, whatever the publication holds now. The run does not continue from `scheduled`, so it stops. The answer can be out of date. In a race with a cancel, the step answers `scheduled` while the publication is `cancelled`. This narrows D6's "new state" for that one case. Nothing reads the answer except the handler that decides whether to take another step.
+A claim that changes no row therefore answers `scheduled`, the state it found, whatever the publication holds now. The run does not continue from `scheduled`, so it stops. The answer can be out of date. In a race with a cancel, the step answers `scheduled` while the publication is `cancelled`.
+
+A provider's answer that finds its attempt already ended does the same, for the same reason. It answers `publishing`, the state its step claimed. The publication may by then be `preparing` in a later run, and that run is not this execution's to continue.
+
+These are the two cases where a step's answer narrows D6's "new state". Nothing reads the answer except the handler that decides whether to take another step.
 
 A return type that says "stop" or "continue" was rejected. It would keep D6's "new state" true, but it adds a type to the journal for a case D6's exclusivity already makes rare.
 

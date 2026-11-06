@@ -3,7 +3,7 @@
 
 use std::future::Future;
 
-use sqlx::PgPool;
+use sqlx::{PgConnection, PgPool};
 
 use crate::channels::Provider;
 use crate::ids::new_id;
@@ -118,14 +118,19 @@ struct ClaimedCommit {
     attempt_id: String,
 }
 
+enum CommitClaim {
+    Claimed(ClaimedCommit),
+    NotClaimed(PublicationState),
+}
+
 async fn commit(
     db: &PgPool,
     adapter: &impl Adapter,
     publication_id: &str,
 ) -> Result<PublicationState, sqlx::Error> {
-    let Some(claimed) = claim_commit(db, publication_id).await? else {
-        let state = read_state(db, publication_id).await?;
-        return settle(db, publication_id, state).await;
+    let claimed = match claim_commit(db, publication_id).await? {
+        CommitClaim::Claimed(claimed) => claimed,
+        CommitClaim::NotClaimed(state) => return settle(db, publication_id, state).await,
     };
     let ending = match adapter.commit(&claimed.commit).await {
         CommitResult::Published {
@@ -164,41 +169,53 @@ async fn commit(
     if recorded? {
         return Ok(ending.state);
     }
-    // Another execution ended this attempt. What the publication holds now is
-    // no longer this execution's to end.
-    read_state(db, publication_id).await
+    // Another execution ended this attempt, and what the publication holds now
+    // may be a later run's. Answering the state this step left stops the run.
+    Ok(PublicationState::Publishing)
 }
 
 // This commits before the provider is called, so a cancel racing it either
-// cancels first or answers 409, per 00002 D16. It finds no row without a running
-// attempt, because nothing could then record what the provider did.
+// cancels first or answers 409, per 00002 D16.
 //
 // A row lock's owner can roll back, and PostgreSQL then does not check a waiting
 // update's conditions again. So the lock comes first, and the deadline is read
-// from the clock once it is held.
-async fn claim_commit(
-    db: &PgPool,
-    publication_id: &str,
-) -> Result<Option<ClaimedCommit>, sqlx::Error> {
+// from the clock once it is held. Holding it also keeps a missed deadline this
+// run's: nothing can retry and claim the publication before it fails.
+async fn claim_commit(db: &PgPool, publication_id: &str) -> Result<CommitClaim, sqlx::Error> {
     let mut tx = db.begin().await?;
-    sqlx::query("SELECT 1 FROM pipewhere.publication WHERE id = $1 FOR UPDATE")
-        .bind(publication_id)
-        .execute(&mut *tx)
-        .await?;
-    let claimed = sqlx::query_as(concat!(
+    let state: PublicationState =
+        sqlx::query_scalar("SELECT state FROM pipewhere.publication WHERE id = $1 FOR UPDATE")
+            .bind(publication_id)
+            .fetch_one(&mut *tx)
+            .await?;
+    if state != PublicationState::Preparing {
+        tx.commit().await?;
+        return Ok(CommitClaim::NotClaimed(state));
+    }
+    let claimed: Option<ClaimedCommit> = sqlx::query_as(concat!(
         "UPDATE pipewhere.publication p SET state = 'publishing'
          FROM pipewhere.channel c, pipewhere.publication_attempt a
          WHERE p.id = $1 AND c.id = p.channel_id
              AND a.publication_id = p.id AND a.result IS NULL
-             AND p.state = 'preparing' AND clock_timestamp() <= ",
+             AND clock_timestamp() <= ",
         deadline!(),
         " RETURNING c.provider, p.body, a.id AS attempt_id"
     ))
     .bind(publication_id)
     .fetch_optional(&mut *tx)
     .await?;
+    let claim = match claimed {
+        Some(claimed) => CommitClaim::Claimed(claimed),
+        // With no running attempt, this fails rather than call a provider whose
+        // answer nothing could record.
+        None => {
+            let ending = Ending::failed(MISSED_ITS_TIME);
+            end_attempt_and_move(&mut tx, publication_id, state, None, &ending).await?;
+            CommitClaim::NotClaimed(ending.state)
+        }
+    };
     tx.commit().await?;
-    Ok(claimed)
+    Ok(claim)
 }
 
 struct Ending {
@@ -240,9 +257,6 @@ async fn settle(
 ) -> Result<PublicationState, sqlx::Error> {
     loop {
         let ending = match state {
-            // A commit claim that changed no row leaves `preparing` only past
-            // its deadline, or with no running attempt, which `end_run` refuses.
-            PublicationState::Preparing => Ending::failed(MISSED_ITS_TIME),
             // 00003 D6 runs one invocation per publication at a time, so this
             // is an earlier execution's claim, and that execution was
             // interrupted.
@@ -269,9 +283,6 @@ async fn settle(
     }
 }
 
-/// Moves the publication and ends its attempt in one transaction, per 00002
-/// D19. Answers false when the publication had left `from`, or when
-/// `only_attempt` names an attempt that has already ended.
 async fn end_run(
     db: &PgPool,
     publication_id: &str,
@@ -280,6 +291,21 @@ async fn end_run(
     ending: &Ending,
 ) -> Result<bool, sqlx::Error> {
     let mut tx = db.begin().await?;
+    let moved = end_attempt_and_move(&mut tx, publication_id, from, only_attempt, ending).await?;
+    tx.commit().await?;
+    Ok(moved)
+}
+
+/// Moves the publication and ends its attempt, for one transaction per 00002
+/// D19. Answers false when the publication had left `from`, or when
+/// `only_attempt` names an attempt that has already ended.
+async fn end_attempt_and_move(
+    tx: &mut PgConnection,
+    publication_id: &str,
+    from: PublicationState,
+    only_attempt: Option<&str>,
+    ending: &Ending,
+) -> Result<bool, sqlx::Error> {
     let moved = sqlx::query(
         "UPDATE pipewhere.publication SET state = $3, remote_id = $4, remote_url = $5
          WHERE id = $1 AND state = $2 AND ($6::text IS NULL OR EXISTS (
@@ -312,6 +338,5 @@ async fn end_run(
     .bind(&ending.reason)
     .fetch_one(&mut *tx)
     .await?;
-    tx.commit().await?;
     Ok(true)
 }

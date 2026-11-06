@@ -643,7 +643,7 @@ async fn a_late_answer_does_not_overwrite_outcome_unknown() {
     let ended = attempts_of(db, &id).await;
 
     adapter.release();
-    assert_eq!(first.await.unwrap(), OutcomeUnknown);
+    assert_eq!(first.await.unwrap(), Publishing, "the run stops");
     assert_eq!(state_of(db, &id).await, OutcomeUnknown);
     assert_eq!(remote_of(db, &id).await, (None, None));
     assert_eq!(attempts_of(db, &id).await, ended);
@@ -809,6 +809,8 @@ async fn a_move_with_no_running_attempt_to_end_is_an_error_and_changes_nothing()
     let db = &instance.api_db;
     let adapter = FakeAdapter::answering(Answer::Published);
 
+    // Another publication's running attempt does not stand in for its own.
+    let other = insert_publication(db, &organization_id, Preparing, "-1 minute").await;
     let unclaimed = insert_publication(db, &organization_id, Preparing, "-1 hour").await;
     let in_time = insert_publication(db, &organization_id, Preparing, "-1 minute").await;
     let interrupted = insert_publication(db, &organization_id, Publishing, "-1 minute").await;
@@ -835,6 +837,7 @@ async fn a_move_with_no_running_attempt_to_end_is_an_error_and_changes_nothing()
         Err(sqlx::Error::RowNotFound)
     ));
     assert_eq!(state_of(db, &interrupted).await, Publishing);
+    assert_eq!(only_attempt(db, &other).await, (None, None));
     instance.close().await;
 }
 
@@ -1000,8 +1003,8 @@ async fn a_step_that_loses_its_move_answers_what_the_publication_holds_now() {
     instance.close().await;
 }
 
-// A commit claim tests its deadline without waiting for the row, so it can fail
-// a publication that a cancel still holds. The cancel then decides.
+// A commit claim waits for the row before it reads the deadline, so a cancel
+// holding the row decides by its commit or rollback.
 #[tokio::test]
 async fn a_cancel_racing_the_missed_deadline_decides_it_by_who_commits_first() {
     let instance = Instance::start().await;
