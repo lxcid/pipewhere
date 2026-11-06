@@ -1230,25 +1230,52 @@ async fn the_overdue_list_shows_what_passed_its_planned_time_without_starting() 
 
     let unfiltered = ok_json(instance.get(&publications, Some(&token)).await).await;
     assert_eq!(unfiltered["publications"].as_array().unwrap().len(), 10);
-    for value in ["false", "", "1", "TRUE", "yes"] {
-        let page = ok_json(
-            instance
-                .get(&format!("{publications}?overdue={value}"), Some(&token))
-                .await,
-        )
-        .await;
-        assert_eq!(page, unfiltered, "overdue={value}");
+    let not_overdue = ok_json(
+        instance
+            .get(&format!("{publications}?overdue=false"), Some(&token))
+            .await,
+    )
+    .await;
+    assert_eq!(not_overdue, unfiltered);
+
+    for query in [
+        "overdue=True",
+        "overdue=False",
+        "overdue=TRUE",
+        "overdue=1",
+        "overdue=0",
+        "overdue=yes",
+        "overdue=true%20",
+        "overdue=",
+        "overdue",
+        "overdue=%00",
+        "overdue=%FF",
+        "overdue=1&cursor=bad%00cursor",
+    ] {
+        assert_eq!(
+            refusal(
+                instance
+                    .get(&format!("{publications}?{query}"), Some(&token))
+                    .await
+            )
+            .await,
+            (StatusCode::UNPROCESSABLE_ENTITY, "invalid_query".to_owned()),
+            "{query}"
+        );
     }
 
+    // The caller is checked before the query, as it is before a body.
     let outsider_token = instance.session_token(&outsider).await;
-    assert_eq!(
-        refusal(instance.get(&overdue_list, Some(&outsider_token)).await).await,
-        (StatusCode::NOT_FOUND, "not_found".to_owned())
-    );
-    assert_eq!(
-        refusal(instance.get(&overdue_list, None).await).await,
-        (StatusCode::UNAUTHORIZED, "unauthorized".to_owned())
-    );
+    for path in [&overdue_list, &format!("{publications}?overdue=1")] {
+        assert_eq!(
+            refusal(instance.get(path, Some(&outsider_token)).await).await,
+            (StatusCode::NOT_FOUND, "not_found".to_owned())
+        );
+        assert_eq!(
+            refusal(instance.get(path, None).await).await,
+            (StatusCode::UNAUTHORIZED, "unauthorized".to_owned())
+        );
+    }
     instance.close().await;
 }
 
