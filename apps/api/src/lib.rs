@@ -168,6 +168,21 @@ mod tests {
     }
 
     #[test]
+    fn the_schema_publishes_the_overdue_filter() {
+        let schema = serde_json::to_value(api().into_openapi()).unwrap();
+        let parameters =
+            schema["paths"]["/v1/orgs/{organization_id}/publications"]["get"]["parameters"]
+                .as_array()
+                .unwrap();
+        let overdue = parameters
+            .iter()
+            .find(|parameter| parameter["name"] == "overdue")
+            .unwrap();
+        assert_eq!(overdue["in"], "query");
+        assert_eq!(overdue["required"], false);
+    }
+
+    #[test]
     fn the_schema_publishes_the_error_codes_and_states_as_fixed_sets() {
         let schema = serde_json::to_value(api().into_openapi()).unwrap();
         let schemas = &schema["components"]["schemas"];

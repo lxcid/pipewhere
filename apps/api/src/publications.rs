@@ -317,6 +317,7 @@ pub async fn create_publication(
     params(
         ("organization_id" = String, Path),
         ("cursor" = Option<String>, Query, description = "The previous page's `next_cursor`"),
+        ("overdue" = Option<bool>, Query, description = "`true` lists only `scheduled` publications whose planned time has passed. Any other value lists every publication."),
     ),
     security(("bearer" = [])),
     responses(
@@ -335,6 +336,7 @@ pub async fn list_publications(
     Query(query): Query<HashMap<String, String>>,
 ) -> Result<Json<Publications>, ApiError> {
     let cursor = query.get("cursor");
+    let overdue = query.get("overdue").is_some_and(|value| value == "true");
     if cursor.is_some_and(|cursor| holds_nul(cursor)) {
         return Ok(Json(Publications {
             publications: Vec::new(),
@@ -345,10 +347,12 @@ pub async fn list_publications(
         "SELECT ",
         columns!(),
         " FROM pipewhere.publication WHERE organization_id = $1 AND ($2::text IS NULL OR id < $2)
-         ORDER BY id DESC LIMIT $3"
+         AND (NOT $3 OR (state = 'scheduled' AND planned_at < now()))
+         ORDER BY id DESC LIMIT $4"
     ))
     .bind(&caller.organization_id)
     .bind(cursor)
+    .bind(overdue)
     .bind(PAGE_SIZE as i64 + 1)
     .fetch_all(&state.db)
     .await?;

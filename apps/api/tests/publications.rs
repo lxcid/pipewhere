@@ -65,6 +65,59 @@ async fn created(response: Response) -> Value {
     ok_json(response).await
 }
 
+async fn insert_content(db: &PgPool, organization_id: &str) -> String {
+    let id = new_id("content");
+    sqlx::query("INSERT INTO pipewhere.content (id, organization_id, body) VALUES ($1, $2, 'x')")
+        .bind(&id)
+        .bind(organization_id)
+        .execute(db)
+        .await
+        .unwrap();
+    id
+}
+
+fn newest_first_ids(count: usize) -> Vec<String> {
+    let mut ids: Vec<String> = (0..count).map(|_| new_id("publication")).collect();
+    ids.sort();
+    ids.reverse();
+    ids
+}
+
+async fn insert_publications(
+    db: &PgPool,
+    organization_id: &str,
+    channel_id: &str,
+    content_id: &str,
+    ids: &[String],
+    state: &str,
+    planned_from_now: &str,
+) {
+    sqlx::query(
+        "INSERT INTO pipewhere.publication
+             (id, organization_id, channel_id, content_id, body, state, planned_at, tolerance_seconds, remote_id)
+         SELECT id, $2, $3, $4, 'x', $5, now() + $6::interval, 1800, CASE WHEN $5 = 'published' THEN 'remote' END
+         FROM unnest($1::text[]) AS id",
+    )
+    .bind(ids)
+    .bind(organization_id)
+    .bind(channel_id)
+    .bind(content_id)
+    .bind(state)
+    .bind(planned_from_now)
+    .execute(db)
+    .await
+    .unwrap();
+}
+
+fn page_ids(page: &Value) -> Vec<String> {
+    page["publications"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|publication| publication["id"].as_str().unwrap().to_owned())
+        .collect()
+}
+
 async fn count(instance: &Instance, table: &str) -> i64 {
     sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT count(*) FROM pipewhere.{table}"
@@ -1069,38 +1122,20 @@ async fn the_list_pages_by_cursor() {
     let organization_id = instance.create_organization(&owner, "personal").await;
     let token = instance.session_token(&owner).await;
     let channel_id = insert_channel(&instance.api_db, &organization_id).await;
-    let content_id = new_id("content");
-    sqlx::query("INSERT INTO pipewhere.content (id, organization_id, body) VALUES ($1, $2, 'x')")
-        .bind(&content_id)
-        .bind(&organization_id)
-        .execute(&instance.api_db)
-        .await
-        .unwrap();
-    let mut ids: Vec<String> = (0..150).map(|_| new_id("publication")).collect();
-    sqlx::query(
-        "INSERT INTO pipewhere.publication
-             (id, organization_id, channel_id, content_id, body, state, planned_at, tolerance_seconds)
-         SELECT id, $2, $3, $4, 'x', 'scheduled', now(), 1800 FROM unnest($1::text[]) AS id",
+    let content_id = insert_content(&instance.api_db, &organization_id).await;
+    let ids = newest_first_ids(150);
+    insert_publications(
+        &instance.api_db,
+        &organization_id,
+        &channel_id,
+        &content_id,
+        &ids,
+        "scheduled",
+        "0",
     )
-    .bind(&ids)
-    .bind(&organization_id)
-    .bind(&channel_id)
-    .bind(&content_id)
-    .execute(&instance.api_db)
-    .await
-    .unwrap();
-    ids.sort();
-    ids.reverse();
+    .await;
 
     let publications = format!("/v1/orgs/{organization_id}/publications");
-    let page_ids = |page: &Value| -> Vec<String> {
-        page["publications"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|publication| publication["id"].as_str().unwrap().to_owned())
-            .collect()
-    };
     let first = ok_json(instance.get(&publications, Some(&token)).await).await;
     assert_eq!(page_ids(&first), ids[..100]);
     let cursor = first["next_cursor"].as_str().unwrap();
@@ -1111,6 +1146,151 @@ async fn the_list_pages_by_cursor() {
     )
     .await;
     assert_eq!(page_ids(&second), ids[100..]);
+    assert_eq!(second["next_cursor"], Value::Null);
+    instance.close().await;
+}
+
+#[tokio::test]
+async fn the_overdue_list_shows_what_passed_its_planned_time_without_starting() {
+    let instance = Instance::start().await;
+    let owner = instance.sign_up("owner@example.com").await;
+    let organization_id = instance.create_organization(&owner, "personal").await;
+    let token = instance.session_token(&owner).await;
+    let channel_id = insert_channel(&instance.api_db, &organization_id).await;
+    let content_id = insert_content(&instance.api_db, &organization_id).await;
+    let insert = async |ids: &[String], state: &str, planned_from_now: &str| {
+        insert_publications(
+            &instance.api_db,
+            &organization_id,
+            &channel_id,
+            &content_id,
+            ids,
+            state,
+            planned_from_now,
+        )
+        .await;
+    };
+
+    // The newer publication has the older planned time, so the order shows the
+    // list follows the id and not the time.
+    let overdue = newest_first_ids(2);
+    insert(&overdue[..1], "scheduled", "-2 days").await;
+    insert(&overdue[1..], "scheduled", "-1 minute").await;
+    let waiting = newest_first_ids(1);
+    insert(&waiting, "scheduled", "1 hour").await;
+    let started = newest_first_ids(6);
+    for (id, state) in started.iter().zip([
+        "preparing",
+        "publishing",
+        "published",
+        "failed",
+        "outcome_unknown",
+        "cancelled",
+    ]) {
+        insert(std::slice::from_ref(id), state, "-1 minute").await;
+    }
+
+    let outsider = instance.sign_up("outsider@example.com").await;
+    let other_organization = instance.create_organization(&outsider, "other").await;
+    let other_channel = insert_channel(&instance.api_db, &other_organization).await;
+    let other_content = insert_content(&instance.api_db, &other_organization).await;
+    insert_publications(
+        &instance.api_db,
+        &other_organization,
+        &other_channel,
+        &other_content,
+        &newest_first_ids(1),
+        "scheduled",
+        "-1 minute",
+    )
+    .await;
+
+    let publications = format!("/v1/orgs/{organization_id}/publications");
+    let overdue_list = format!("{publications}?overdue=true");
+    let page = ok_json(instance.get(&overdue_list, Some(&token)).await).await;
+    assert_eq!(page_ids(&page), overdue);
+    assert_eq!(page["next_cursor"], Value::Null);
+    assert_eq!(page["publications"][0]["state"], "scheduled");
+
+    // A request to publish now has passed its planned time by the next read.
+    let publish_now = created(
+        create(
+            &instance,
+            &organization_id,
+            &token,
+            &new_key(),
+            json!({ "channel_id": channel_id, "body": "Now" }),
+        )
+        .await,
+    )
+    .await;
+    let page = ok_json(instance.get(&overdue_list, Some(&token)).await).await;
+    assert_eq!(page_ids(&page)[0], publish_now["id"].as_str().unwrap());
+    assert_eq!(page_ids(&page)[1..], overdue);
+
+    let unfiltered = ok_json(instance.get(&publications, Some(&token)).await).await;
+    assert_eq!(unfiltered["publications"].as_array().unwrap().len(), 10);
+    for value in ["false", "", "1", "TRUE", "yes"] {
+        let page = ok_json(
+            instance
+                .get(&format!("{publications}?overdue={value}"), Some(&token))
+                .await,
+        )
+        .await;
+        assert_eq!(page, unfiltered, "overdue={value}");
+    }
+
+    let outsider_token = instance.session_token(&outsider).await;
+    assert_eq!(
+        refusal(instance.get(&overdue_list, Some(&outsider_token)).await).await,
+        (StatusCode::NOT_FOUND, "not_found".to_owned())
+    );
+    assert_eq!(
+        refusal(instance.get(&overdue_list, None).await).await,
+        (StatusCode::UNAUTHORIZED, "unauthorized".to_owned())
+    );
+    instance.close().await;
+}
+
+#[tokio::test]
+async fn the_overdue_list_pages_by_cursor() {
+    let instance = Instance::start().await;
+    let owner = instance.sign_up("owner@example.com").await;
+    let organization_id = instance.create_organization(&owner, "personal").await;
+    let token = instance.session_token(&owner).await;
+    let channel_id = insert_channel(&instance.api_db, &organization_id).await;
+    let content_id = insert_content(&instance.api_db, &organization_id).await;
+
+    // Publications that are not overdue sit between the overdue ones, and after
+    // the last of them, so neither a page nor the last page counts them.
+    let ids = newest_first_ids(301);
+    let waiting: Vec<String> = ids.iter().step_by(2).cloned().collect();
+    let overdue: Vec<String> = ids.iter().skip(1).step_by(2).cloned().collect();
+    for (ids, planned_from_now) in [(&overdue, "-1 minute"), (&waiting, "1 hour")] {
+        insert_publications(
+            &instance.api_db,
+            &organization_id,
+            &channel_id,
+            &content_id,
+            ids,
+            "scheduled",
+            planned_from_now,
+        )
+        .await;
+    }
+
+    let overdue_list = format!("/v1/orgs/{organization_id}/publications?overdue=true");
+    let first = ok_json(instance.get(&overdue_list, Some(&token)).await).await;
+    assert_eq!(page_ids(&first), overdue[..100]);
+    let cursor = first["next_cursor"].as_str().unwrap();
+    assert_eq!(cursor, overdue[99]);
+    let second = ok_json(
+        instance
+            .get(&format!("{overdue_list}&cursor={cursor}"), Some(&token))
+            .await,
+    )
+    .await;
+    assert_eq!(page_ids(&second), overdue[100..]);
     assert_eq!(second["next_cursor"], Value::Null);
     instance.close().await;
 }
