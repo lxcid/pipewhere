@@ -156,7 +156,7 @@ Verified, at `50219c4`:
   - After the change, the first publication reads as it did. A repeat of its request answers that publication, per D13. A new create takes 3,600.
   - An edit that names no tolerance keeps 600.
 - `a_repeated_retry_returns_the_publication_without_retrying_again` retries a 600-second publication with the default at 3,600. The retry keeps 600.
-- Each of these changes, made by a Python script outside the repository, fails a test. The script copied the file aside, made one change, ran the tests, and restored the file.
+- Each of these changes, made at `88bcbfa` by a Python script outside the repository, fails a test. The later commit changes only schema descriptions and a test comment. The script copied the file aside, made one change, ran the tests, and restored the file.
   - API's range check skipped, or either bound loosened by one: `a_body_api_cannot_read_is_refused` and `an_edit_changes_only_this_channels_copy`.
   - The table's check removed, either bound loosened by one, or the foreign key removed: `the_table_refuses_bad_rows`.
   - The default's lookup ignoring the organization: `another_organizations_settings_are_not_found` and the create test.
