@@ -1041,6 +1041,45 @@ async fn a_cancel_racing_the_missed_deadline_decides_it_by_who_commits_first() {
     instance.close().await;
 }
 
+// A missed deadline fails while the commit claim holds the row. Failing it after
+// the lock is released would let this cancel win, and could fail a later run.
+#[tokio::test]
+async fn a_cancel_queued_behind_a_missed_deadline_finds_it_failed() {
+    let instance = Instance::start().await;
+    let (organization_id, token) = set_up(&instance).await;
+    let db = &instance.api_db;
+    let adapter = FakeAdapter::answering(Answer::Published);
+
+    let id = insert_publication(db, &organization_id, Preparing, "-1 hour").await;
+    let mut held = db.begin().await.unwrap();
+    sqlx::query("UPDATE pipewhere.publication SET body = body WHERE id = $1")
+        .bind(&id)
+        .execute(&mut *held)
+        .await
+        .unwrap();
+    let running = run_step(db, &adapter, &id);
+    wait_for_blocked(&instance, 1).await;
+
+    let path = format!("{}/cancel", publication_path(&organization_id, &id));
+    let (cancel, ()) = tokio::join!(instance.post(&path, Some(&token), json!({})), async {
+        wait_for_blocked(&instance, 2).await;
+        held.rollback().await.unwrap();
+    });
+
+    assert_eq!(
+        refusal(cancel).await,
+        (StatusCode::CONFLICT, "state_conflict".to_owned())
+    );
+    assert_eq!(running.await.unwrap(), Failed);
+    assert_eq!(state_of(db, &id).await, Failed);
+    assert_eq!(
+        only_attempt(db, &id).await,
+        (Some("failed".to_owned()), Some(MISSED_ITS_TIME.to_owned()))
+    );
+    assert_eq!(adapter.calls(), 0);
+    instance.close().await;
+}
+
 // 00003 D8's reading of a claim that changed no row, when another claim held it.
 #[tokio::test]
 async fn a_commit_claim_that_finds_publishing_records_outcome_unknown() {
