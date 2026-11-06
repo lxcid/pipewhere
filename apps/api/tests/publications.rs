@@ -296,7 +296,7 @@ async fn a_publication_takes_its_organizations_default_when_it_is_created() {
     );
 
     // 00003 D13: the repeated request is the same request, whatever the default
-    // has become, so it returns the first result.
+    // has become, so it matches its key and answers the publication it made.
     assert_eq!(
         created(create(&instance, &organization_id, &token, &key, omitted.clone()).await).await,
         first

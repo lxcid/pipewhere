@@ -17,6 +17,7 @@ const DEFAULT_TOLERANCE_SECONDS: i32 = 1800;
 pub struct OrganizationSettings {
     /// How late, in seconds, a new publication's provider commit may start
     /// after its planned time, when its create request names no tolerance.
+    /// It is 1,800 until the organization changes it.
     #[schema(minimum = 300, maximum = 86400)]
     tolerance_seconds: i32,
 }
@@ -27,8 +28,8 @@ pub struct OrganizationSettings {
 #[serde(deny_unknown_fields)]
 pub struct OrganizationSettingsEdit {
     /// How late, in seconds, a new publication's provider commit may start
-    /// after its planned time: 300 to 86,400. Existing publications keep the
-    /// tolerance they have.
+    /// after its planned time: 300 to 86,400. An organization starts at 1,800.
+    /// Existing publications keep the tolerance they have.
     #[schema(minimum = 300, maximum = 86400)]
     tolerance_seconds: i32,
 }
