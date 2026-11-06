@@ -1,6 +1,6 @@
-//! Creating and reading publications, per 00002 D2, D3, D5, D6, and D11–D14.
-//! Connecting a channel belongs to 00004, so these tests insert channel rows
-//! directly.
+//! Creating and reading publications, per 00002 D2, D3, D5, D6, and D11–D14,
+//! and 00003 D11. Connecting a channel belongs to 00004, so these tests insert
+//! channel rows directly.
 
 mod support;
 
@@ -9,6 +9,7 @@ use pipewhere_api::ids::new_id;
 use reqwest::header::CONTENT_TYPE;
 use reqwest::{Method, RequestBuilder, Response, StatusCode};
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use support::{Instance, ok_json, refusal};
 
@@ -110,6 +111,8 @@ async fn a_member_creates_lists_and_reads_publications() {
             "body": "Hello",
             "state": "scheduled",
             "planned_at": "2026-12-01T09:00:00Z",
+            "tolerance_seconds": 1800,
+            "deadline": "2026-12-01T09:30:00Z",
             "remote_id": null,
             "remote_url": null,
         })
@@ -170,6 +173,57 @@ async fn a_member_creates_lists_and_reads_publications() {
 }
 
 #[tokio::test]
+async fn a_publication_records_its_tolerance() {
+    let instance = Instance::start().await;
+    let owner = instance.sign_up("owner@example.com").await;
+    let organization_id = instance.create_organization(&owner, "personal").await;
+    let token = instance.session_token(&owner).await;
+    let channel_id = insert_channel(&instance.api_db, &organization_id).await;
+
+    for (tolerance, deadline) in [
+        (300, "2026-12-01T09:05:00Z"),
+        (86_400, "2026-12-02T09:00:00Z"),
+    ] {
+        let publication = created(
+            create(
+                &instance,
+                &organization_id,
+                &token,
+                &new_key(),
+                json!({
+                    "channel_id": channel_id,
+                    "body": "Hello",
+                    "planned_at": "2026-12-01T09:00:00Z",
+                    "tolerance_seconds": tolerance,
+                }),
+            )
+            .await,
+        )
+        .await;
+        assert_eq!(publication["tolerance_seconds"], tolerance);
+        assert_eq!(publication["deadline"], deadline);
+    }
+
+    // Publishing now takes the same rule, from the time of the request.
+    let now = created(
+        create(
+            &instance,
+            &organization_id,
+            &token,
+            &new_key(),
+            json!({ "channel_id": channel_id, "body": "Now" }),
+        )
+        .await,
+    )
+    .await;
+    let planned_at: DateTime<Utc> = now["planned_at"].as_str().unwrap().parse().unwrap();
+    let deadline: DateTime<Utc> = now["deadline"].as_str().unwrap().parse().unwrap();
+    assert_eq!(now["tolerance_seconds"], 1800);
+    assert_eq!(deadline - planned_at, chrono::TimeDelta::minutes(30));
+    instance.close().await;
+}
+
+#[tokio::test]
 async fn a_repeated_request_returns_the_first_result() {
     let instance = Instance::start().await;
     let owner = instance.sign_up("owner@example.com").await;
@@ -222,6 +276,42 @@ async fn a_repeated_request_returns_the_first_result() {
     .await;
     assert_eq!(from_key, first);
 
+    // 00002 D5: a key stored before the tolerance existed keeps matching its
+    // request, so a request without one hashes as it did then.
+    let (stored_hash,): (Vec<u8>,) = sqlx::query_as(
+        "SELECT request_hash FROM pipewhere.idempotency_key WHERE organization_id = $1 AND key = $2",
+    )
+    .bind(&organization_id)
+    .bind(&idempotency_key)
+    .fetch_one(&instance.api_db)
+    .await
+    .unwrap();
+    let before_tolerance = serde_json::to_vec(&(
+        "create_publication",
+        &channel_id,
+        Some("Once"),
+        None::<String>,
+        None::<DateTime<Utc>>,
+    ))
+    .unwrap();
+    assert_eq!(stored_hash, Sha256::digest(before_tolerance).to_vec());
+    let with_null = json!({ "channel_id": channel_id, "body": "Once", "tolerance_seconds": null });
+    assert_eq!(
+        created(
+            create(
+                &instance,
+                &organization_id,
+                &token,
+                &idempotency_key,
+                with_null
+            )
+            .await
+        )
+        .await,
+        first,
+        "a null tolerance is an omitted one"
+    );
+
     let reused = (
         StatusCode::UNPROCESSABLE_ENTITY,
         "idempotency_key_reused".to_owned(),
@@ -239,6 +329,10 @@ async fn a_repeated_request_returns_the_first_result() {
             "existing content",
             json!({ "channel_id": channel_id, "content_id": first["content_id"] }),
         ),
+        (
+            "a tolerance, even the default one",
+            json!({ "channel_id": channel_id, "body": "Once", "tolerance_seconds": 1800 }),
+        ),
     ] {
         assert_eq!(
             refusal(create(&instance, &organization_id, &token, &idempotency_key, body).await)
@@ -247,6 +341,50 @@ async fn a_repeated_request_returns_the_first_result() {
             "{case}"
         );
     }
+
+    let tolerated_key = new_key();
+    let with_tolerance = |seconds: i32| json!({ "channel_id": channel_id, "body": "Once", "tolerance_seconds": seconds });
+    let tolerated = created(
+        create(
+            &instance,
+            &organization_id,
+            &token,
+            &tolerated_key,
+            with_tolerance(300),
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(
+        created(
+            create(
+                &instance,
+                &organization_id,
+                &token,
+                &tolerated_key,
+                with_tolerance(300),
+            )
+            .await,
+        )
+        .await,
+        tolerated,
+        "the same tolerance is the same request"
+    );
+    assert_eq!(
+        refusal(
+            create(
+                &instance,
+                &organization_id,
+                &token,
+                &tolerated_key,
+                with_tolerance(600),
+            )
+            .await,
+        )
+        .await,
+        reused,
+        "another tolerance is another request"
+    );
 
     // Whitespace, field order, and a timestamp's offset do not make a request
     // different.
@@ -314,8 +452,8 @@ async fn a_repeated_request_returns_the_first_result() {
         first
     );
 
-    assert_eq!(count(&instance, "publication").await, 3);
-    assert_eq!(count(&instance, "content").await, 3);
+    assert_eq!(count(&instance, "publication").await, 4);
+    assert_eq!(count(&instance, "content").await, 4);
     instance.close().await;
 }
 
@@ -396,8 +534,9 @@ async fn a_request_waits_for_another_transaction_holding_its_key() {
         .await
         .unwrap();
         sqlx::query(
-            "INSERT INTO pipewhere.publication (id, organization_id, channel_id, content_id, body, state, planned_at)
-             VALUES ($1, $2, $3, $4, 'First', 'scheduled', now())",
+            "INSERT INTO pipewhere.publication
+                 (id, organization_id, channel_id, content_id, body, state, planned_at, tolerance_seconds)
+             VALUES ($1, $2, $3, $4, 'First', 'scheduled', now(), 1800)",
         )
         .bind(&publication_id)
         .bind(&organization_id)
@@ -786,6 +925,32 @@ async fn a_body_api_cannot_read_is_refused() {
             json!({ "channel_id": channel_id, "body": "Hello", "planned_at": "tomorrow" }).to_string(),
             unprocessable,
         ),
+        (
+            "a tolerance under 5 minutes",
+            json!({ "channel_id": channel_id, "body": "Hello", "tolerance_seconds": 299 }).to_string(),
+            unprocessable,
+        ),
+        (
+            "a tolerance over 24 hours",
+            json!({ "channel_id": channel_id, "body": "Hello", "tolerance_seconds": 86_401 }).to_string(),
+            unprocessable,
+        ),
+        (
+            "a tolerance of nothing",
+            json!({ "channel_id": channel_id, "body": "Hello", "tolerance_seconds": 0 }).to_string(),
+            unprocessable,
+        ),
+        (
+            "a tolerance too large for the column",
+            json!({ "channel_id": channel_id, "body": "Hello", "tolerance_seconds": 4_294_967_296_u64 })
+                .to_string(),
+            unprocessable,
+        ),
+        (
+            "a tolerance in minutes, as text",
+            json!({ "channel_id": channel_id, "body": "Hello", "tolerance_seconds": "30m" }).to_string(),
+            unprocessable,
+        ),
     ];
     for (case, body, status) in cases {
         assert_eq!(
@@ -817,8 +982,9 @@ async fn the_list_pages_by_cursor() {
         .unwrap();
     let mut ids: Vec<String> = (0..150).map(|_| new_id("publication")).collect();
     sqlx::query(
-        "INSERT INTO pipewhere.publication (id, organization_id, channel_id, content_id, body, state, planned_at)
-         SELECT id, $2, $3, $4, 'x', 'scheduled', now() FROM unnest($1::text[]) AS id",
+        "INSERT INTO pipewhere.publication
+             (id, organization_id, channel_id, content_id, body, state, planned_at, tolerance_seconds)
+         SELECT id, $2, $3, $4, 'x', 'scheduled', now(), 1800 FROM unnest($1::text[]) AS id",
     )
     .bind(&ids)
     .bind(&organization_id)
@@ -872,16 +1038,18 @@ async fn the_tables_refuse_bad_rows() {
     )
     .await;
     let content_id = publication["content_id"].as_str().unwrap();
-    let insert = async |id: &str, organization_id: &str, state: &str| {
+    let insert = async |id: &str, organization_id: &str, state: &str, tolerance: i32| {
         sqlx::query(
-            "INSERT INTO pipewhere.publication (id, organization_id, channel_id, content_id, body, state, planned_at)
-             VALUES ($1, $2, $3, $4, 'x', $5, now())",
+            "INSERT INTO pipewhere.publication
+                 (id, organization_id, channel_id, content_id, body, state, planned_at, tolerance_seconds)
+             VALUES ($1, $2, $3, $4, 'x', $5, now(), $6)",
         )
         .bind(id)
         .bind(organization_id)
         .bind(&channel_id)
         .bind(content_id)
         .bind(state)
+        .bind(tolerance)
         .execute(&instance.api_db)
         .await
         .unwrap_err()
@@ -891,21 +1059,54 @@ async fn the_tables_refuse_bad_rows() {
         .map(str::to_owned)
     };
     assert_eq!(
-        insert(&new_id("content"), &organization_id, "scheduled").await,
+        insert(&new_id("content"), &organization_id, "scheduled", 1800).await,
         Some("publication_id_check".into())
     );
     assert_eq!(
-        insert(&new_id("publication"), &organization_id, "posted").await,
+        insert(&new_id("publication"), &organization_id, "posted", 1800).await,
         Some("publication_state_check".into())
     );
     assert_eq!(
         insert(
             &new_id("publication"),
             "org_01m36mep00e3ca12pwd1gkjwex",
-            "scheduled"
+            "scheduled",
+            1800
         )
         .await,
         Some("publication_organization_id_fkey".into())
+    );
+    // 00003 D1: from 5 minutes to 24 hours.
+    for tolerance in [299, 86_401] {
+        assert_eq!(
+            insert(
+                &new_id("publication"),
+                &organization_id,
+                "scheduled",
+                tolerance
+            )
+            .await,
+            Some("publication_tolerance_seconds_check".into()),
+            "{tolerance}"
+        );
+    }
+    // A writer that leaves the tolerance out fails rather than taking a
+    // default.
+    let error = sqlx::query(
+        "INSERT INTO pipewhere.publication (id, organization_id, channel_id, content_id, body, state, planned_at)
+         VALUES ($1, $2, $3, $4, 'x', 'scheduled', now())",
+    )
+    .bind(new_id("publication"))
+    .bind(&organization_id)
+    .bind(&channel_id)
+    .bind(content_id)
+    .execute(&instance.api_db)
+    .await
+    .unwrap_err();
+    assert_eq!(
+        error.into_database_error().unwrap().code().as_deref(),
+        Some("23502"),
+        "not_null_violation"
     );
 
     // A key whose publication never arrives fails at commit.

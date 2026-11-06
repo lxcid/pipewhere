@@ -1,7 +1,7 @@
 //! Editing, cancelling, retrying, and resolving publications, per 00002 D2–D6
-//! and D13. Only the worker moves a publication into `preparing`,
-//! `publishing`, or `outcome_unknown`, so these tests insert publications in
-//! each state directly.
+//! and D13, and 00003 D11. Only the worker moves a publication into
+//! `preparing`, `publishing`, or `outcome_unknown`, so these tests insert
+//! publications in each state directly.
 
 mod support;
 
@@ -23,8 +23,9 @@ const STATES: [&str; 7] = [
     "cancelled",
 ];
 
-const ACTIONS: [&str; 5] = [
+const ACTIONS: [&str; 6] = [
     "edit",
+    "edit tolerance",
     "cancel",
     "retry",
     "resolve as published",
@@ -32,7 +33,7 @@ const ACTIONS: [&str; 5] = [
 ];
 
 /// A publication with its own channel and content, copying "Copy" from content
-/// that says "Source".
+/// that says "Source". Its tolerance is 10 minutes, not the default.
 async fn insert_publication(db: &PgPool, organization_id: &str, state: &str) -> String {
     let channel_id = new_id("channel");
     let content_id = new_id("content");
@@ -55,8 +56,9 @@ async fn insert_publication(db: &PgPool, organization_id: &str, state: &str) -> 
     .unwrap();
     sqlx::query(
         "INSERT INTO pipewhere.publication
-             (id, organization_id, channel_id, content_id, body, state, planned_at, remote_id)
-         VALUES ($1, $2, $3, $4, 'Copy', $5, '2026-12-01T09:00:00Z',
+             (id, organization_id, channel_id, content_id, body, state, planned_at, tolerance_seconds,
+              remote_id)
+         VALUES ($1, $2, $3, $4, 'Copy', $5, '2026-12-01T09:00:00Z', 600,
              CASE WHEN $5 = 'published' THEN 'remote-1' END)",
     )
     .bind(&id)
@@ -149,6 +151,9 @@ fn action_request(
         "edit" => instance
             .request(Method::PATCH, &path, Some(token))
             .json(&json!({ "body": "Edited" })),
+        "edit tolerance" => instance
+            .request(Method::PATCH, &path, Some(token))
+            .json(&json!({ "tolerance_seconds": 300 })),
         "cancel" => instance.request(Method::POST, &format!("{path}/cancel"), Some(token)),
         "retry" => retry_request(
             instance,
@@ -224,7 +229,7 @@ async fn each_action_is_allowed_only_in_the_states_d3_lists() {
 
     for action in ACTIONS {
         let allowed: &[(&str, &str)] = match action {
-            "edit" => &[("scheduled", "scheduled"), ("failed", "failed")],
+            "edit" | "edit tolerance" => &[("scheduled", "scheduled"), ("failed", "failed")],
             "cancel" => &[("scheduled", "cancelled"), ("preparing", "cancelled")],
             "retry" => &[("failed", "scheduled")],
             "resolve as published" => &[("outcome_unknown", "published")],
@@ -301,7 +306,45 @@ async fn an_edit_changes_only_this_channels_copy() {
     )
     .await;
     expected["planned_at"] = json!("2027-01-01T00:00:00Z");
-    assert_eq!(retimed, expected, "only the planned time changes");
+    expected["deadline"] = json!("2027-01-01T00:10:00Z");
+    assert_eq!(
+        retimed, expected,
+        "the planned time and its deadline change"
+    );
+
+    // 00003 D11: the tolerance is editable where the planned time is.
+    for (tolerance, deadline) in [
+        (300, "2027-01-01T00:05:00Z"),
+        (86_400, "2027-01-02T00:00:00Z"),
+    ] {
+        let tolerated = ok_json(
+            instance
+                .patch(
+                    &publication_path,
+                    Some(&token),
+                    json!({ "tolerance_seconds": tolerance }),
+                )
+                .await,
+        )
+        .await;
+        expected["tolerance_seconds"] = json!(tolerance);
+        expected["deadline"] = json!(deadline);
+        assert_eq!(tolerated, expected, "the tolerance and its deadline change");
+    }
+    assert_eq!(
+        ok_json(
+            instance
+                .patch(
+                    &publication_path,
+                    Some(&token),
+                    json!({ "tolerance_seconds": null }),
+                )
+                .await,
+        )
+        .await,
+        expected,
+        "a null tolerance keeps the current one"
+    );
     assert_eq!(
         ok_json(
             instance
@@ -371,6 +414,31 @@ async fn an_edit_changes_only_this_channels_copy() {
             json!({ "planned_at": "0000-01-01T00:00:00+00:01" }).to_string(),
             unprocessable,
         ),
+        (
+            "a tolerance under 5 minutes",
+            json!({ "tolerance_seconds": 299 }).to_string(),
+            unprocessable,
+        ),
+        (
+            "a tolerance over 24 hours",
+            json!({ "tolerance_seconds": 86_401 }).to_string(),
+            unprocessable,
+        ),
+        (
+            "a negative tolerance",
+            json!({ "tolerance_seconds": -1800 }).to_string(),
+            unprocessable,
+        ),
+        (
+            "a tolerance with a fraction of a second",
+            json!({ "tolerance_seconds": 1800.5 }).to_string(),
+            unprocessable,
+        ),
+        (
+            "a tolerance that is not a number",
+            json!({ "tolerance_seconds": "1800" }).to_string(),
+            unprocessable,
+        ),
     ];
     for (case, body, status) in cases {
         assert_eq!(
@@ -411,6 +479,10 @@ async fn a_repeated_retry_returns_the_publication_without_retrying_again() {
     .await;
     assert_eq!(retried["state"], "scheduled");
     assert_eq!(retried["planned_at"], "2027-01-01T00:00:00Z");
+    // 00003 D11: a retry keeps the tolerance, and its new time moves the
+    // deadline.
+    assert_eq!(retried["tolerance_seconds"], 600);
+    assert_eq!(retried["deadline"], "2027-01-01T00:10:00Z");
     assert_eq!(
         ok_json(
             retry(
@@ -805,7 +877,7 @@ async fn another_organizations_publication_is_not_found() {
     for action in ACTIONS {
         // A state that allows the action, so only the organization refuses it.
         let state = match action {
-            "edit" | "cancel" => "scheduled",
+            "edit" | "edit tolerance" | "cancel" => "scheduled",
             "retry" => "failed",
             _ => "outcome_unknown",
         };

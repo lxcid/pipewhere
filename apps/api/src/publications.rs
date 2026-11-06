@@ -18,10 +18,15 @@ use crate::ids::new_id;
 
 const PAGE_SIZE: usize = 100;
 
-// `concat!` takes only literals, and sqlx takes only static query text.
+/// 00003 D1's default lateness tolerance.
+const DEFAULT_TOLERANCE_SECONDS: i32 = 1800;
+
+// `concat!` takes only literals, and sqlx takes only static query text. The
+// deadline is computed rather than stored, per 00003 D11.
 macro_rules! columns {
     () => {
-        "id, organization_id, channel_id, content_id, body, state, planned_at, remote_id, remote_url"
+        "id, organization_id, channel_id, content_id, body, state, planned_at, tolerance_seconds,
+         planned_at + tolerance_seconds * interval '1 second' AS deadline, remote_id, remote_url"
     };
 }
 
@@ -50,6 +55,13 @@ pub struct Publication {
     body: String,
     state: PublicationState,
     planned_at: DateTime<Utc>,
+    /// How late, in seconds, the provider commit may start after `planned_at`.
+    /// A retry keeps it.
+    #[schema(minimum = 300, maximum = 86400)]
+    tolerance_seconds: i32,
+    /// `planned_at` plus `tolerance_seconds`. A publication whose provider
+    /// commit has not started by then fails without publishing.
+    deadline: DateTime<Utc>,
     /// The provider's id for the post. Set only when `published`, and never
     /// changed after.
     #[schema(required = true)]
@@ -84,6 +96,10 @@ pub struct PublicationInput {
     /// time of the request.
     #[serde(default, deserialize_with = "rfc3339")]
     planned_at: Option<DateTime<Utc>>,
+    /// How late, in seconds, the provider commit may start after `planned_at`:
+    /// 300 to 86,400. Defaults to 1,800.
+    #[schema(minimum = 300, maximum = 86400)]
+    tolerance_seconds: Option<i32>,
 }
 
 // chrono's own deserializer also accepts forms RFC 3339 does not, such as
@@ -114,6 +130,17 @@ fn checked_planned_at(
     Ok(planned_at)
 }
 
+/// Refuses a tolerance outside 00003 D1's range.
+// The table's check and the three `#[schema(minimum, maximum)]` attributes
+// repeat the range. utoipa takes only literals there, so change all of them
+// together.
+fn checked_tolerance(tolerance_seconds: Option<i32>) -> Result<Option<i32>, ApiError> {
+    if tolerance_seconds.is_some_and(|seconds| !(300..=86_400).contains(&seconds)) {
+        return Err(ApiError::InvalidBody(StatusCode::UNPROCESSABLE_ENTITY));
+    }
+    Ok(tolerance_seconds)
+}
+
 impl PublicationInput {
     fn request_hash(&self) -> Vec<u8> {
         let request = (
@@ -123,7 +150,13 @@ impl PublicationInput {
             &self.content_id,
             self.planned_at,
         );
-        Sha256::digest(serde_json::to_vec(&request).expect("the request serializes")).to_vec()
+        // A request without a tolerance hashes as it did before tolerances
+        // existed, so keys stored then still match it, per 00002 D5.
+        let request = match self.tolerance_seconds {
+            None => serde_json::to_vec(&request),
+            Some(tolerance_seconds) => serde_json::to_vec(&(request, tolerance_seconds)),
+        };
+        Sha256::digest(request.expect("the request serializes")).to_vec()
     }
 }
 
@@ -189,6 +222,8 @@ pub async fn create_publication(
         _ => return Err(ApiError::InvalidBody(StatusCode::UNPROCESSABLE_ENTITY)),
     };
     let planned_at = checked_planned_at(input.planned_at)?;
+    let tolerance_seconds =
+        checked_tolerance(input.tolerance_seconds)?.unwrap_or(DEFAULT_TOLERANCE_SECONDS);
     if holds_nul(&input.channel_id) {
         return Err(ApiError::ChannelNotFound);
     }
@@ -266,8 +301,9 @@ pub async fn create_publication(
         .ok_or(ApiError::ContentNotFound)?,
     };
     let publication = sqlx::query_as(concat!(
-        "INSERT INTO pipewhere.publication (id, organization_id, channel_id, content_id, body, state, planned_at)
-         VALUES ($1, $2, $3, $4, $5, 'scheduled', COALESCE($6, now()))
+        "INSERT INTO pipewhere.publication
+             (id, organization_id, channel_id, content_id, body, state, planned_at, tolerance_seconds)
+         VALUES ($1, $2, $3, $4, $5, 'scheduled', COALESCE($6, now()), $7)
          RETURNING ",
         columns!()
     ))
@@ -277,6 +313,7 @@ pub async fn create_publication(
     .bind(&content_id)
     .bind(&body)
     .bind(planned_at)
+    .bind(tolerance_seconds)
     .fetch_one(&mut *tx)
     .await?;
     tx.commit().await?;
@@ -483,6 +520,10 @@ pub struct PublicationEdit {
     /// so a time edited there is replaced.
     #[serde(default, deserialize_with = "rfc3339")]
     planned_at: Option<DateTime<Utc>>,
+    /// How late, in seconds, the provider commit may start after `planned_at`:
+    /// 300 to 86,400. Omit it to keep the current tolerance. A retry keeps it.
+    #[schema(minimum = 300, maximum = 86400)]
+    tolerance_seconds: Option<i32>,
 }
 
 #[utoipa::path(
@@ -512,12 +553,14 @@ pub async fn update_publication(
 ) -> Result<Json<Publication>, ApiError> {
     let body = input.body.map(checked_body).transpose()?;
     let planned_at = checked_planned_at(input.planned_at)?;
+    let tolerance_seconds = checked_tolerance(input.tolerance_seconds)?;
     if holds_nul(&publication_id) {
         return Err(ApiError::NotFound);
     }
     let organization_id = &caller.organization_id;
     let edited = sqlx::query_as(concat!(
-        "UPDATE pipewhere.publication SET body = COALESCE($3, body), planned_at = COALESCE($4, planned_at)
+        "UPDATE pipewhere.publication SET body = COALESCE($3, body), planned_at = COALESCE($4, planned_at),
+             tolerance_seconds = COALESCE($5, tolerance_seconds)
          WHERE id = $1 AND organization_id = $2 AND state IN ('scheduled', 'failed')
          RETURNING ",
         columns!()
@@ -526,6 +569,7 @@ pub async fn update_publication(
     .bind(organization_id)
     .bind(body)
     .bind(planned_at)
+    .bind(tolerance_seconds)
     .fetch_optional(&state.db)
     .await?;
     match edited {
