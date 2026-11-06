@@ -19,6 +19,7 @@ pub mod contents;
 pub mod error;
 pub mod ids;
 pub mod publications;
+pub mod settings;
 pub mod tokens;
 
 #[derive(Clone)]
@@ -63,6 +64,7 @@ fn api() -> OpenApiRouter<AppState> {
         .routes(routes!(publications::retry_publication))
         .routes(routes!(publications::resolve_publication))
         .routes(routes!(publications::list_publication_attempts))
+        .routes(routes!(settings::get_settings, settings::update_settings))
 }
 
 #[derive(OpenApi)]
@@ -160,6 +162,7 @@ mod tests {
                 "/v1/orgs/{organization_id}/publications/{publication_id}/cancel",
                 "/v1/orgs/{organization_id}/publications/{publication_id}/resolve",
                 "/v1/orgs/{organization_id}/publications/{publication_id}/retry",
+                "/v1/orgs/{organization_id}/settings",
             ]
         );
     }
@@ -216,6 +219,8 @@ mod tests {
             ("Publication", true),
             ("PublicationInput", false),
             ("PublicationEdit", false),
+            ("OrganizationSettings", true),
+            ("OrganizationSettingsEdit", true),
         ] {
             let tolerance = &schemas[schema]["properties"]["tolerance_seconds"];
             assert_eq!(

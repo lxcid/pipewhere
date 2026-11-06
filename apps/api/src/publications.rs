@@ -15,11 +15,9 @@ use crate::access::OrgCaller;
 use crate::contents::checked_body;
 use crate::error::{ApiError, ErrorBody, JsonBody};
 use crate::ids::new_id;
+use crate::settings::{checked_tolerance, default_tolerance};
 
 const PAGE_SIZE: usize = 100;
-
-/// 00003 D1's default lateness tolerance.
-const DEFAULT_TOLERANCE_SECONDS: i32 = 1800;
 
 // `concat!` takes only literals, and sqlx takes only static query text. The
 // deadline is computed rather than stored, per 00003 D11.
@@ -97,7 +95,8 @@ pub struct PublicationInput {
     #[serde(default, deserialize_with = "rfc3339")]
     planned_at: Option<DateTime<Utc>>,
     /// How late, in seconds, the provider commit may start after `planned_at`:
-    /// 300 to 86,400. Defaults to 1,800.
+    /// 300 to 86,400. Defaults to the organization's `tolerance_seconds`
+    /// setting, and later changes to that setting do not change it.
     #[schema(minimum = 300, maximum = 86400)]
     tolerance_seconds: Option<i32>,
 }
@@ -128,17 +127,6 @@ fn checked_planned_at(
         return Err(ApiError::InvalidBody(StatusCode::UNPROCESSABLE_ENTITY));
     }
     Ok(planned_at)
-}
-
-/// Refuses a tolerance outside 00003 D1's range.
-// The table's check and the three `#[schema(minimum, maximum)]` attributes
-// repeat the range. utoipa takes only literals there, so change all of them
-// together.
-fn checked_tolerance(tolerance_seconds: Option<i32>) -> Result<Option<i32>, ApiError> {
-    if tolerance_seconds.is_some_and(|seconds| !(300..=86_400).contains(&seconds)) {
-        return Err(ApiError::InvalidBody(StatusCode::UNPROCESSABLE_ENTITY));
-    }
-    Ok(tolerance_seconds)
 }
 
 impl PublicationInput {
@@ -222,8 +210,7 @@ pub async fn create_publication(
         _ => return Err(ApiError::InvalidBody(StatusCode::UNPROCESSABLE_ENTITY)),
     };
     let planned_at = checked_planned_at(input.planned_at)?;
-    let tolerance_seconds =
-        checked_tolerance(input.tolerance_seconds)?.unwrap_or(DEFAULT_TOLERANCE_SECONDS);
+    let tolerance_seconds = input.tolerance_seconds.map(checked_tolerance).transpose()?;
     if holds_nul(&input.channel_id) {
         return Err(ApiError::ChannelNotFound);
     }
@@ -299,6 +286,10 @@ pub async fn create_publication(
         .fetch_optional(&mut *tx)
         .await?
         .ok_or(ApiError::ContentNotFound)?,
+    };
+    let tolerance_seconds = match tolerance_seconds {
+        Some(tolerance_seconds) => tolerance_seconds,
+        None => default_tolerance(&mut *tx, organization_id).await?,
     };
     let publication = sqlx::query_as(concat!(
         "INSERT INTO pipewhere.publication
@@ -553,7 +544,7 @@ pub async fn update_publication(
 ) -> Result<Json<Publication>, ApiError> {
     let body = input.body.map(checked_body).transpose()?;
     let planned_at = checked_planned_at(input.planned_at)?;
-    let tolerance_seconds = checked_tolerance(input.tolerance_seconds)?;
+    let tolerance_seconds = input.tolerance_seconds.map(checked_tolerance).transpose()?;
     if holds_nul(&publication_id) {
         return Err(ApiError::NotFound);
     }

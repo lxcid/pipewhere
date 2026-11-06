@@ -223,6 +223,102 @@ async fn a_publication_records_its_tolerance() {
     instance.close().await;
 }
 
+// 00003 D2: the organization's default reaches new publications only.
+#[tokio::test]
+async fn a_publication_takes_its_organizations_default_when_it_is_created() {
+    let instance = Instance::start().await;
+    let owner = instance.sign_up("owner@example.com").await;
+    let organization_id = instance.create_organization(&owner, "company").await;
+    let other_organization_id = instance.create_organization(&owner, "personal").await;
+    let token = instance.session_token(&owner).await;
+    let channel_id = insert_channel(&instance.api_db, &organization_id).await;
+    let other_channel_id = insert_channel(&instance.api_db, &other_organization_id).await;
+    let settings = format!("/v1/orgs/{organization_id}/settings");
+    let publications = format!("/v1/orgs/{organization_id}/publications");
+    let set_default = async |tolerance: i32| {
+        ok_json(
+            instance
+                .patch(
+                    &settings,
+                    Some(&token),
+                    json!({ "tolerance_seconds": tolerance }),
+                )
+                .await,
+        )
+        .await;
+    };
+    let omitted = json!({
+        "channel_id": channel_id,
+        "body": "Hello",
+        "planned_at": "2026-12-01T09:00:00Z",
+    });
+    set_default(600).await;
+
+    let key = new_key();
+    let first =
+        created(create(&instance, &organization_id, &token, &key, omitted.clone()).await).await;
+    assert_eq!(first["tolerance_seconds"], 600);
+    assert_eq!(first["deadline"], "2026-12-01T09:10:00Z");
+
+    let mut with_null = omitted.clone();
+    with_null["tolerance_seconds"] = Value::Null;
+    let from_null =
+        created(create(&instance, &organization_id, &token, &new_key(), with_null).await).await;
+    assert_eq!(from_null["tolerance_seconds"], 600);
+
+    let mut overriding = omitted.clone();
+    overriding["tolerance_seconds"] = json!(300);
+    let overridden =
+        created(create(&instance, &organization_id, &token, &new_key(), overriding).await).await;
+    assert_eq!(overridden["tolerance_seconds"], 300);
+    assert_eq!(overridden["deadline"], "2026-12-01T09:05:00Z");
+
+    // Another organization's channel takes that organization's default.
+    let other = created(
+        create(
+            &instance,
+            &other_organization_id,
+            &token,
+            &new_key(),
+            json!({ "channel_id": other_channel_id, "body": "Other" }),
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(other["tolerance_seconds"], 1800);
+
+    set_default(3600).await;
+    let path = format!("{publications}/{}", first["id"].as_str().unwrap());
+    assert_eq!(
+        ok_json(instance.get(&path, Some(&token)).await).await,
+        first,
+        "changing the default leaves an existing publication alone"
+    );
+
+    // 00003 D13: the repeated request is the same request, whatever the default
+    // has become, so it returns the first result.
+    assert_eq!(
+        created(create(&instance, &organization_id, &token, &key, omitted.clone()).await).await,
+        first
+    );
+
+    let later =
+        created(create(&instance, &organization_id, &token, &new_key(), omitted).await).await;
+    assert_eq!(later["tolerance_seconds"], 3600);
+    assert_eq!(later["deadline"], "2026-12-01T10:00:00Z");
+
+    // An edit that names no tolerance keeps the publication's own.
+    let edited = ok_json(
+        instance
+            .patch(&path, Some(&token), json!({ "body": "Edited" }))
+            .await,
+    )
+    .await;
+    assert_eq!(edited["tolerance_seconds"], 600);
+    assert_eq!(edited["deadline"], "2026-12-01T09:10:00Z");
+    instance.close().await;
+}
+
 #[tokio::test]
 async fn a_repeated_request_returns_the_first_result() {
     let instance = Instance::start().await;
