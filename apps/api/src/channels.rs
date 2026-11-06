@@ -7,7 +7,7 @@ use crate::AppState;
 use crate::access::OrgCaller;
 use crate::error::{ApiError, ErrorBody};
 
-#[derive(Serialize, ToSchema, sqlx::Type)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, ToSchema, sqlx::Type)]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
 pub enum Provider {

@@ -21,15 +21,25 @@ const PAGE_SIZE: usize = 100;
 
 // `concat!` takes only literals, and sqlx takes only static query text. The
 // deadline is computed rather than stored, per 00003 D11.
+macro_rules! deadline {
+    () => {
+        "planned_at + tolerance_seconds * interval '1 second'"
+    };
+}
+pub(crate) use deadline;
+
 macro_rules! columns {
     () => {
-        "id, organization_id, channel_id, content_id, body, state, planned_at, tolerance_seconds,
-         planned_at + tolerance_seconds * interval '1 second' AS deadline, remote_id, remote_url"
+        concat!(
+            "id, organization_id, channel_id, content_id, body, state, planned_at, tolerance_seconds, ",
+            deadline!(),
+            " AS deadline, remote_id, remote_url"
+        )
     };
 }
 
 /// A publication's place on the path to a remote post, per 00002 D3.
-#[derive(Serialize, ToSchema, sqlx::Type)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, ToSchema, sqlx::Type)]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
 pub enum PublicationState {
@@ -407,7 +417,7 @@ pub async fn get_publication(
 
 /// How one attempt ended. Each value means what the publication state of the
 /// same name means, for that attempt alone, per 00002 D3.
-#[derive(Serialize, ToSchema, sqlx::Type)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, ToSchema, sqlx::Type)]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
 pub enum AttemptResult {
@@ -418,6 +428,8 @@ pub enum AttemptResult {
     Failed,
     /// A remote post may exist.
     OutcomeUnknown,
+    /// The publication was cancelled before its commit started.
+    Cancelled,
 }
 
 /// One execution of a publication, per 00002 D1. The publication's state says
