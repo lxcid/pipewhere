@@ -323,7 +323,7 @@ Not verified:
 - A real provider. The results other than `NoAdapter`'s refusal come from a fake adapter.
 - `<=` differing from `<` at either time check, which a test cannot observe.
 - The deadline being rechecked between the commit claim's update and its commit. That window is one round trip, and the claim then counts as started.
-- Why Auth sometimes misses the harness's 10-second `/health` wait. Three review runs each saw one such failure, under load, in test files this change did not alter. One was `tests/publications.rs`, where a rerun with fewer test threads passed. Two were in `tests/publication_attempts.rs`, lasting 10.85 and 10.81 seconds. The 10.81-second run, at `80085dd`, saved the message "Auth did not answer /health within 10 seconds". The harness is unchanged from `main`, and the cause is still not known. A repeat run can therefore fail for a reason other than the code.
+- Why Auth sometimes misses the harness's 10-second `/health` wait. Review runs saw this four times: once in `tests/publications.rs`, twice in `tests/publication_attempts.rs`, and once in `tests/publication_runs.rs`. One, lasting 10.85 seconds, saved no message, so it is only probably the same failure. The others show it during setup, before the test's own code runs. Two full reruns with fewer test threads passed. Load was not measured, the harness is unchanged from `main`, and the cause is still not known. A repeat run can therefore fail for a reason other than the code.
 
 ## Not yet built
 

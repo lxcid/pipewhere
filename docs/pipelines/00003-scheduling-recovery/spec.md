@@ -319,10 +319,11 @@ What would bring it back: a `preparing` publication past its deadline appearing 
 Also tolerated: a stalled execution can act on a later run's state. A step holds no memory of earlier steps, and D6 rules this out only while Restate keeps one invocation per key.
 
 - **Likelihood.** An execution must stall until Restate replaces it, and stay stalled while a person resolves and retries the publication and a new run claims it. How often this happens is unmeasured.
-- **Impact.** Two cases are known:
+- **Impact.** The stalled execution treats whatever it finds as its own run's. These are the shapes found so far, and the list may not be complete:
   - An execution paused between its read and its commit claim claims the later run's commit. The provider is still called once, and the later run's step records `outcome_unknown`.
   - An execution that loses its move while recording an interrupted commit reads the state again, and can answer the later run's `preparing`. It can then take that run's commit claim, with the same result.
-- **Recoverability.** Nothing posts twice, and `outcome_unknown` asks a person to check the provider.
+  - An execution that read `publishing` from an earlier run records `outcome_unknown` on the later run's attempt, and calls no provider. The later run's adapter may still be in its call, and its answer then reaches only the log.
+- **Recoverability.** Each commit claim calls the provider once, so none of these posts twice. `outcome_unknown` asks a person to check the provider.
 - **Cost of the alternative.** Carrying the attempt id across steps would change the journal's shape, which D6 makes costly.
 
 What would bring it back: a later run's `outcome_unknown` traced to a stalled execution.
