@@ -14,7 +14,7 @@ The build runs as one small PR per issue, as 00002's did. Each issue carries its
 
 1. **#26 Tolerance and deadline on a publication.** `tolerance_seconds` on create and edit, `deadline` in every publication response. The migration gives existing publications 1,800 seconds. D1, D2, D11. Built in PR #35.
 2. **#27 An organization's default tolerance.** `pipewhere.organization_setting`, `GET` and `PATCH .../settings`. Create reads the default. D1, D2, D11. Built in PR #36.
-3. **#28 The overdue list.** `?overdue=true` on the publication list. D10. Depends on #26 only for the response shape. Built in PR #37.
+3. **#28 The overdue list.** `?overdue=true` on the publication list. D10, D15. Depends on #26 only for the response shape. Built in PR #37.
 4. **#29 The run's steps in API's library.** The claim with its attempt, the commit claim with its deadline check, the adapter seam with no adapter, result recording, and the `cancelled` attempt result. Tested against PostgreSQL without Restate. D7, D8. Depends on #26.
 5. **#30 Worker's first handler and the poller.** The `Publication` virtual object, Worker's database connection, the poller and its partial index, Compose changes, and a Restate test harness. Carries infrastructure D14's upgrade test and D15's dependency. D5, D6. Depends on #29.
 6. **#31 The scheduler's stall.** `pipewhere.scheduler_tick`, written by the poller, and `GET .../scheduler`. D10. Depends on #30.
@@ -179,16 +179,21 @@ Not verified:
 ## #28 — what was built
 
 - `apps/api/src/publications.rs`: `GET /v1/orgs/{organization_id}/publications?overdue=true` adds one condition to the list's query, `state = 'scheduled' AND planned_at < now()`, per D10. The order, the page size, and the cursor are the list's own, per 00002 D14.
-- The schema publishes `overdue` as an optional boolean query parameter.
+- `false`, or leaving the parameter out, lists every publication. Any other value answers 422 `invalid_query`, per D15. `apps/api/src/error.rs` adds that code.
+- The schema publishes `overdue` as an optional boolean query parameter, and the 422. It says to send the same `overdue` with `cursor`, and that work about to start is listed.
 
 Choices made in the build, within the spec:
 
-- "Newest first" is by id, as 00002 D14 orders the list. It is not by planned time.
-- Only the exact value `true` turns the filter on. `false`, an empty value, `1`, and `TRUE` all list every publication, and the schema says so. The list already ignores unknown parameters. Refusing a bad value would add a public error code, and a misspelt `overdu=true` would still answer the whole list. The mistake is visible, because the rows show their states and planned times.
-- A publication is listed as soon as its planned time passes. Once #30's poller runs, a healthy publication can therefore appear for up to one tick, per D5.
-- No index added. An organization with almost nothing overdue scans every publication. At D14's estimate of 10 publications a day, 100,000 rows takes about 27 years and 1,000,000 about 270. #30's partial index on `scheduled` publications may also serve this query.
+- "Newest first" is by id, as 00002 D14 orders the list. It is not by planned time, so the most urgent publication can sit on a later page.
+- The cursor does not carry the filter. A client that sends only `?cursor=` on its second page gets the unfiltered list. The schema says to repeat `overdue`. Carrying the filter would make the cursor more than an id, and only an organization with over 100 overdue publications reaches this.
+- A publication is listed as soon as its planned time passes. Once #30's poller runs, a healthy publication stays listed until its run's first step claims it. A tick only sends the run, and sends at most 100, per D5. A backlog can therefore stay listed for longer than one tick. How long is unmeasured until #30.
+- Until #30, nothing claims a publication, so everything past its time stays listed until it is edited or cancelled.
+- No index added. The filter scans `pipewhere.publication` across every organization, because the table's only index is its primary key. D14's estimate of 10 publications a day reaches 1,000,000 rows in about 270 years for one organization, but in 100 days for 1,000. That is still acceptable now:
+  - The plain list already has the same whole-table cost for an organization with fewer than 101 publications.
+  - No production target or client depends on this latency yet.
+  - #30's partial index on `scheduled` publications served this query in a review probe. See below.
 
-Verified, at `5b3ad25`:
+Verified, at `79acce4`:
 
 - `cargo test -p pipewhere-api`: 7 unit tests and 58 integration tests pass. `the_overdue_list_shows_what_passed_its_planned_time_without_starting`, `the_overdue_list_pages_by_cursor`, and `the_schema_publishes_the_overdue_filter` are new.
 - `pnpm --filter @pipewhere/auth test`: 20 tests pass.
@@ -198,30 +203,43 @@ Verified, at `5b3ad25`:
   - It lists a `scheduled` publication 1 minute past its planned time, and one 2 days past, which is beyond its deadline. The newer id, with the older time, comes first.
   - It does not list a `scheduled` publication planned an hour ahead, one in each of the other six states planned in the past, or another organization's overdue publication.
   - A request to publish now is listed on the next read.
-  - `false`, an empty value, `1`, `TRUE`, and `yes` answer exactly what the list answers without the parameter.
-  - A user who is not a member gets 404, and no token gets 401.
+  - `overdue=false` answers exactly what the list answers without the parameter.
+  - These answer 422 `invalid_query`: `True`, `False`, `TRUE`, `1`, `0`, `yes`, `true` with a trailing space, an empty value, no value, NUL, invalid UTF-8, and a bad value with a NUL cursor.
+  - A user who is not a member gets 404, and no token gets 401, with a good value and a bad one.
 - `the_overdue_list_pages_by_cursor` has 150 overdue publications alternating with 151 that are not, the oldest of them not overdue. The first page holds 100 overdue, and `next_cursor` is the last of them. The second holds the other 50, and `next_cursor` is null.
 - Each of these changes, made by a Python script outside the repository, fails a test. The script copied the file aside, made one change, ran the unit tests and `tests/publications.rs`, and restored the file.
   - The state condition dropped: the first new test.
   - The time condition dropped, or its comparison reversed: both new tests.
   - The deadline compared instead of the planned time: both new tests.
   - Work past its deadline hidden: the first new test.
-  - The filter always on: that test and `a_member_creates_lists_and_reads_publications`.
-  - The filter never on: both new tests.
-  - Any value turning it on, or the value compared without case: the first new test.
+  - The filter on when left out or `false`: that test and `a_member_creates_lists_and_reads_publications`.
+  - `false` turning the filter on, or being refused: the first new test.
+  - `true` turning the filter off: both new tests.
+  - Other values listing everything, or turning the filter on: the first new test.
+  - The value compared without case, or a NUL cursor skipping the refusal: the first new test.
+  - The refusal answering 400, or `invalid_body`: the first new test.
   - The organization filter dropped: that test and `another_organizations_resources_are_not_found`.
   - The cursor ignored under the filter: `the_overdue_list_pages_by_cursor`.
   - Ordered by planned time, or oldest first: the first new test and others.
-  - The schema's parameter removed: `the_schema_publishes_the_overdue_filter`.
-- The scan's cost, by a throwaway test, deleted afterwards. One organization held only `cancelled` publications with 500-character bodies, in `pipewhere-test-postgres` on a laptop, with API in a debug build. Nothing was overdue.
-  - At 1,000,000 rows, 5 requests with `overdue=true` took 334, 70, 251, 238, and 241 ms. The same requests without it took 17, 16, 10, 6, and 5 ms.
+  - The schema's parameter or its 422 removed: `the_schema_publishes_the_overdue_filter`.
+- The scan's cost, by throwaway tests, deleted afterwards. All ran against `pipewhere-test-postgres` on a laptop, with API in a debug build.
+  - One organization held 1,000,000 `cancelled` publications with 500-character bodies, and nothing was overdue. 5 requests with `overdue=true` took 334, 70, 251, 238, and 241 ms. The same requests without it took 17, 16, 10, 6, and 5 ms.
   - `EXPLAIN ANALYZE` of the query with its values written in chose a parallel sequential scan. It took 10 ms at 100,000 rows and 64 ms at 1,000,000.
+
+Found by a review probe at `9994685`, not repeated here. The filter's query has not changed since:
+
+- An organization with 3 publications, in a table of 1,000,003 rows, scanned the whole table. Its requests took 232–309 ms.
+- The time is spent in PostgreSQL, not the debug build. `EXPLAIN ANALYZE` of the generic plan took 226–271 ms. The probe inferred from matching timings, without capturing a live request's plan, that steady requests use that plan rather than the 64 ms one above.
+- The plain list, for the same organization, took 46–513 ms.
+- With #30's partial index present, requests on fresh connections took 1–2 ms after the first. Connections warmed before the index was created stayed at 243–308 ms for 15 requests. #30 should not judge the index by a connection opened before it existed.
+- `overdue=true&overdue=false` answered the whole list. A publication planned 2 seconds ahead was not listed, then was listed 2.5 seconds later.
 
 Not verified:
 
 - The running stack. The local Compose stack still runs #26's build.
-- A publication becoming overdue as the clock passes its planned time. The tests set planned times on either side of now. They do not wait for one to pass, or show `<` differing from `<=`, which a real request cannot observe.
-- The one failure seen in this build. In one full run, three tests in `tests/contents.rs` panicked because Auth did not answer `/health` within the test harness's 10 seconds. That file and the harness did not change. The next 6 runs of that file passed, 5 alone and 1 in a full run. The cause is not known.
+- `<` differing from `<=`, which a real request cannot observe.
+- Whether generated clients, PHP, or .NET send `true`. D15 refuses anything else, so a client that sends another spelling finds out on its first request.
+- The one failure seen in this build. In one full run, three tests in `tests/contents.rs` panicked because Auth did not answer `/health` within the test harness's 10 seconds. That file and the harness did not change. The cause is not known, and later runs of that file passed.
 
 ## Not yet built
 
