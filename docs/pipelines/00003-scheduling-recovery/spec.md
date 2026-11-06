@@ -112,6 +112,8 @@ A tick can send a publication's run again before the first send has claimed it. 
 
 Binding: 00004, 00008, and later pipelines that change Worker's handlers.
 
+D17 narrows this decision's wording for two cases. Read the two together.
+
 This is the stated way for in-flight invocations to survive a Worker upgrade that [infrastructure D14](../00001-infrastructure/spec.md) requires.
 
 A publication runs as a Restate virtual object keyed by its id, through one exclusive handler, `run`. Restate runs at most one invocation per key at a time, so two invocations never run one publication at once.
