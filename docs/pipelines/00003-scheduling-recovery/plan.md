@@ -135,7 +135,7 @@ Choices made in the build, within the spec:
 - A create racing a `PATCH` takes either value. Each was the organization's default during the request.
 - `20261103133134_publication_tolerance.sql` still says the range is repeated in `src/publications.rs`. That stays true of the schema attributes there, and its checksum stops the comment being edited.
 
-Verified, at `88bcbfa`:
+Verified, at `50219c4`:
 
 - `cargo test -p pipewhere-api`: 6 unit tests and 56 integration tests pass. `tests/settings.rs` is new, with 5 tests.
 - `pnpm --filter @pipewhere/auth test`: 20 tests pass.
@@ -153,7 +153,7 @@ Verified, at `88bcbfa`:
 - `the_table_refuses_bad_rows` shows the table refusing 299 and 86,401, an unknown organization, and a second row for one organization. An organization with a row cannot be deleted.
 - `a_publication_takes_its_organizations_default_when_it_is_created`, with the default at 600 and then 3,600:
   - An omitted tolerance and `null` take 600, and an explicit 300 overrides it. Another organization still gets 1,800.
-  - After the change, the first publication reads as it did. A repeat of its request returns that first result, per D13. A new create takes 3,600.
+  - After the change, the first publication reads as it did. A repeat of its request answers that publication, per D13. A new create takes 3,600.
   - An edit that names no tolerance keeps 600.
 - `a_repeated_retry_returns_the_publication_without_retrying_again` retries a 600-second publication with the default at 3,600. The retry keeps 600.
 - Each of these changes, made by a Python script outside the repository, fails a test. The script copied the file aside, made one change, ran the tests, and restored the file.
@@ -174,7 +174,7 @@ Verified, at `88bcbfa`:
 Not verified:
 
 - The running stack. The local Compose stack still runs #26's build, and this migration has not been applied to its database. Applying it there fixes the migration's checksum for that database.
-- Two first `PATCH`es racing. They rely on `ON CONFLICT`, and only repeated `PATCH`es in sequence are tested.
+- Two first `PATCH`es forced to interleave. They rely on `ON CONFLICT`. Only repeated `PATCH`es in sequence are tested. A probe in review sent 25 first `PATCH`es at once: all answered 200 and left one row.
 
 ## Not yet built
 
