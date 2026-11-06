@@ -102,10 +102,16 @@ Verified:
   - Create storing 1,800 whatever the request sent: `a_publication_records_its_tolerance`.
   - Retry resetting the tolerance to 1,800: `a_repeated_retry_returns_the_publication_without_retrying_again`.
 
-Asserted, not verified:
+- The running stack, at `efa2acf`. `docker compose up -d --build --wait` built the images, and `api-migrate` applied the migration to the existing local database. The command exits 1, because `--wait` counts `worker-register` exiting as a failure, although it exited 0. Then, by hand against API on port 3002:
+  - `/openapi.json` publishes the tolerance's bounds and `deadline`.
+  - Create with no tolerance answered 1,800 and a deadline 30 minutes later. Create with 300 answered a deadline 5 minutes later.
+  - The same key and tolerance answered the first result. The same key with 600 answered 422 `idempotency_key_reused`. A tolerance of 299 answered 422 `invalid_body`.
+  - An edit to 3,600 moved the deadline. An edit after cancelling answered 409 `state_conflict`.
+  - The list and the single read show both fields.
 
-- The API Docker image embeds the new migration. The image was not built, as for 00002's issues.
-- `api serve` was not run by hand. The schema was read from the same router through a unit test.
+Not verified:
+
+- Signing in through Web with the account that check created. Web has no publication pages yet.
 
 ## Not yet built
 
