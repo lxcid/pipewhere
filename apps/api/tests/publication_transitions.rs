@@ -464,6 +464,16 @@ async fn a_repeated_retry_returns_the_publication_without_retrying_again() {
     let second = insert_publication(&instance.api_db, &organization_id, "failed").await;
     let key = new_key();
     let timed = json!({ "planned_at": "2027-01-01T08:00:00+08:00" });
+    ok_json(
+        instance
+            .patch(
+                &format!("/v1/orgs/{organization_id}/settings"),
+                Some(&token),
+                json!({ "tolerance_seconds": 3600 }),
+            )
+            .await,
+    )
+    .await;
 
     let retried = ok_json(
         retry(
@@ -479,8 +489,8 @@ async fn a_repeated_retry_returns_the_publication_without_retrying_again() {
     .await;
     assert_eq!(retried["state"], "scheduled");
     assert_eq!(retried["planned_at"], "2027-01-01T00:00:00Z");
-    // 00003 D11: a retry keeps the tolerance, and its new time moves the
-    // deadline.
+    // 00003 D11: a retry keeps the tolerance, whatever the organization's
+    // default has become, and its new time moves the deadline.
     assert_eq!(retried["tolerance_seconds"], 600);
     assert_eq!(retried["deadline"], "2027-01-01T00:10:00Z");
     assert_eq!(

@@ -12,8 +12,8 @@ The build runs as one small PR per issue, as 00002's did. Each issue carries its
 
 ## Steps
 
-1. **#26 Tolerance and deadline on a publication.** `tolerance_seconds` on create and edit, `deadline` in every publication response. The migration gives existing publications 1,800 seconds. No organization setting yet: create uses 30 minutes. D1, D2, D11. Built in PR #35.
-2. **#27 An organization's default tolerance.** `pipewhere.organization_setting`, `GET` and `PATCH .../settings`. Create reads the default. D11. Depends on #26.
+1. **#26 Tolerance and deadline on a publication.** `tolerance_seconds` on create and edit, `deadline` in every publication response. The migration gives existing publications 1,800 seconds. D1, D2, D11. Built in PR #35.
+2. **#27 An organization's default tolerance.** `pipewhere.organization_setting`, `GET` and `PATCH .../settings`. Create reads the default. D1, D2, D11. Built in PR #36.
 3. **#28 The overdue list.** `?overdue=true` on the publication list. D10. Depends on #26 only for the response shape.
 4. **#29 The run's steps in API's library.** The claim with its attempt, the commit claim with its deadline check, the adapter seam with no adapter, result recording, and the `cancelled` attempt result. Tested against PostgreSQL without Restate. D7, D8. Depends on #26.
 5. **#30 Worker's first handler and the poller.** The `Publication` virtual object, Worker's database connection, the poller and its partial index, Compose changes, and a Restate test harness. Carries infrastructure D14's upgrade test and D15's dependency. D5, D6. Depends on #29.
@@ -49,10 +49,10 @@ Concurrency and recovery are tested with a transaction held open, or with real r
   - Existing publications get 1,800, per 00002 D12.
   - The column's default is dropped after the backfill. A writer that leaves the tolerance out fails on `NOT NULL`.
 - `apps/api/src/publications.rs`:
-  - Create takes an optional `tolerance_seconds`, and uses 1,800 when the request names none. #27 replaces that with the organization's default.
+  - Create takes an optional `tolerance_seconds`. When the request names none it used 1,800 until #27 replaced that with the organization's default.
   - Edit takes an optional `tolerance_seconds`, in the same conditional update as the body and planned time, so in `scheduled` and `failed` only.
   - Retry does not touch the tolerance, so it keeps it.
-  - `checked_tolerance` refuses a value outside 300 to 86,400 with 422 `invalid_body`, on create and edit.
+  - `checked_tolerance`, now in `settings.rs`, refuses a value outside 300 to 86,400 with 422 `invalid_body`, on create and edit.
   - Every publication response shows `tolerance_seconds` and `deadline`. The `columns!` macro computes the deadline as `planned_at + tolerance_seconds * interval '1 second'`. Nothing stores it.
   - Create's request hash gains `tolerance_seconds` when the request sends one, per D13. A request without one hashes as it did before #26, so keys stored then still match, per 00002 D5. Retry's hash is unchanged.
 - The schema publishes `tolerance_seconds` with `minimum` 300 and `maximum` 86400 on `Publication`, `PublicationInput`, and `PublicationEdit`, and `deadline` as `date-time`. Both are required on `Publication`.
@@ -60,7 +60,7 @@ Concurrency and recovery are tested with a transaction held open, or with real r
 Choices made in the build, within the spec:
 
 - The deadline adds a whole number of seconds. An interval of seconds holds no days, so adding it does not depend on the session's time zone.
-- `tolerance_seconds: null` is treated as omitted, per D13. Create then uses 1,800, and edit keeps the current tolerance.
+- `tolerance_seconds: null` is treated as omitted, per D13. Create then uses the default, and edit keeps the current tolerance.
 - Tolerated: a planned time in the last day of 9999 can carry its deadline past the published format, per D14.
 - No index added. The deadline is computed per row read.
 
@@ -113,6 +113,69 @@ Not verified:
 
 - Signing in through Web with the account that check created. Web has no publication pages yet.
 
+## #27 — what was built
+
+- The migration `20261106100000_organization_setting.sql` adds `pipewhere.organization_setting`, per D11:
+  - `organization_id` is the primary key and references `auth.organization`. It does not cascade, per 00001 D2.
+  - `tolerance_seconds` is an `integer`, checked from 300 to 86,400 by `organization_setting_tolerance_seconds_check`.
+- `apps/api/src/settings.rs`:
+  - `GET /v1/orgs/{organization_id}/settings` answers `{ "tolerance_seconds": ... }`. An organization without a row answers 1,800, and reading writes no row.
+  - `PATCH` on the same path inserts or updates the row, and answers the same shape. It is open to every member and key, per D11.
+  - `default_tolerance` is the one place that says no row means 1,800. Both `GET` and create read it.
+  - `checked_tolerance` moved here from `publications.rs`, so all three writers share it. It now takes a value rather than an `Option`.
+- `apps/api/src/publications.rs`: when the request names no tolerance, create reads the default inside its transaction, after the key is claimed. A repeated request therefore never reads it. The request hash is unchanged, per D13. Edit and retry do not read the default.
+- The schema publishes both new types, with `minimum` 300 and `maximum` 86400.
+
+Choices made in the build, within the spec:
+
+- `tolerance_seconds` is required on `PATCH`, as `body` is on content's. `{}` and `null` answer 422 `invalid_body`. It is the only setting, so an edit without it would do nothing. Making it optional when a second setting arrives breaks no client.
+- Unknown fields answer 422, as on the publication endpoints.
+- The response has no `organization_id`. The settings have no id of their own, and the path names the organization.
+- Nothing removes a row. Going back to 30 minutes means setting 1,800.
+- A create racing a `PATCH` takes either value. Each was the organization's default during the request.
+- `20261103133134_publication_tolerance.sql` still says the range is repeated in `src/publications.rs`. That stays true of the schema attributes there, and its checksum stops the comment being edited.
+
+Verified, at `50219c4`:
+
+- `cargo test -p pipewhere-api`: 6 unit tests and 56 integration tests pass. `tests/settings.rs` is new, with 5 tests.
+- `pnpm --filter @pipewhere/auth test`: 20 tests pass.
+- `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all --check`: clean.
+- `tests/settings.rs`, `tests/publications.rs`, and `tests/publication_transitions.rs` passed 3 runs in a row.
+- `a_member_reads_and_changes_the_default_tolerance` reads 1,800 with no row, then changes the default to 600, 300, and 86,400. One row exists after each change.
+- `any_member_or_key_changes_the_default_tolerance` reads and changes it as a `member` and as a key.
+- `another_organizations_settings_are_not_found`:
+  - Changing one organization's default leaves another's at 1,800.
+  - A user who is not a member, and another organization's key, get 404 on read and change.
+  - No token gets 401. An outsider sending a bad body gets 404, not `invalid_body`.
+- `a_body_api_cannot_read_is_refused` in `tests/settings.rs` refuses each of these, and the stored default stays 600:
+  - 400: not JSON. 415: no content type. 413: over 2 MB.
+  - 422: `{}`, `null`, an unknown field, `"900"`, 900.5, 4,294,967,296, 299, 86,401, 0, and −1,800.
+- `the_table_refuses_bad_rows` shows the table refusing 299 and 86,401, an unknown organization, and a second row for one organization. An organization with a row cannot be deleted.
+- `a_publication_takes_its_organizations_default_when_it_is_created`, with the default at 600 and then 3,600:
+  - An omitted tolerance and `null` take 600, and an explicit 300 overrides it. Another organization still gets 1,800.
+  - After the change, the first publication reads as it did. A repeat of its request answers that publication, per D13. A new create takes 3,600.
+  - An edit that names no tolerance keeps 600.
+- `a_repeated_retry_returns_the_publication_without_retrying_again` retries a 600-second publication with the default at 3,600. The retry keeps 600.
+- Each of these changes, made at `88bcbfa` by a Python script outside the repository, fails a test. The later commit changes only schema descriptions and a test comment. The script copied the file aside, made one change, ran the tests, and restored the file.
+  - API's range check skipped, or either bound loosened by one: `a_body_api_cannot_read_is_refused` and `an_edit_changes_only_this_channels_copy`.
+  - The table's check removed, either bound loosened by one, or the foreign key removed: `the_table_refuses_bad_rows`.
+  - The default's lookup ignoring the organization: `another_organizations_settings_are_not_found` and the create test.
+  - The 1,800 constant changed: five tests, among them `a_member_reads_and_changes_the_default_tolerance`.
+  - The upsert keeping the old value: three tests.
+  - Unknown fields allowed: `a_body_api_cannot_read_is_refused`.
+  - Create ignoring the default: the create test.
+  - Create ignoring the request's tolerance: that test and `a_publication_records_its_tolerance`.
+  - Create hashing the default it fills in: that test and `a_repeated_request_returns_the_first_result`.
+  - Changing the default also rewriting publications: that test and the retry test.
+  - Retry taking the default: the retry test.
+  - An edit without a tolerance taking the default: the create test.
+  - Either new schema losing its bounds: `the_schema_publishes_the_error_codes_and_states_as_fixed_sets`.
+
+Not verified:
+
+- The running stack. The local Compose stack still runs #26's build, and this migration has not been applied to its database. Applying it there fixes the migration's checksum for that database.
+- Two first `PATCH`es forced to interleave. They rely on `ON CONFLICT`. Only repeated `PATCH`es in sequence are tested. A probe in review sent 25 first `PATCH`es at once: all answered 200 and left one row.
+
 ## Not yet built
 
-#27–#33. #33 is blocked on 00004, per D12.
+#28–#33. #33 is blocked on 00004, per D12.

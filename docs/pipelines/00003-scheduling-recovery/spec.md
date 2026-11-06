@@ -225,12 +225,12 @@ The operator chose to build the rest of 00003 first. The channel-status part is 
 
 ### D13 — Create's request hash takes the tolerance only when the request sends one
 
-[Publication contract D13](../00002-publication-contract/spec.md) hashes create's parsed request. A request that sends `tolerance_seconds` hashes it with the other fields. A request that omits it hashes exactly as it did before the tolerance existed. It does not hash as the 1,800 seconds create fills in.
+[Publication contract D13](../00002-publication-contract/spec.md) hashes create's parsed request. A request that sends `tolerance_seconds` hashes it with the other fields. A request that omits it hashes exactly as it did before the tolerance existed. It does not hash as the default create fills in.
 
 - [Publication contract D5](../00002-publication-contract/spec.md) is binding on this pipeline. A key has no time-based expiry, and the same key and request return the stored result. Before #26, create refused unknown fields, so no stored key was sent with a tolerance. Every stored key therefore keeps matching its request.
-- A request that omits the tolerance takes the organization's default once #27 adds it. Repeating that request after the default changes is still the same request, so it must match.
+- A request that omits the tolerance takes the organization's default. Repeating that request after the default changes is still the same request, so it must match.
 - An omitted tolerance and an explicit 1,800 are therefore different requests. One key sent with both answers 422 `idempotency_key_reused`.
-- `tolerance_seconds: null` is an omitted tolerance, as [publication contract D15](../00002-publication-contract/spec.md) tolerates for `planned_at: null`. It hashes as omitted, create fills in 1,800, and edit keeps the current tolerance.
+- `tolerance_seconds: null` is an omitted tolerance, as [publication contract D15](../00002-publication-contract/spec.md) tolerates for `planned_at: null`. It hashes as omitted, create fills in the organization's default, and edit keeps the current tolerance.
 
 ### D14 — A deadline after the year 9999 is tolerated
 
