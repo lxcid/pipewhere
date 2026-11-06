@@ -1,5 +1,5 @@
 //! Creating and reading publications, per 00002 D2, D3, D5, D6, and D11–D14,
-//! and 00003 D11. Connecting a channel belongs to 00004, so these tests insert
+//! and 00003 D10 and D11. Connecting a channel belongs to 00004, so these tests insert
 //! channel rows directly.
 
 mod support;
