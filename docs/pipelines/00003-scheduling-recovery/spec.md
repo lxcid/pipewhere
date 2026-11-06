@@ -225,8 +225,6 @@ The operator chose to build the rest of 00003 first. The channel-status part is 
 
 ### D13 — Create's request hash takes the tolerance only when the request sends one
 
-Proposed: awaiting operator approval.
-
 [Publication contract D13](../00002-publication-contract/spec.md) hashes create's parsed request. A request that sends `tolerance_seconds` hashes it with the other fields. A request that omits it hashes exactly as it did before the tolerance existed. It does not hash as the 1,800 seconds create fills in.
 
 - [Publication contract D5](../00002-publication-contract/spec.md) is binding on this pipeline. A key has no time-based expiry, and the same key and request return the stored result. Before #26, create refused unknown fields, so no stored key was sent with a tolerance. Every stored key therefore keeps matching its request.
@@ -235,8 +233,6 @@ Proposed: awaiting operator approval.
 - `tolerance_seconds: null` is an omitted tolerance, as [publication contract D15](../00002-publication-contract/spec.md) tolerates for `planned_at: null`. It hashes as omitted, create fills in 1,800, and edit keeps the current tolerance.
 
 ### D14 — A deadline after the year 9999 is tolerated
-
-Proposed: awaiting operator approval.
 
 [Publication contract D12](../00002-publication-contract/spec.md) accepts a planned time up to the end of 9999 in UTC. A tolerance can carry its deadline into 10000. The API then answers the deadline as chrono writes such a year, `+10000-01-01T00:29:59Z`. That is outside the `date-time` format the schema publishes. A create planned for `9999-12-31T23:59:59Z` with the default tolerance answered exactly that.
 

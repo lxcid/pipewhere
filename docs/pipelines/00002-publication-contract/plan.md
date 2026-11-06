@@ -230,7 +230,7 @@ Verified:
 Not isolated by a test:
 
 - The organization filter on the retry's stored publication read. As in create, the stored key's lookup already filters on the organization.
-- `retry_publication` as the hash's first element. Create's hash has five elements and retry's three, so the two never match without the names. The name keeps them apart if the shapes ever line up.
+- `retry_publication` as the hash's first element. Create's hash has five elements, or two when it carries a tolerance, and retry's three, so the two never match without the names. The name keeps them apart if the shapes ever line up.
 
 Asserted, not verified:
 
