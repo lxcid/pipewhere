@@ -289,7 +289,7 @@ Without the condition, such a run would publish early. The intent rules that out
 
 A run that finds the time has not come stops, and writes nothing. The publication stays `scheduled`, and the poller sends a new run when its time comes.
 
-### D17 — A claim's loser answers the state it found
+### D17 — A step that loses its move answers the state it found or claimed
 
 Proposed: awaiting operator approval.
 
@@ -301,7 +301,7 @@ A provider's answer that finds its attempt already ended does the same, for the 
 
 These are the two cases where a step's answer narrows D6's "new state". Nothing reads the answer except the handler that decides whether to take another step.
 
-A return type that says "stop" or "continue" was rejected. It would keep D6's "new state" true, but it adds a type to the journal for a case D6's exclusivity already makes rare.
+A return type that says "stop" or "continue" was rejected. It would keep D6's "new state" true, but it adds a type to the journal for cases D6's exclusivity already makes rare.
 
 Tolerated: a loser stops even if the winner's handler has died. Restate can start a new execution while an earlier one is still inside its claim. If the earlier one wins, the new one stops, and no handler goes on with the publication.
 
@@ -315,6 +315,17 @@ Tolerated: a loser stops even if the winner's handler has died. Restate can star
 - **Cost of the alternatives.** Letting a loser continue from `preparing` needs an approved decision against D5 and infrastructure D4, and can record a false `outcome_unknown` if two live executions both reach the commit claim. Adding the case to D9 changes an approved decision.
 
 What would bring it back: a `preparing` publication past its deadline appearing in operation.
+
+Also tolerated: a stalled execution can act on a later run's state. A step holds no memory of earlier steps, and D6 rules this out only while Restate keeps one invocation per key.
+
+- **Likelihood.** An execution must stall until Restate replaces it, and stay stalled while a person resolves and retries the publication and a new run claims it. How often this happens is unmeasured.
+- **Impact.** Two cases are known:
+  - An execution paused between its read and its commit claim claims the later run's commit. The provider is still called once, and the later run's step records `outcome_unknown`.
+  - An execution that loses its move while recording an interrupted commit reads the state again, and can answer the later run's `preparing`. It can then take that run's commit claim, with the same result.
+- **Recoverability.** Nothing posts twice, and `outcome_unknown` asks a person to check the provider.
+- **Cost of the alternative.** Carrying the attempt id across steps would change the journal's shape, which D6 makes costly.
+
+What would bring it back: a later run's `outcome_unknown` traced to a stalled execution.
 
 ### D18 — An adapter's post reference meets the rules a person's does
 

@@ -258,7 +258,7 @@ Not verified:
 - The migration `20261107000000_attempt_cancelled.sql` adds `cancelled` to the attempt's result check, and lets it have no reason. `AttemptResult` gains the value, with 00002 D8's cost.
 - D16, D17, and D18 record what these steps added to the spec. All three await the operator's approval:
   - D16: a claim waits for the planned time.
-  - D17: a claim's loser, and an answer that finds its attempt ended, each answer the state the step found or left. It also covers what happens if a claim's winner has died.
+  - D17: a claim's loser, and an answer that finds its attempt ended, each answer the state the step found or claimed. It also tolerates two cases: a claim's winner dying, and a stalled execution acting on a later run's state.
   - D18: an adapter's post reference must meet 00002 D18's rules.
 
 Choices made in the build, within the spec:
@@ -274,13 +274,13 @@ Choices made in the build, within the spec:
 Tolerated:
 
 - A provider answer holding U+0000 cannot be stored, so recording it fails, and the next step records `outcome_unknown`. 00004's adapters own what they send.
-- A step holds no memory of earlier steps, so a stalled execution can act on a later run's state, which D6 rules out while Restate keeps one invocation per key. An execution paused between its read and its commit claim, across a replacement, a resolve, a retry, and a new claim, would claim the later run's commit. The provider is still called once, and the later run's step records `outcome_unknown`. Nothing posts twice, and the publication asks a person to check. Carrying the attempt id across steps would change the journal's shape, which D6 makes costly.
+- A claim's winner dying, and a stalled execution acting on a later run's state, are D17's two tolerated cases.
 
 Left for #30: the handler's loop, `Deserialize` on `PublicationState` for the journal, and Worker's dependency on this crate.
 
-Verified, at `3d28600`:
+Verified, at `19b849f`:
 
-- `cargo test -p pipewhere-api`: 7 unit tests and 82 integration tests pass. `tests/publication_runs.rs` is new, with 24 tests.
+- `cargo test -p pipewhere-api`: 7 unit tests and 83 integration tests pass. `tests/publication_runs.rs` is new, with 25 tests.
 - `pnpm --filter @pipewhere/auth test`: 20 tests pass.
 - `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all --check`: clean.
 - `tests/publication_runs.rs`, `tests/publication_attempts.rs`, and `tests/publication_transitions.rs` passed 3 runs in a row.
@@ -304,6 +304,7 @@ Verified, at `3d28600`:
 - A retry after a late failure runs again, and leaves 2 attempts.
 - Reading through the API: a running attempt, a `cancelled` attempt, and a `published` publication's remote id.
 - Each of these changes, made by a Python script outside the repository, fails a test. The script copied the file aside, made one change, ran the unit tests, `tests/publication_runs.rs`, and `tests/publication_attempts.rs`, and restored the file. 24 ran at `3d28600`, on the commit path and the ending it shares. The rest ran at `389adf5`, on code that has not changed since.
+  - At `19b849f`, failing a missed deadline after the commit claim's transaction commits. It failed `a_cancel_queued_behind_a_missed_deadline_finds_it_failed` in 3 of 3 runs, and no other test in `tests/publication_runs.rs`. That test passes at this head.
   - At `3d28600`, the commit claim: ignoring the state or the deadline; its deadline reversed; leaving the state at `preparing`; not taking the lock; reading the transaction's time; not committing; needing no running attempt; taking another publication's attempt; a missed deadline moving nothing; failing a state other than `preparing`.
   - At `3d28600`, an answer: claiming its own ending when it lost; answering the current state; ending what it finds; ignoring its own attempt.
   - At `3d28600`, the ending: an interrupted commit becoming `failed`; not reading the state again after losing a race; ignoring the state; a missing attempt passing; rewriting ended attempts; ending other publications' attempts; adding a reason where there is none; two transactions in place of one; not committing.
@@ -322,7 +323,7 @@ Not verified:
 - A real provider. The results other than `NoAdapter`'s refusal come from a fake adapter.
 - `<=` differing from `<` at either time check, which a test cannot observe.
 - The deadline being rechecked between the commit claim's update and its commit. That window is one round trip, and the claim then counts as started.
-- Why Auth sometimes misses the harness's 10-second `/health` wait. Two review runs at `bd1d440` each saw one such failure, under load, in test files this change did not alter. One was `tests/publications.rs`, and the reviewer's rerun with fewer test threads passed. The other, in `tests/publication_attempts.rs`, lasted 10.85 seconds, and its message was not saved. The harness is unchanged from `main`, and the cause is still not known.
+- Why Auth sometimes misses the harness's 10-second `/health` wait. Three review runs each saw one such failure, under load, in test files this change did not alter. One was `tests/publications.rs`, where a rerun with fewer test threads passed. Two were in `tests/publication_attempts.rs`, lasting 10.85 and 10.81 seconds. The 10.81-second run, at `80085dd`, saved the message "Auth did not answer /health within 10 seconds". The harness is unchanged from `main`, and the cause is still not known. A repeat run can therefore fail for a reason other than the code.
 
 ## Not yet built
 
