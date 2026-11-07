@@ -342,8 +342,6 @@ What would overturn this: a shared check in the steps that the adapter's pipelin
 
 ### D19 — An adapter's call to its provider has a time limit
 
-Proposed: awaiting operator approval.
-
 Binding: 00004, 00008, and later pipelines that add a provider adapter.
 
 An old adapter call can outlast the run it belongs to, and a person's decision about that run:
