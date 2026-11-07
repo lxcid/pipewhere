@@ -16,7 +16,7 @@ The build runs as one small PR per issue, as 00002's did. Each issue carries its
 2. **#27 An organization's default tolerance.** `pipewhere.organization_setting`, `GET` and `PATCH .../settings`. Create reads the default. D1, D2, D11. Built in PR #36.
 3. **#28 The overdue list.** `?overdue=true` on the publication list. D10, D15. Depends on #26 only for the response shape. Built in PR #37.
 4. **#29 The run's steps in API's library.** The claim with its attempt, the commit claim with its deadline check, the adapter seam with no adapter, result recording, and the `cancelled` attempt result. Tested against PostgreSQL without Restate. D7, D8. Depends on #26. Built in PR #38.
-5. **#30 Worker's first handler and the poller.** The `Publication` virtual object, Worker's database connection, the poller and its partial index, Compose changes, and a Restate test harness. Carries infrastructure D14's upgrade test and D15's dependency. D5, D6. Depends on #29.
+5. **#30 Worker's first handler and the poller.** The `Publication` virtual object, Worker's database connection, the poller and its partial index, Compose changes, and a Restate test harness. Carries infrastructure D14's upgrade test and D15's dependency. D5, D6. Depends on #29. Built in PR #39.
 6. **#31 The scheduler's stall.** `pipewhere.scheduler_tick`, written by the poller, and `GET .../scheduler`. D10. Depends on #30.
 7. **#32 `worker recover`.** Tested after losing Restate, and while the original invocation is live. README runbook. D9. Depends on #30.
 8. **#33 Channel status at the claim, and on a waiting publication.** D3 and D4, and the intent's fourth outcome. Blocked until 00004 gives a channel a readable status, per D12.
@@ -31,8 +31,6 @@ Each issue runs, at its head:
 - `cargo fmt --all --check`
 
 The tests need `pipewhere-test-postgres`, started by `pnpm --filter @pipewhere/auth test:db`. From #30 on they also need a Restate server.
-
-Each organization filter, state guard, deadline condition, and table check is broken on purpose, one at a time, by a script that restores the file. Each break must fail a test.
 
 Concurrency and recovery are tested with a transaction held open, or with real requests racing, as #16 and #17 did:
 
@@ -327,14 +325,59 @@ Not verified:
 - The deadline being rechecked between the commit claim's update and its commit. That window is one round trip, and the claim then counts as started.
 - Why Auth sometimes misses the harness's 10-second `/health` wait. Review runs saw this four times: once in `tests/publications.rs`, twice in `tests/publication_attempts.rs`, and once in `tests/publication_runs.rs`. One, lasting 10.85 seconds, saved no message, so it is only probably the same failure. The others show it during setup, before the test's own code runs. Two full reruns with fewer test threads passed. Load was not measured, the harness is unchanged from `main`, and the cause is still not known. A repeat run can therefore fail for a reason other than the code.
 
-## #30 — how it is being built
+## #30 — what was built
 
-- `apps/worker` gains a library holding the `Publication` object, the poller, and registration. `main.rs` keeps the commands.
-- `Publication` is generic over `Adapter`. Production binds `NoAdapter`, and tests bind a fake.
-- The poller runs inside `worker serve`, beside the Restate endpoint, so it stops with the process.
-- The tests start the Restate image `compose.yaml` pins, with Docker, one per test. They reuse API's test harness through `#[path]`, so they create and read publications through the real API.
-- The D14 test runs a Worker on its own Tokio runtime and shuts that runtime down to stop it mid-step, because `serve_with_cancel` waits for open connections. It then starts a Worker with a different adapter on the same port, and force-registers it.
+- `apps/worker/src/publication.rs` holds the `Publication` virtual object, generic over `Adapter`, per D6. Its `run` handler takes `step` entries until one answers anything but `preparing`. Production binds `NoAdapter`.
+- `apps/worker/src/poller.rs` holds the poller, per D5. It runs inside `worker serve`, beside the Restate endpoint, so it stops with the process. A failed tick is logged, and the next one tries again.
+- `apps/worker/src/lib.rs` holds `register`, moved from `main.rs` so the tests register the same way.
+- The migration `20261107120000_publication_due.sql` adds the partial index `publication_due`.
+- `compose.yaml` gives Worker `DATABASE_URL` and `RESTATE_INGRESS_URL`, and makes it wait for `api-migrate`. `api` now waits for `worker-register` to succeed, per 00001 D15.
+- `PublicationState` gains `Deserialize`, for the journal.
+- `apps/worker/tests/publication_runs.rs` starts the Restate image `compose.yaml` pins, with Docker, one container per test. It reuses API's test harness through `#[path]`, so publications are created and read through the real API.
+
+Choices made in the build, within the spec:
+
+- A tick stops at its first failed send. The next tick starts again from the oldest work. Going on would wait up to 10 seconds per send when Restate is down.
+- A send has a 10-second timeout, because a Restate that never answers would otherwise stop every later tick without an error.
+- The D14 tests run a Worker on its own Tokio runtime, and shut that runtime down to stop it mid-step. `serve_with_cancel` would wait for the open invocation instead. They change the code by starting a Worker with another adapter on the same port.
+
+Tolerated:
+
+- A publication whose claim keeps failing while the poller keeps working gets another queued invocation every tick. That is 17,280 a day for one publication, and up to 100 a tick across all of them. D5 calls duplicate sends harmless. Once the failure clears, each queued run reads the state and stops. The test covers 5 duplicates. What a long queue costs Restate is unmeasured.
+- A run sent for a publication that does not exist retries until the row appears. The poller sends only ids it read from the table, so this needs a send by hand.
+
+Verified:
+
+- `cargo test -p pipewhere-worker`: 9 integration tests pass, in 3 runs in a row.
+- `cargo test -p pipewhere-api`: 7 unit tests and 83 integration tests pass, at `1c8a057`.
+- `pnpm --filter @pipewhere/auth test`: 20 tests pass, at `1c8a057`.
+- `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all --check`: clean.
+- `the_poller_runs_due_work_and_leaves_the_rest_waiting`: through the API, a due publication fails with the no-adapter reason, a late one fails as late, and a future one stays `scheduled` with no attempt.
+- `sending_a_run_again_publishes_once`: 5 sends leave one attempt, one adapter call, and the remote id.
+- `a_run_sent_before_the_planned_time_changes_nothing`, per D16.
+- `a_step_that_fails_runs_again`: a step that errors stays with Restate's retries, and publishes once it can.
+- `a_tick_fails_until_restate_can_take_the_run`: a failed query, a closed port, and a Restate with no deployment each fail the tick.
+- `a_tick_takes_the_oldest_due_work_first`: the limit, the order with and without the index, the state, and the time.
+- `registering_again_picks_up_a_new_handler`: an installation moving from no handlers to this one, which needs `force`.
+- `a_commit_interrupted_by_an_upgrade_never_repeats`, for 00001 D14. A Worker stops while its adapter holds the call. The journal then holds exactly `Input`, `step`, its completion, and `step`. The new Worker records `outcome_unknown` and calls no adapter.
+- `a_run_held_before_its_commit_continues_on_the_new_code`, for 00001 D14. A Worker stops after its first step is recorded. The new Worker writes no second attempt, and publishes with its own adapter.
+- A script outside the repository broke the handler, the poller, and `force` in 14 ways, one at a time. Each now fails a test. Four survived at first, and the tests above were extended to catch them.
+- The running stack, at `1c8a057`, in a throwaway Compose project with its own volumes, since removed. Web was moved to port 3100, because another process held 3000.
+  - `docker compose up -d --build --wait` exits 0 and registers one service, per 00001 D15.
+  - Through the API, a due publication left `scheduled` within about a second and failed with the no-adapter reason. A late one failed as late. A future one stayed `scheduled`.
+  - With sequential scans off, `EXPLAIN` of the poller's query uses `publication_due`.
+  - After `docker compose up -d --build --wait worker worker-register`, a new due publication still ran. That command exits 1 with `--wait`, per 00001 D14's cost, and the README's form omits `--wait`.
+  - With Restate stopped, a tick logged an error and the publication stayed `scheduled`. Once Restate started again, it ran.
+  - With `RESTATE_ADMIN_URL` pointing nowhere, `docker compose up -d api` exits 1, and API does not start.
+
+Not verified:
+
+- A real provider. Publishing comes from a fake adapter.
+- A real change of Worker's binary under a run. The D14 tests change the adapter on a running test process. The stack's rebuild had no run in flight.
+- How long Restate keeps retrying a step that keeps failing. The SDK's documentation says indefinitely. No test waits that long.
+- Losing Restate's volume. #32 tests this.
+- The tests' setup through a real `psql` on the host, which this machine does not have. They ran with a script that runs `psql` 18.6 in the test server's container.
 
 ## Not yet built
 
-#30–#33. #30 is in progress. #33 is blocked on 00004, per D12.
+#31–#33. #33 is blocked on 00004, per D12.
