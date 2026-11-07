@@ -12,7 +12,11 @@ pub struct Publication<A> {
     pub adapter: Arc<A>,
 }
 
-#[object]
+// Restate's default pauses an invocation after 70 attempts, about an hour, and
+// it stays paused after the failure clears. Its publication would then never
+// reach its deadline check. Repeating a step is safe, per 00003 D6, so this limit
+// is one no outage reaches, at one attempt a minute.
+#[object(invocation_retry_policy(max_attempts = 4294967295))]
 impl<A: Adapter + Send + Sync + 'static> Publication<A> {
     /// An in-flight run survives a Worker upgrade because its journal holds only
     /// `step` entries of this type. Any other journal entry, a renamed step, or

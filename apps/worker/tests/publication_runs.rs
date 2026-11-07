@@ -50,6 +50,10 @@ impl Restate {
             .args(["run", "--rm", "-d"])
             .args(["-p", "127.0.0.1::8080", "-p", "127.0.0.1::9070"])
             .arg("--add-host=host.docker.internal:host-gateway")
+            // Restate pauses an invocation at its default limit of 70 attempts,
+            // about an hour in. A limit of 2 shows within seconds whether a
+            // handler still relies on that default.
+            .args(["-e", "RESTATE_DEFAULT_RETRY_POLICY__MAX_ATTEMPTS=2"])
             .arg(restate_image())
             .output()
             .expect("docker runs");
@@ -451,8 +455,8 @@ async fn a_run_sent_before_the_planned_time_changes_nothing() {
     org.instance.close().await;
 }
 
-// A database error must leave the run to Restate's retries, not end it, because
-// a step ended that way would strand its publication.
+// A database error must leave the run to Restate's retries, without ending or
+// pausing it. Either would strand its publication, past its deadline.
 #[tokio::test]
 async fn a_step_that_fails_runs_again() {
     let org = Organization::start().await;
@@ -466,12 +470,15 @@ async fn a_step_that_fails_runs_again() {
     // The first step finds no such publication, which is an error.
     let id = new_id("publication");
     poller.send_run(&id).await.unwrap();
-    wait_until("the first step has failed", async || {
-        !restate
-            .query("SELECT id FROM sys_invocation WHERE last_failure IS NOT NULL")
-            .await
-            .is_empty()
-    })
+    wait_until(
+        "the first step has failed past the default limit",
+        async || {
+            !restate
+                .query("SELECT id FROM sys_invocation WHERE retry_count >= 3")
+                .await
+                .is_empty()
+        },
+    )
     .await;
 
     org.insert_publication(&id, "scheduled", "0 seconds").await;

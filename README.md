@@ -45,13 +45,6 @@ Worker runs each publication when its time comes:
 - Every 5 seconds it looks in PostgreSQL for `scheduled` publications whose planned time has passed, and sends up to 100 of them to Restate, oldest first. A failed tick is logged, and the next one tries again.
 - No provider can publish yet. A publication that reaches its time becomes `failed`, with the reason `Pipewhere cannot publish to Mastodon yet.`
 
-### Changing Worker
-
-An invocation in flight resumes on the new code when Worker's registration is forced, which every start of the stack does. This is safe only while a run's journal keeps its shape, so:
-
-- You may change what a step does. Restate replays the steps it has recorded, and the next step runs on the new code.
-- You may not add another kind of journal entry, such as a sleep or a call, rename the `step` entry, or change its return type. Doing so needs Restate's versioned deployments, or a drain that waits for runs in flight to end, per [00003 D6](docs/pipelines/00003-scheduling-recovery/spec.md).
-
 API serves its OpenAPI schema at `http://localhost:3002/openapi.json`.
 
 To call API, open an organization in Web and create a key. Web shows the key once. The organization's id is the last part of the page's URL. Exchange the key at Auth for an access token, then name the organization in API's path:
@@ -66,6 +59,13 @@ curl -H "authorization: Bearer $TOKEN" http://localhost:3002/v1/orgs/$ORGANIZATI
 A token expires after 15 minutes. Exchange the key again for a new one.
 
 Stop the stack with `docker compose down`. Your data stays in Docker volumes; `docker compose down --volumes` deletes it.
+
+## Change Worker
+
+An invocation in flight resumes on the new code when Worker's registration is forced, which every start of the stack does. This is safe only while a run's journal keeps its shape, so:
+
+- You may change what a step does. Restate replays the steps it has recorded, and the next step runs on the new code.
+- You may not add another kind of journal entry, such as a sleep or a call, rename the `step` entry, or change its return type. Doing so needs Restate's versioned deployments, or a drain that waits for runs in flight to end, per [00003 D6](docs/pipelines/00003-scheduling-recovery/spec.md).
 
 ## Develop
 

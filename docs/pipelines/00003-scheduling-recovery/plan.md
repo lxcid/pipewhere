@@ -338,6 +338,7 @@ Not verified:
 Choices made in the build, within the spec:
 
 - A tick stops at its first failed send. The next tick starts again from the oldest work. Going on would wait up to 10 seconds per send when Restate is down.
+- `Publication` sets its retry limit to 4,294,967,295 attempts. Restate 1.7.13's default is 70 attempts, about 63 minutes, and then it pauses the invocation. A paused invocation stays paused after the failure clears, so its publication would never reach its deadline check. At Restate's limit of one attempt a minute, the new limit is not reached.
 - A send has a 10-second timeout, because a Restate that never answers would otherwise stop every later tick without an error.
 - The D14 tests run a Worker on its own Tokio runtime, and shut that runtime down to stop it mid-step. `serve_with_cancel` would wait for the open invocation instead. They change the code by starting a Worker with another adapter on the same port.
 
@@ -355,7 +356,7 @@ Verified:
 - `the_poller_runs_due_work_and_leaves_the_rest_waiting`: through the API, a due publication fails with the no-adapter reason, a late one fails as late, and a future one stays `scheduled` with no attempt.
 - `sending_a_run_again_publishes_once`: 5 sends leave one attempt, one adapter call, and the remote id.
 - `a_run_sent_before_the_planned_time_changes_nothing`, per D16.
-- `a_step_that_fails_runs_again`: a step that errors stays with Restate's retries, and publishes once it can.
+- `a_step_that_fails_runs_again`: a step that errors stays with Restate's retries, and publishes once it can. Worker's tests run Restate with a default limit of 2 attempts, and this test waits for 3 retries. It timed out before `Publication` set its own limit.
 - `a_tick_fails_until_restate_can_take_the_run`: a failed query, a closed port, and a Restate with no deployment each fail the tick.
 - `a_tick_takes_the_oldest_due_work_first`: the limit, the order with and without the index, the state, and the time.
 - `registering_again_picks_up_a_new_handler`: an installation moving from no handlers to this one, which needs `force`.
@@ -374,7 +375,7 @@ Not verified:
 
 - A real provider. Publishing comes from a fake adapter.
 - A real change of Worker's binary under a run. The D14 tests change the adapter on a running test process. The stack's rebuild had no run in flight.
-- How long Restate keeps retrying a step that keeps failing. The SDK's documentation says indefinitely. No test waits that long.
+- A run failing for longer than Restate's default limit of about 63 minutes. The test lowers that default instead of waiting.
 - Losing Restate's volume. #32 tests this.
 - The tests' setup through a real `psql` on the host, which this machine does not have. They ran with a script that runs `psql` 18.6 in the test server's container.
 
