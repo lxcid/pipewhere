@@ -130,21 +130,27 @@ impl Worker {
         port: u16,
         adapter: Arc<A>,
     ) -> Self {
+        let options = (*db.connect_options()).clone();
+        Self::serving(port, move || {
+            let db = PgPoolOptions::new().connect_lazy_with(options);
+            Endpoint::builder()
+                .bind(Publication { db, adapter })
+                .build()
+        })
+        .await
+    }
+
+    async fn serving(port: u16, endpoint: impl FnOnce() -> Endpoint + Send + 'static) -> Self {
         let listener = bind(port).await;
         let port = listener.local_addr().unwrap().port();
-        let options = (*db.connect_options()).clone();
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
             .enable_all()
             .build()
             .unwrap();
         runtime.spawn(async move {
-            let db = PgPoolOptions::new().connect_lazy_with(options);
-            let endpoint = Endpoint::builder()
-                .bind(Publication { db, adapter })
-                .build();
             let listener = tokio::net::TcpListener::from_std(listener).unwrap();
-            HttpServer::new(endpoint).serve(listener).await;
+            HttpServer::new(endpoint()).serve(listener).await;
         });
         Self {
             runtime: Some(runtime),
@@ -484,6 +490,14 @@ async fn a_tick_fails_until_restate_can_take_the_run() {
     let restate = Restate::start().await;
     let db = org.instance.api_db.clone();
 
+    let closed = PgPoolOptions::new().connect_lazy_with((*db.connect_options()).clone());
+    closed.close().await;
+    Poller::new(closed, restate.ingress_url.clone())
+        .unwrap()
+        .tick()
+        .await
+        .unwrap_err();
+
     // With nothing due, a tick sends nothing, so even a closed port is fine.
     let unreachable = Poller::new(db.clone(), "http://127.0.0.1:9".to_owned()).unwrap();
     unreachable.tick().await.unwrap();
@@ -510,7 +524,11 @@ async fn a_tick_fails_until_restate_can_take_the_run() {
 async fn a_tick_takes_the_oldest_due_work_first() {
     let org = Organization::start().await;
     let db = org.instance.api_db.clone();
-    let poller = Poller::new(db, "http://127.0.0.1:9".to_owned()).unwrap();
+    let poller = Poller::new(db.clone(), "http://127.0.0.1:9".to_owned()).unwrap();
+
+    org.insert_publication(&new_id("publication"), "scheduled", "1 hour")
+        .await;
+    assert!(poller.due().await.unwrap().is_empty());
 
     // Newest first, so the order the rows were written in cannot pass for the
     // order of their times.
@@ -521,8 +539,6 @@ async fn a_tick_takes_the_oldest_due_work_first() {
             .await;
         oldest_first.insert(0, id);
     }
-    org.insert_publication(&new_id("publication"), "scheduled", "1 hour")
-        .await;
     for state in [
         "preparing",
         "publishing",
@@ -537,6 +553,41 @@ async fn a_tick_takes_the_oldest_due_work_first() {
 
     assert_eq!(poller.due().await.unwrap(), oldest_first[..100]);
 
+    // An index scan returns this order without being asked, so only a query
+    // without the index shows that the query asks for it.
+    sqlx::query("DROP INDEX pipewhere.publication_due")
+        .execute(&db)
+        .await
+        .unwrap();
+    assert_eq!(poller.due().await.unwrap(), oldest_first[..100]);
+
+    org.instance.close().await;
+}
+
+/// 00001 D14: Restate keeps a deployment's handlers when its URI registers again
+/// without `force`. An installation upgrading to the first handler is this case.
+#[tokio::test]
+async fn registering_again_picks_up_a_new_handler() {
+    let org = Organization::start().await;
+    let restate = Restate::start().await;
+    let db = org.instance.api_db.clone();
+    let empty = Worker::serving(0, || Endpoint::builder().build()).await;
+    register(&restate.admin_url, &empty.url()).await.unwrap();
+    let port = empty.port;
+    drop(empty);
+
+    let worker = Worker::start(&db, port, Arc::new(NoAdapter)).await;
+    register(&restate.admin_url, &worker.url()).await.unwrap();
+    let id = org.create_publication(json!({})).await;
+    Poller::new(db, restate.ingress_url.clone())
+        .unwrap()
+        .send_run(&id)
+        .await
+        .unwrap();
+    org.wait_for_state(&id, "failed").await;
+
+    drop(worker);
+    drop(restate);
     org.instance.close().await;
 }
 
