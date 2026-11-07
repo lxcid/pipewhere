@@ -1572,10 +1572,13 @@ dependencies = [
 name = "pipewhere-worker"
 version = "0.0.0"
 dependencies = [
+ "axum",
+ "pipewhere-api",
  "reqwest",
  "restate-sdk",
  "rustls",
  "serde_json",
+ "sqlx",
  "tokio",
  "tracing",
  "tracing-subscriber",
