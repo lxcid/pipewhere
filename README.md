@@ -24,13 +24,13 @@ You need Docker with Compose v2.
 
    Compose publishes Web, Auth, and API on `127.0.0.1` only. If another server listens on port 3000, 3001, or 3002 on `::1`, such as a Node dev server, Compose does not report it, and `localhost` may reach that server instead. Stop it first.
 
-Compose starts PostgreSQL, RustFS, and Restate, then Auth, API, Worker, and Web. Before Auth and API start, three one-off steps run in order and exit:
+Compose starts PostgreSQL, RustFS, and Restate, then Auth, Worker, API, and Web. Before them, three one-off steps run in order and exit:
 
 - `postgres-setup` creates the `auth` and `pipewhere` schemas and the two database roles.
 - `auth-migrate` applies Auth's migrations and grants API's role the columns it may read.
 - `api-migrate` applies API's migrations.
 
-Once Restate and Worker are healthy, a fourth step, `worker-register`, registers Worker's handlers with Restate, so Restate picks up changed handlers. It runs on every `docker compose up` that names no services. `docker compose up` does not report it failing; `docker compose logs worker-register` shows its result.
+Once Restate and Worker are healthy, a fourth step, `worker-register`, registers Worker's handlers with Restate, so Restate picks up changed handlers. API starts only after it succeeds, so a failed registration stops `docker compose up`, and `docker compose logs worker-register` shows why.
 
 To rebuild Worker alone, name the registration step too. Compose starts a named service's dependencies, not the services that depend on it, so `docker compose up -d --build worker` alone leaves Restate with Worker's old handlers:
 
@@ -38,7 +38,12 @@ To rebuild Worker alone, name the registration step too. Compose starts a named 
 docker compose up -d --build worker worker-register
 ```
 
-Web listens on port 3000, Auth on port 3001, and API on port 3002, all on `127.0.0.1`. Worker hosts no handlers yet.
+Web listens on port 3000, Auth on port 3001, and API on port 3002, all on `127.0.0.1`.
+
+Worker runs each publication when its time comes:
+
+- Every 5 seconds it looks in PostgreSQL for `scheduled` publications whose planned time has passed, and sends up to 100 of them to Restate, oldest first. A failed tick is logged, and the next one tries again.
+- No provider can publish yet. A publication that reaches its time becomes `failed`, with the reason `Pipewhere cannot publish to Mastodon yet.`
 
 API serves its OpenAPI schema at `http://localhost:3002/openapi.json`.
 
@@ -55,11 +60,18 @@ A token expires after 15 minutes. Exchange the key again for a new one.
 
 Stop the stack with `docker compose down`. Your data stays in Docker volumes; `docker compose down --volumes` deletes it.
 
+## Change Worker
+
+An invocation in flight resumes on the new code when Worker's registration is forced, which every start of the stack does. This is safe only while a run's journal keeps its shape, so:
+
+- You may change what a step does. Restate replays the steps it has recorded, and the next step runs on the new code.
+- You may not add another kind of journal entry, such as a sleep or a call, rename the `step` entry, or change its return type. Doing so needs Restate's versioned deployments, or a drain that waits for runs in flight to end, per [00003 D6](docs/pipelines/00003-scheduling-recovery/spec.md).
+
 ## Develop
 
 Install dependencies with `pnpm install`. Node and pnpm versions are pinned in `.prototools`, and Rust's in `rust-toolchain.toml`.
 
-Auth's and API's tests run against a disposable PostgreSQL server and need `psql` on your path. API's tests also start Auth with Node, so run `pnpm install` first:
+Auth's, API's, and Worker's tests run against a disposable PostgreSQL server and need `psql` on your path. API's and Worker's tests also start Auth with Node, so run `pnpm install` first. Worker's tests start Restate's image with Docker, one container per test:
 
 ```sh
 pnpm --filter @pipewhere/auth test:db   # starts the server on port 5433
@@ -67,6 +79,7 @@ pnpm --filter @pipewhere/auth test
 pnpm --filter @pipewhere/auth typecheck
 pnpm --filter @pipewhere/web typecheck
 cargo test -p pipewhere-api
+cargo test -p pipewhere-worker
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 

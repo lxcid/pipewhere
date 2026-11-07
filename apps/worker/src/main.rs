@@ -1,8 +1,13 @@
 use std::io::IsTerminal;
 use std::process::ExitCode;
+use std::sync::Arc;
 
+use pipewhere_api::runs::NoAdapter;
+use pipewhere_worker::poller::Poller;
+use pipewhere_worker::publication::Publication;
+use pipewhere_worker::{Error, register};
 use restate_sdk::prelude::*;
-use serde_json::{Value, json};
+use sqlx::postgres::PgPoolOptions;
 use tokio::net::TcpListener;
 use tokio::signal::unix::{SignalKind, signal};
 use tracing_subscriber::EnvFilter;
@@ -21,7 +26,7 @@ async fn main() -> ExitCode {
 
     let result = match std::env::args().nth(1).as_deref() {
         None | Some("serve") => serve().await,
-        Some("register") => register().await,
+        Some("register") => register_worker().await,
         Some("health") => health().await,
         Some(other) => {
             Err(format!("unknown command {other:?}; expected serve, register, or health").into())
@@ -36,13 +41,22 @@ async fn main() -> ExitCode {
     }
 }
 
-type Error = Box<dyn std::error::Error>;
-
 async fn serve() -> Result<(), Error> {
+    let db = PgPoolOptions::new()
+        .connect(&required("DATABASE_URL")?)
+        .await?;
+    let poller = Poller::new(db.clone(), required("RESTATE_INGRESS_URL")?)?;
     let listener = TcpListener::bind(("0.0.0.0", port()?)).await?;
-    HttpServer::new(Endpoint::builder().build())
-        .serve_with_cancel(listener, shutdown())
-        .await;
+    let endpoint = Endpoint::builder()
+        .bind(Publication {
+            db,
+            adapter: Arc::new(NoAdapter),
+        })
+        .build();
+    tokio::select! {
+        () = HttpServer::new(endpoint).serve_with_cancel(listener, shutdown()) => {}
+        () = poller.run() => {}
+    }
     Ok(())
 }
 
@@ -63,30 +77,8 @@ async fn health() -> Result<(), Error> {
     Ok(())
 }
 
-// Restate keeps a deployment's handlers when its URI is registered again, even
-// after they changed, unless the registration forces it. Forcing replaces them
-// under the same deployment, so an invocation in flight resumes on the new code.
-async fn register() -> Result<(), Error> {
-    let admin_url = required("RESTATE_ADMIN_URL")?;
-    let worker_url = required("WORKER_URL")?;
-    let response = reqwest::Client::new()
-        .post(format!("{admin_url}/deployments"))
-        .json(&json!({ "uri": worker_url, "force": true }))
-        .send()
-        .await
-        .map_err(|error| format!("Restate's admin API at {admin_url} is unreachable: {error}"))?;
-    let status = response.status();
-    let body = response.text().await?;
-    if !status.is_success() {
-        return Err(format!("Restate refused to register {worker_url}: {status} {body}").into());
-    }
-    let deployment: Value = serde_json::from_str(&body)?;
-    tracing::info!(
-        id = %deployment["id"].as_str().unwrap_or_default(),
-        services = %deployment["services"].as_array().map_or(0, Vec::len),
-        "registered {worker_url} with Restate"
-    );
-    Ok(())
+async fn register_worker() -> Result<(), Error> {
+    register(&required("RESTATE_ADMIN_URL")?, &required("WORKER_URL")?).await
 }
 
 // Docker stops a container with SIGTERM, which a process running as PID 1

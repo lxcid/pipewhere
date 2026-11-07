@@ -116,6 +116,9 @@ services:
         condition: service_completed_successfully
       auth:
         condition: service_started
+      # A failed registration then stops API and reports the failure.
+      worker-register:
+        condition: service_completed_successfully
     environment: *api-env
     ports:
       - 127.0.0.1:3002:3002
@@ -125,6 +128,13 @@ services:
       context: .
       dockerfile: apps/worker/Dockerfile
     restart: unless-stopped
+    depends_on:
+      # Worker's poller reads API's tables as soon as it starts.
+      api-migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://pipewhere_api:${API_DB_PASSWORD}@postgres:5432/pipewhere
+      RESTATE_INGRESS_URL: http://restate:8080
     healthcheck:
       test: ["CMD", "worker", "health"]
       interval: 2s
