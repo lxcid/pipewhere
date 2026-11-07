@@ -327,6 +327,14 @@ Not verified:
 - The deadline being rechecked between the commit claim's update and its commit. That window is one round trip, and the claim then counts as started.
 - Why Auth sometimes misses the harness's 10-second `/health` wait. Review runs saw this four times: once in `tests/publications.rs`, twice in `tests/publication_attempts.rs`, and once in `tests/publication_runs.rs`. One, lasting 10.85 seconds, saved no message, so it is only probably the same failure. The others show it during setup, before the test's own code runs. Two full reruns with fewer test threads passed. Load was not measured, the harness is unchanged from `main`, and the cause is still not known. A repeat run can therefore fail for a reason other than the code.
 
+## #30 — how it is being built
+
+- `apps/worker` gains a library holding the `Publication` object, the poller, and registration. `main.rs` keeps the commands.
+- `Publication` is generic over `Adapter`. Production binds `NoAdapter`, and tests bind a fake.
+- The poller runs inside `worker serve`, beside the Restate endpoint, so it stops with the process.
+- The tests start the Restate image `compose.yaml` pins, with Docker, one per test. They reuse API's test harness through `#[path]`, so they create and read publications through the real API.
+- The D14 test runs a Worker on its own Tokio runtime and shuts that runtime down to stop it mid-step, because `serve_with_cancel` waits for open connections. It then starts a Worker with a different adapter on the same port, and force-registers it.
+
 ## Not yet built
 
-#30–#33. #33 is blocked on 00004, per D12.
+#30–#33. #30 is in progress. #33 is blocked on 00004, per D12.
