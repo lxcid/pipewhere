@@ -23,7 +23,7 @@ pub enum Provider {
 pub enum ChannelStatus {
     /// Pipewhere holds access to the account and can publish to it.
     Active,
-    /// Pipewhere holds no access to the account. Connect the account again.
+    /// Pipewhere holds no access to the account.
     Disconnected,
 }
 

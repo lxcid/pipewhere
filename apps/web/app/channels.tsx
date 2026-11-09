@@ -14,7 +14,7 @@ interface Channel {
 
 const STATUS: Record<Channel["status"], string> = {
   active: "Can publish",
-  disconnected: "Not connected. Connect the account again.",
+  disconnected: "Not connected",
 };
 
 /** Where the organization is kept while the browser is at the instance. */

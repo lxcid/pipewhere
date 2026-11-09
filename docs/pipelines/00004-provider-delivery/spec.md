@@ -37,6 +37,8 @@ Binding: 00008, and later pipelines that add a provider adapter or show a channe
 | `active` | Pipewhere holds access to the account and can publish to it. |
 | `disconnected` | Pipewhere holds no access to the account. Channels stored before 00004 start here, because they hold no credentials. |
 
+A channel stored before 00004 cannot be reconnected. No account is recorded for it, so connecting its account creates a new channel, and the old one keeps its publications. This is tolerated: before 00004 no endpoint created channels, so such rows exist only where someone inserted them by hand.
+
 #43 adds a status for revoked access, and #44 one for an unavailable account. Each new value widens `ChannelStatus`, with [publication contract D8](../00002-publication-contract/spec.md)'s cost for a client that validates the enum strictly. A value arrives with the code that sets it.
 
 The status changes only on evidence that the channel itself is broken, per [scheduling and recovery D4](../00003-scheduling-recovery/spec.md). A timeout or a server error is not such evidence.
