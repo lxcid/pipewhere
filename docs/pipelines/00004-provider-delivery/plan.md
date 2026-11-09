@@ -77,6 +77,7 @@ At `ff5dc6a`:
   - The database held one `active` channel with the account's id. Its token was sealed to 71 bytes: the nonce, the token, and the tag.
   - The instance's row held the client registered for Web's redirect address. No authorization was left.
   - API logged no warning.
+- At `dfa60be`, which fixes recovery from a lost key: `cargo test -p pipewhere-api` passes 108 tests. The new `reconnecting_after_the_key_is_lost_registers_again` seals the stored client secret and token under another key, as a lost key leaves them. Reconnecting then registers again, keeps the channel's id, and stores a token the running key opens. Before the fix, it answered 500. Clippy, fmt, and the Web typecheck are clean.
 
 ### Not verified
 
