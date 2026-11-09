@@ -4,12 +4,16 @@
 
 #![allow(dead_code)]
 
+pub mod mastodon;
+
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
+use pipewhere_api::credentials::Credentials;
+use pipewhere_api::mastodon::Mastodon;
 use pipewhere_api::tokens::TokenVerifier;
 use pipewhere_api::{AppState, migrate, router};
 use reqwest::{Client, Method, RequestBuilder, Response, StatusCode, Url};
@@ -22,6 +26,8 @@ pub const WEB_URL: &str = "http://localhost:3000";
 const AUTH_PASSWORD: &str = "auth-test";
 const API_PASSWORD: &str = "api-test";
 const SECRET: &str = "0123456789abcdef0123456789abcdef0123456789abcdef";
+pub const CREDENTIALS_KEY: &str =
+    "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
 
 static DATABASES: AtomicUsize = AtomicUsize::new(0);
 
@@ -136,6 +142,9 @@ impl Instance {
         let app = router(AppState {
             db: api_db.clone(),
             tokens: Arc::new(tokens),
+            credentials: Arc::new(Credentials::from_hex(CREDENTIALS_KEY).unwrap()),
+            mastodon: Arc::new(Mastodon::http()),
+            web_url: Url::parse(WEB_URL).unwrap(),
         });
         tokio::spawn(async move { axum::serve(listener, app).await });
 

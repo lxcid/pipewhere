@@ -1,23 +1,31 @@
 use std::sync::Arc;
 
 use axum::extract::State;
+use axum::http::header::{AUTHORIZATION, CONTENT_TYPE};
+use axum::http::{HeaderName, HeaderValue, Method};
 use axum::routing::get;
 use axum::{Json, Router};
+use reqwest::Url;
 use serde::Serialize;
 use sqlx::PgPool;
+use tower_http::cors::CorsLayer;
 use utoipa::{OpenApi, ToSchema};
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 
 use crate::access::{Actor, OrgCaller};
+use crate::credentials::Credentials;
 use crate::error::{ApiError, ErrorBody};
+use crate::mastodon::Mastodon;
 use crate::tokens::TokenVerifier;
 
 pub mod access;
 pub mod channels;
 pub mod contents;
+pub mod credentials;
 pub mod error;
 pub mod ids;
+pub mod mastodon;
 pub mod publications;
 pub mod runs;
 pub mod settings;
@@ -27,15 +35,36 @@ pub mod tokens;
 pub struct AppState {
     pub db: PgPool,
     pub tokens: Arc<TokenVerifier>,
+    pub credentials: Arc<Credentials>,
+    pub mastodon: Arc<Mastodon>,
+    /// Where a browser reaches Web.
+    pub web_url: Url,
 }
 
 pub fn router(state: AppState) -> Router {
     let (router, openapi) = api().split_for_parts();
+    let cors = cors(&state.web_url);
     router
         .route("/openapi.json", get(async move || Json(openapi)))
         .fallback(async || ApiError::NotFound)
         .method_not_allowed_fallback(async || ApiError::MethodNotAllowed)
         .with_state(state)
+        .layer(cors)
+}
+
+// Web's pages call API from the browser, with a bearer token and no cookie,
+// per 00004 D6.
+fn cors(web_url: &Url) -> CorsLayer {
+    let origin = HeaderValue::from_str(&web_url.origin().ascii_serialization())
+        .expect("an origin is a valid header value");
+    CorsLayer::new()
+        .allow_origin(origin)
+        .allow_methods([Method::GET, Method::POST, Method::PATCH])
+        .allow_headers([
+            AUTHORIZATION,
+            CONTENT_TYPE,
+            HeaderName::from_static("idempotency-key"),
+        ])
 }
 
 pub async fn migrate(db: &PgPool) -> Result<(), sqlx::migrate::MigrateError> {
@@ -51,6 +80,8 @@ fn api() -> OpenApiRouter<AppState> {
         .routes(routes!(organization))
         .routes(routes!(channels::list_channels))
         .routes(routes!(channels::get_channel))
+        .routes(routes!(mastodon::authorize))
+        .routes(routes!(mastodon::connect))
         .routes(routes!(contents::create_content))
         .routes(routes!(contents::get_content, contents::update_content))
         .routes(routes!(
@@ -154,6 +185,8 @@ mod tests {
                 "/health",
                 "/v1/orgs/{organization_id}",
                 "/v1/orgs/{organization_id}/channels",
+                "/v1/orgs/{organization_id}/channels/mastodon",
+                "/v1/orgs/{organization_id}/channels/mastodon/authorizations",
                 "/v1/orgs/{organization_id}/channels/{channel_id}",
                 "/v1/orgs/{organization_id}/contents",
                 "/v1/orgs/{organization_id}/contents/{content_id}",
@@ -200,9 +233,16 @@ mod tests {
                 "channel_not_found",
                 "content_not_found",
                 "state_conflict",
+                "authorization_not_found",
+                "authorization_refused",
+                "instance_unavailable",
                 "auth_unavailable",
                 "internal",
             ])
+        );
+        assert_eq!(
+            schemas["ChannelStatus"]["enum"],
+            serde_json::json!(["active", "disconnected"])
         );
         assert_eq!(
             schemas["PublicationState"]["enum"],

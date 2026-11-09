@@ -1,6 +1,7 @@
 use axum::Json;
 use axum::extract::{Path, State};
 use serde::Serialize;
+use sqlx::PgExecutor;
 use utoipa::ToSchema;
 
 use crate::AppState;
@@ -15,12 +16,42 @@ pub enum Provider {
     Threads,
 }
 
+/// Whether a channel can publish, and if not, why, per 00004 D2.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, ToSchema, sqlx::Type)]
+#[serde(rename_all = "snake_case")]
+#[sqlx(type_name = "text", rename_all = "snake_case")]
+pub enum ChannelStatus {
+    /// Pipewhere holds access to the account and can publish to it.
+    Active,
+    /// Pipewhere holds no access to the account.
+    Disconnected,
+}
+
 /// One organization's link to one external account.
 #[derive(Serialize, ToSchema, sqlx::FromRow)]
 pub struct Channel {
     id: String,
     organization_id: String,
     provider: Provider,
+    /// The account's name at its provider, such as `@name@mastodon.social`.
+    /// Null for a channel that was never connected.
+    handle: Option<String>,
+    status: ChannelStatus,
+}
+
+pub(crate) async fn read_channel(
+    db: impl PgExecutor<'_>,
+    organization_id: &str,
+    channel_id: &str,
+) -> Result<Option<Channel>, sqlx::Error> {
+    sqlx::query_as(
+        "SELECT id, organization_id, provider, handle, status FROM pipewhere.channel
+         WHERE id = $1 AND organization_id = $2",
+    )
+    .bind(channel_id)
+    .bind(organization_id)
+    .fetch_optional(db)
+    .await
 }
 
 #[derive(Serialize, ToSchema)]
@@ -46,7 +77,8 @@ pub async fn list_channels(
     caller: OrgCaller,
 ) -> Result<Json<Channels>, ApiError> {
     let channels = sqlx::query_as(
-        "SELECT id, organization_id, provider FROM pipewhere.channel WHERE organization_id = $1 ORDER BY id",
+        "SELECT id, organization_id, provider, handle, status FROM pipewhere.channel
+         WHERE organization_id = $1 ORDER BY id",
     )
     .bind(&caller.organization_id)
     .fetch_all(&state.db)
@@ -72,13 +104,8 @@ pub async fn get_channel(
     caller: OrgCaller,
     Path((_, channel_id)): Path<(String, String)>,
 ) -> Result<Json<Channel>, ApiError> {
-    sqlx::query_as(
-        "SELECT id, organization_id, provider FROM pipewhere.channel WHERE id = $1 AND organization_id = $2",
-    )
-    .bind(&channel_id)
-    .bind(&caller.organization_id)
-    .fetch_optional(&state.db)
-    .await?
-    .map(Json)
-    .ok_or(ApiError::NotFound)
+    read_channel(&state.db, &caller.organization_id, &channel_id)
+        .await?
+        .map(Json)
+        .ok_or(ApiError::NotFound)
 }
