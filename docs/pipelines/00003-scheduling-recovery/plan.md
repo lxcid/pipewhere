@@ -379,6 +379,16 @@ Not verified:
 - Losing Restate's volume. #32 tests this.
 - The tests' setup through a real `psql` on the host, which this machine does not have. They ran with a script that runs `psql` 18.6 in the test server's container.
 
+## #31 — scheduler visibility
+
+Implementation in progress on `feat/31-scheduler-health`, for approved D10.
+
+- Add the singleton completed-tick row in API's migrations.
+- Record a tick only after its query and every send succeed, including an empty tick.
+- Expose the last completion and the 60-second stall status through the existing organization authorization and generated OpenAPI.
+- Verify initial, healthy and stale reads; member/key access and refusals; successful, failed and empty poller ticks; database row constraints.
+- Run API and Worker behavior tests, Clippy, formatting and independent Claude/Codex review before handoff. Results are pending.
+
 ## Not yet built
 
 #31–#33. #33 is blocked on 00004, per D12.
