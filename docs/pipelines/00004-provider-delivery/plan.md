@@ -72,9 +72,13 @@ At `ff5dc6a`:
   - A preflight from Web's origin answers 200, naming that origin, the three methods, and the three headers.
   - Web serves `/`, the organization's page, and `/connect/mastodon` with 200. `/openapi.json` lists both new paths.
   - `CREDENTIALS_KEY=not-hex` stops API at start, with the message saying how to generate the key.
+- On 2026-11-10, the operator connected their own account on their Mastodon 4.5.20 instance. They used a second throwaway Compose stack on other ports, built from the same code. In Chrome, they started from the Channels card, approved Pipewhere at the instance, and came back through `http://localhost:13000/connect/mastodon`. Then:
+  - The organization's page listed the channel with its handle, as able to publish.
+  - The database held one `active` channel with the account's id. Its token was sealed to 71 bytes: the nonce, the token, and the tag.
+  - The instance's row held the client registered for Web's redirect address. No authorization was left.
+  - API logged no warning.
 
 ### Not verified
 
-- Connecting a real account on a real instance. It needs the operator to sign in and approve at the instance.
-- The Web pages in a browser. Only their HTTP status was checked, and the TypeScript compiles.
+- The connect page's error messages in a browser: a refused approval, an expired authorization, and a redirect that reaches another tab. Only a successful connection was seen.
 - The migration over existing channel rows. It ran only on new databases. Existing rows take the column's default, `disconnected`.
