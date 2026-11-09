@@ -381,14 +381,24 @@ Not verified:
 
 ## #31 — scheduler visibility
 
-Implementation in progress on `feat/31-scheduler-health`, for approved D10.
+Draft PR [#40](https://github.com/lxcid/pipewhere/pull/40), for approved D10. The pipeline remains in progress.
 
-- Add the singleton completed-tick row in API's migrations.
-- Record a tick only after its query and every send succeed, including an empty tick.
-- Expose the last completion and the 60-second stall status through the existing organization authorization and generated OpenAPI.
-- Verify initial, healthy and stale reads; member/key access and refusals; successful, failed and empty poller ticks; database row constraints.
-- Run API and Worker behavior tests, Clippy, formatting and independent Claude/Codex review before handoff. Results are pending.
+- API's migration adds `pipewhere.scheduler_tick`, initially empty. A boolean primary key and check permit only one row, and its completion time cannot be null.
+- `scheduler::record_tick` in API's library records PostgreSQL's clock after the poller's query and every send succeed. An empty tick counts. A failed or partially sent tick leaves the last completion unchanged. A failure to record the tick fails the tick.
+- `GET /v1/orgs/{organization_id}/scheduler` uses the existing membership/key authorization. It returns `last_completed_at` and `stalled`. Before the first completion it returns null and true. At 60 seconds without a completion it reports stalled. The clock and the comparison both come from PostgreSQL.
+- The status is installation-wide, as D10 requires. A healthy tick does not establish that Restate can execute accepted work; the overdue publication list remains necessary.
+- The generated OpenAPI includes the endpoint, response and bearer authentication. No handler journal, publication state or provider call changes.
+
+Verification on the isolated `feat/31-scheduler-health` checkout, Rust 1.95.0 and Node 26.10.0:
+
+- The generated-route test and the first real API behavior test failed before implementation; the latter returned 404.
+- API's existing integration suite and four new scheduler tests pass against real Auth and a dedicated PostgreSQL 18.6 container. They cover no tick, recent and stale ticks, timestamp serialization, member and key reads, wrong-organization and anonymous refusals, removed membership and the table constraints.
+- All 10 Worker integration tests pass through Restate 1.7.13. The tick tests cover empty and successful batches, query/send failures and a batch whose second send fails.
+- Auth's 20 tests pass. Test accounts and secrets are dummy fixtures. A test-only wrapper runs `psql` in the dedicated container because the host has no `psql`.
+- Lint, build, format and independent Claude/Codex review results are recorded in the draft PR as they complete. This repository has no hosted CI.
+
+Not verified: a whole-stack Compose restart with the new migration, a deployed installation, or any provider. This slice adds a read-only API status, not the founder feedback/approval/slot UI or a publishing adapter.
 
 ## Not yet built
 
-#31–#33. #33 is blocked on 00004, per D12.
+#32–#33. #33 is blocked on 00004, per D12.

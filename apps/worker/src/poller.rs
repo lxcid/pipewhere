@@ -45,6 +45,7 @@ impl Poller {
         for publication_id in self.due().await? {
             self.send_run(&publication_id).await?;
         }
+        pipewhere_api::scheduler::record_tick(&self.db).await?;
         Ok(())
     }
 

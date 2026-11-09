@@ -505,21 +505,42 @@ async fn a_tick_fails_until_restate_can_take_the_run() {
         .await
         .unwrap_err();
 
+    let tick_at = async || {
+        sqlx::query_scalar::<_, String>(
+            "SELECT last_completed_at::text FROM pipewhere.scheduler_tick",
+        )
+        .fetch_optional(&db)
+        .await
+        .unwrap()
+    };
+    assert_eq!(tick_at().await, None);
+
     // With nothing due, a tick sends nothing, so even a closed port is fine.
     let unreachable = Poller::new(db.clone(), "http://127.0.0.1:9".to_owned()).unwrap();
     unreachable.tick().await.unwrap();
+    let completed = tick_at()
+        .await
+        .expect("an empty successful tick is recorded");
 
     let due = org.create_publication(json!({})).await;
     unreachable.tick().await.unwrap_err();
+    assert_eq!(tick_at().await.as_ref(), Some(&completed));
 
     // Restate answers 404 until Worker has registered.
     let poller = Poller::new(db.clone(), restate.ingress_url.clone()).unwrap();
     poller.tick().await.unwrap_err();
+    assert_eq!(tick_at().await.as_ref(), Some(&completed));
     assert_eq!(org.read(&due).await["state"], "scheduled");
 
     let worker = Worker::start(&db, 0, Arc::new(NoAdapter)).await;
     register(&restate.admin_url, &worker.url()).await.unwrap();
     poller.tick().await.unwrap();
+    assert_ne!(tick_at().await.as_ref(), Some(&completed));
+    let rows: i64 = sqlx::query_scalar("SELECT count(*) FROM pipewhere.scheduler_tick")
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert_eq!(rows, 1);
     org.wait_for_state(&due, "failed").await;
 
     drop(worker);
@@ -713,5 +734,50 @@ async fn a_run_held_before_its_commit_continues_on_the_new_code() {
 
     drop(new);
     drop(restate);
+    org.instance.close().await;
+}
+
+#[tokio::test]
+async fn a_partial_tick_does_not_report_completion() {
+    let org = Organization::start().await;
+    let db = org.instance.api_db.clone();
+    org.create_publication(json!({})).await;
+    org.create_publication(json!({})).await;
+    pipewhere_api::scheduler::record_tick(&db).await.unwrap();
+    let recorded = sqlx::query_scalar::<_, String>(
+        "SELECT last_completed_at::text FROM pipewhere.scheduler_tick",
+    )
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    let sends = Arc::new(AtomicUsize::new(0));
+    let requests = sends.clone();
+    let app = axum::Router::new().route(
+        "/Publication/{id}/run/send",
+        axum::routing::post(move || {
+            let requests = requests.clone();
+            async move {
+                if requests.fetch_add(1, Ordering::SeqCst) == 0 {
+                    axum::http::StatusCode::ACCEPTED
+                } else {
+                    axum::http::StatusCode::SERVICE_UNAVAILABLE
+                }
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let poller = Poller::new(db.clone(), format!("http://{address}")).unwrap();
+    poller.tick().await.unwrap_err();
+    assert_eq!(sends.load(Ordering::SeqCst), 2);
+    let after = sqlx::query_scalar::<_, String>(
+        "SELECT last_completed_at::text FROM pipewhere.scheduler_tick",
+    )
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(after, recorded);
+    server.abort();
     org.instance.close().await;
 }
