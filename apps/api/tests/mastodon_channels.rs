@@ -244,6 +244,35 @@ async fn an_instance_registers_again_when_webs_address_changes() {
 }
 
 #[tokio::test]
+async fn reconnecting_after_the_key_is_lost_registers_again() {
+    let instance = Instance::start().await;
+    let fake = FakeMastodon::start().await;
+    let org = organization(&instance, "owner@example.com", "personal").await;
+    let channel = ok_json(connect(&instance, &org, &fake, &STAN).await).await;
+    let channel_id = channel["id"].as_str().unwrap();
+
+    // What a lost CREDENTIALS_KEY leaves: secrets the running key cannot open.
+    let lost = Credentials::from_hex(&"ab".repeat(32)).unwrap();
+    sqlx::query("UPDATE pipewhere.mastodon_instance SET client_secret = $1")
+        .bind(lost.seal(&fake.host, "secret-0"))
+        .execute(&instance.admin)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE pipewhere.mastodon_channel SET access_token = $1")
+        .bind(lost.seal(channel_id, &fake.token_for(1)))
+        .execute(&instance.admin)
+        .await
+        .unwrap();
+
+    let response = connect(&instance, &org, &fake, &STAN).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(ok_json(response).await["id"], channel_id);
+    assert_eq!(fake.registrations().len(), 2);
+    assert_eq!(stored_token(&instance, channel_id).await, fake.token_for(2));
+    instance.close().await;
+}
+
+#[tokio::test]
 async fn an_authorization_works_once_in_its_own_organization_within_an_hour() {
     let instance = Instance::start().await;
     let fake = FakeMastodon::start().await;

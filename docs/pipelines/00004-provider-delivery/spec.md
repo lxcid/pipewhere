@@ -61,7 +61,7 @@ Proposed: awaiting operator approval.
 
 **Registration.** API registers Pipewhere with an instance through `POST /api/v1/apps`, the first time any organization connects to it. `pipewhere.mastodon_instance` holds the client, keyed by the instance's host.
 
-- The client is registered for one redirect address, Web's `/connect/mastodon`. If `WEB_URL` changes, the next connection registers again and replaces the row. Tokens issued to the old client keep working, because publishing needs only the token.
+- The client is registered for one redirect address, Web's `/connect/mastodon`. If `WEB_URL` changes, the next connection registers again and replaces the row. Tokens issued to the old client keep working, because publishing needs only the token. A connection also registers again when the stored client secret no longer opens, per D5.
 - If two first connections to an instance race, both register. The first client stored wins, and both send the operator to it. The other client stays registered at the instance, unused.
 - The scopes are `read:accounts write:statuses write:media`. Media does not use `write:media` until [intent 00005](../00005-media-capabilities/intent.md). A scope added later would send every connected account through approval again.
 
@@ -117,7 +117,12 @@ The intent requires that "Provider secrets must not be stored in plain text." Th
 - **The library** is ring 0.17.14, which rustls already compiles. No other cryptography crate is added.
 - **Random nonces** are safe for about 2^32 seals under one key. A secret is sealed once per connection.
 
-The key is not rotated. A changed key makes every stored secret unreadable. API then answers 500, and logs which secret did not open and that the key it was sealed under must be restored. The README asks operators to back up the key with the database. Rotation waits for a deployment that needs it.
+The key is not rotated. A changed key makes every stored secret unreadable. The README asks operators to back up the key with the database. Rotation waits for a deployment that needs it. An operator who loses the key recovers by connecting every channel again:
+
+- Starting a connection registers Pipewhere with the instance again when the stored client secret does not open. Only the first of two such connections replaces it, so both send the operator to the same client.
+- Finishing it seals the channel's new token under the current key.
+
+Until then, API answers 500 wherever it needs a secret that does not open. It logs which secret it was, and that the old key must be restored or the account connected again.
 
 A later pipeline is in violation if it stores a provider secret in another form.
 

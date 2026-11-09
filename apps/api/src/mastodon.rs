@@ -302,24 +302,31 @@ async fn registered_client(
     host: &str,
     redirect_uri: &str,
 ) -> Result<String, ApiError> {
-    let stored: Option<String> = sqlx::query_scalar(
-        "SELECT client_id FROM pipewhere.mastodon_instance WHERE host = $1 AND redirect_uri = $2",
+    let stored: Option<(String, Vec<u8>)> = sqlx::query_as(
+        "SELECT client_id, client_secret FROM pipewhere.mastodon_instance
+         WHERE host = $1 AND redirect_uri = $2",
     )
     .bind(host)
     .bind(redirect_uri)
     .fetch_optional(&state.db)
     .await?;
-    if let Some(client_id) = stored {
-        return Ok(client_id);
-    }
+    let unreadable = match stored {
+        Some((client_id, sealed)) if state.credentials.open(host, &sealed).is_ok() => {
+            return Ok(client_id);
+        }
+        Some((_, sealed)) => Some(sealed),
+        None => None,
+    };
     let app = state.mastodon.register(host, redirect_uri).await?;
     if !readable_text(&app.client_id) {
         return Err(ApiError::InstanceUnavailable(format!(
             "{host} registered Pipewhere without a client id"
         )));
     }
-    // A client for another redirect address is replaced. Web's address
-    // changed, and the instance would refuse to send the browser there.
+    // A client is replaced when Web's address changed, because the instance
+    // would refuse to send the browser there. It is also replaced when its
+    // secret no longer opens, because CREDENTIALS_KEY was changed. Matching
+    // that secret lets only the first of two such connections replace it.
     sqlx::query(
         "INSERT INTO pipewhere.mastodon_instance (host, redirect_uri, client_id, client_secret)
          VALUES ($1, $2, $3, $4)
@@ -327,12 +334,14 @@ async fn registered_client(
          SET redirect_uri = EXCLUDED.redirect_uri,
              client_id = EXCLUDED.client_id,
              client_secret = EXCLUDED.client_secret
-         WHERE mastodon_instance.redirect_uri <> EXCLUDED.redirect_uri",
+         WHERE mastodon_instance.redirect_uri <> EXCLUDED.redirect_uri
+            OR mastodon_instance.client_secret = $5",
     )
     .bind(host)
     .bind(redirect_uri)
     .bind(&app.client_id)
     .bind(state.credentials.seal(host, &app.client_secret))
+    .bind(unreadable)
     .execute(&state.db)
     .await?;
     Ok(

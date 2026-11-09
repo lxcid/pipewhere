@@ -103,7 +103,7 @@ impl IntoResponse for ApiError {
             }
             Self::Unreadable(what) => {
                 tracing::error!(
-                    "{what} does not open under CREDENTIALS_KEY. Was the key changed? Restore the key it was sealed under."
+                    "{what} does not open under CREDENTIALS_KEY. Was the key changed? Restore the key it was sealed under, or connect the account again."
                 );
                 (StatusCode::INTERNAL_SERVER_ERROR, ErrorCode::Internal)
             }

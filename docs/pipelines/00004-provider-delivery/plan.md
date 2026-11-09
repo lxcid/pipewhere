@@ -39,7 +39,7 @@ Built in PR #45. D1 to D6.
 
 - **Migration.** `pipewhere.channel` gains `handle` and `status`. Existing channels become `disconnected`, per D2. Three tables belong to Mastodon's adapter: `mastodon_instance`, `mastodon_authorization`, and `mastodon_channel`, per D4.
 - **API.** `POST .../channels/mastodon/authorizations` registers Pipewhere with the instance when needed, and answers where to send the operator. `POST .../channels/mastodon` finishes the connection, answering 201 for a new channel and 200 for a reconnected one. Channel responses show `handle` and `status`.
-- **Credentials.** `src/credentials.rs` seals tokens and client secrets under `CREDENTIALS_KEY`, per D5. API refuses to start without the key, or with one that is not 64 hex characters.
+- **Credentials.** `src/credentials.rs` seals tokens and client secrets under `CREDENTIALS_KEY`, per D5. API refuses to start without the key, or with one that is not 64 hex characters. When a stored client secret no longer opens, starting a connection registers Pipewhere with the instance again, so an operator who loses the key can connect every channel again.
 - **CORS.** API answers Web's origin, per D6.
 - **Web.** A Channels card on the organization's page lists the channels and starts a connection. `/connect/mastodon` receives the instance's redirect and hands the code to API.
 - **Configuration.** API takes `WEB_URL` and `CREDENTIALS_KEY`, and Web takes `API_URL`. The README generates the key.
