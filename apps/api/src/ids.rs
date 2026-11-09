@@ -5,6 +5,7 @@ use uuid::Uuid;
 pub const PREFIXES: &[(&str, &str)] = &[
     ("channel", "chn"),
     ("content", "cnt"),
+    ("mastodon_authorization", "mauth"),
     ("publication", "pub"),
     ("publication_attempt", "pubat"),
 ];

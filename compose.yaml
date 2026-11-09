@@ -103,6 +103,8 @@ services:
       DATABASE_URL: postgres://pipewhere_api:${API_DB_PASSWORD}@postgres:5432/pipewhere
       AUTH_URL: ${AUTH_URL:?set AUTH_URL in .env}
       AUTH_JWKS_URL: http://auth:3001/api/auth/jwks
+      WEB_URL: ${WEB_URL:?set WEB_URL in .env}
+      CREDENTIALS_KEY: ${CREDENTIALS_KEY:?set CREDENTIALS_KEY in .env}
     command: ["api", "migrate"]
     restart: "no"
 
@@ -165,6 +167,7 @@ services:
       - auth
     environment:
       AUTH_URL: ${AUTH_URL:?set AUTH_URL in .env}
+      API_URL: ${API_URL:?set API_URL in .env}
     ports:
       - 127.0.0.1:3000:3000
 

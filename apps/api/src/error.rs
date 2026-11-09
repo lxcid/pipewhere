@@ -24,6 +24,9 @@ pub enum ErrorCode {
     ChannelNotFound,
     ContentNotFound,
     StateConflict,
+    AuthorizationNotFound,
+    AuthorizationRefused,
+    InstanceUnavailable,
     AuthUnavailable,
     Internal,
 }
@@ -46,7 +49,15 @@ pub enum ApiError {
     ContentNotFound,
     /// The publication's state does not allow the action, per 00002 D3.
     StateConflict,
+    /// No connection under way in the organization has this id, per 00004 D4.
+    AuthorizationNotFound,
+    /// The instance refused the authorization code, or the account it names.
+    AuthorizationRefused,
+    /// The instance could not be reached, or did not answer as Mastodon does.
+    InstanceUnavailable(String),
     AuthUnavailable(String),
+    /// A stored secret does not open under `CREDENTIALS_KEY`, per 00004 D5.
+    Unreadable(String),
     Database(sqlx::Error),
 }
 
@@ -74,9 +85,27 @@ impl IntoResponse for ApiError {
             Self::ChannelNotFound => (StatusCode::UNPROCESSABLE_ENTITY, ErrorCode::ChannelNotFound),
             Self::ContentNotFound => (StatusCode::UNPROCESSABLE_ENTITY, ErrorCode::ContentNotFound),
             Self::StateConflict => (StatusCode::CONFLICT, ErrorCode::StateConflict),
+            Self::AuthorizationNotFound => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                ErrorCode::AuthorizationNotFound,
+            ),
+            Self::AuthorizationRefused => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                ErrorCode::AuthorizationRefused,
+            ),
+            Self::InstanceUnavailable(reason) => {
+                tracing::warn!(%reason, "a Mastodon instance did not answer as expected");
+                (StatusCode::BAD_GATEWAY, ErrorCode::InstanceUnavailable)
+            }
             Self::AuthUnavailable(reason) => {
                 tracing::error!(%reason, "fetching Auth's signing keys failed");
                 (StatusCode::SERVICE_UNAVAILABLE, ErrorCode::AuthUnavailable)
+            }
+            Self::Unreadable(what) => {
+                tracing::error!(
+                    "{what} does not open under CREDENTIALS_KEY. Was the key changed? Restore the key it was sealed under."
+                );
+                (StatusCode::INTERNAL_SERVER_ERROR, ErrorCode::Internal)
             }
             Self::Database(error) => {
                 tracing::error!(%error, "database query failed");

@@ -4,6 +4,7 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 
 import { useAuth } from "../../auth-client";
+import { Channels } from "../../channels";
 import { Claims, ErrorText, Shell, useAction } from "../../ui";
 
 interface Organization {
@@ -93,6 +94,7 @@ export default function OrganizationPage() {
           </tbody>
         </table>
       </section>
+      <Channels organizationId={organization.id} />
       <ApiKeys organizationId={organization.id} />
     </Shell>
   );

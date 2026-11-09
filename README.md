@@ -11,8 +11,11 @@ You need Docker with Compose v2.
    for name in POSTGRES_PASSWORD AUTH_DB_PASSWORD API_DB_PASSWORD BETTER_AUTH_SECRET RUSTFS_ACCESS_KEY RUSTFS_SECRET_KEY; do
      sed -i.bak "s|^$name=\$|$name=$(openssl rand -hex 24)|" .env
    done
+   sed -i.bak "s|^CREDENTIALS_KEY=\$|CREDENTIALS_KEY=$(openssl rand -hex 32)|" .env
    rm .env.bak
    ```
+
+   `CREDENTIALS_KEY` encrypts the access API stores for each channel. Back it up with your database. If it is lost or changed, API cannot read what it stored, and every channel must be connected again.
 
 2. Start everything:
 
@@ -23,6 +26,8 @@ You need Docker with Compose v2.
 3. Open <http://localhost:3000>, create an account, and create an organization.
 
    Compose publishes Web, Auth, and API on `127.0.0.1` only. If another server listens on port 3000, 3001, or 3002 on `::1`, such as a Node dev server, Compose does not report it, and `localhost` may reach that server instead. Stop it first.
+
+4. On the organization's page, connect a Mastodon account: enter its instance's address, such as `mastodon.social`, and approve Pipewhere at the instance. Pipewhere registers itself with the instance, so there is no app to create first.
 
 Compose starts PostgreSQL, RustFS, and Restate, then Auth, Worker, API, and Web. Before them, three one-off steps run in order and exit:
 
