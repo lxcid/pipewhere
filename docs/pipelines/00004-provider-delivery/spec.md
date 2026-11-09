@@ -23,8 +23,6 @@ What would overturn this: an instance in scope whose tokens expire, often enough
 
 ### D2 — A channel's handle and status are shared by every provider
 
-Proposed: awaiting operator approval.
-
 Binding: 00008, and later pipelines that add a provider adapter or show a channel.
 
 `pipewhere.channel` holds two fields for every provider:
@@ -58,8 +56,6 @@ The rejected alternative was Mastodon's out-of-band code. The instance shows a c
 Because of this choice, Web's pages call API from the browser for the first time, per D6. [Intent 00009](../00009-web-publishing/intent.md)'s outcome to connect and reconnect channels builds on this page.
 
 ### D4 — A connection registers once per instance, and binds its redirect to the organization that started it
-
-Proposed: awaiting operator approval.
 
 **Registration.** API registers Pipewhere with an instance through `POST /api/v1/apps`, the first time any organization connects to it. `pipewhere.mastodon_instance` holds the client, keyed by the instance's host.
 
@@ -112,8 +108,6 @@ Tolerated:
 
 ### D5 — Provider secrets are sealed with AES-256-GCM under `CREDENTIALS_KEY`
 
-Proposed: awaiting operator approval.
-
 Binding: 00008, and later pipelines that store a provider secret.
 
 The intent requires that "Provider secrets must not be stored in plain text." This decision says how.
@@ -136,8 +130,6 @@ A later pipeline is in violation if it stores a provider secret in another form.
 What would overturn this: a need to rotate keys, or a hosted deployment that keeps its keys in a key management service.
 
 ### D6 — API allows Web's origin
-
-Proposed: awaiting operator approval.
 
 D3 makes Web's pages call API from the browser. API answers CORS requests from `WEB_URL`'s origin, for `GET`, `POST`, and `PATCH`, with the headers `authorization`, `content-type`, and `idempotency-key`.
 
