@@ -25,6 +25,9 @@ pub enum ChannelStatus {
     Active,
     /// Pipewhere holds no access to the account.
     Disconnected,
+    /// The provider no longer accepts Pipewhere's access to the account.
+    /// Connect the account again.
+    AccessRevoked,
 }
 
 /// One organization's link to one external account.

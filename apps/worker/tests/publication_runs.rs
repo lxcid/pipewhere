@@ -12,7 +12,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
+use pipewhere_api::credentials::Credentials;
 use pipewhere_api::ids::new_id;
+use pipewhere_api::mastodon::{Mastodon, MastodonAdapter, PUBLISH_LIMIT};
 use pipewhere_api::runs::{Adapter, Commit, CommitResult, NoAdapter};
 use pipewhere_worker::poller::Poller;
 use pipewhere_worker::publication::Publication;
@@ -23,7 +25,8 @@ use restate_sdk::http_server::HttpServer;
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use sqlx::postgres::PgPoolOptions;
-use support::{Instance, ok_json};
+use support::mastodon::{FakeMastodon, STAN, link};
+use support::{CREDENTIALS_KEY, Instance, ok_json};
 use tokio::runtime::Runtime;
 
 const MISSED_ITS_TIME: &str =
@@ -241,6 +244,17 @@ impl Adapter for FakeAdapter {
     }
 }
 
+/// The adapter Worker runs. Its pool connects lazily, from the Worker's own
+/// runtime, so a crash drops its connections too.
+fn mastodon_adapter(db: &PgPool) -> Arc<MastodonAdapter> {
+    Arc::new(MastodonAdapter {
+        db: PgPoolOptions::new().connect_lazy_with((*db.connect_options()).clone()),
+        credentials: Arc::new(Credentials::from_hex(CREDENTIALS_KEY).unwrap()),
+        mastodon: Mastodon::http(),
+        limit: PUBLISH_LIMIT,
+    })
+}
+
 /// One organization on a real API, with one Mastodon channel.
 struct Organization {
     instance: Instance,
@@ -271,6 +285,12 @@ impl Organization {
             token,
             channel_id,
         }
+    }
+
+    /// Points the organization's next publications at a channel linked to an
+    /// account on `fake`.
+    async fn link_mastodon(&mut self, fake: &FakeMastodon) {
+        (self.channel_id, _) = link(&self.instance.api_db, &self.id, fake, &STAN).await;
     }
 
     /// `planned` adds fields to the request, which otherwise publishes now.
@@ -710,6 +730,79 @@ async fn a_run_held_before_its_commit_continues_on_the_new_code() {
     assert_eq!(unused.calls(), 0);
     assert_eq!(publishing.calls(), 1);
     assert_eq!(org.attempts(&id).await.len(), 1);
+
+    drop(new);
+    drop(restate);
+    org.instance.close().await;
+}
+
+#[tokio::test]
+async fn a_mastodon_publication_posts_once_and_records_the_post() {
+    let mut org = Organization::start().await;
+    let fake = FakeMastodon::start().await;
+    org.link_mastodon(&fake).await;
+    let restate = Restate::start().await;
+    let db = org.instance.api_db.clone();
+    let worker = Worker::start(&db, 0, mastodon_adapter(&db)).await;
+    register(&restate.admin_url, &worker.url()).await.unwrap();
+    let poller = Poller::new(db, restate.ingress_url.clone()).unwrap();
+
+    let id = org.create_publication(json!({})).await;
+    poller.send_run(&id).await.unwrap();
+    org.wait_for_state(&id, "published").await;
+    restate.wait_until_idle().await;
+
+    let publication = org.read(&id).await;
+    assert_eq!(publication["remote_id"], "11000");
+    assert_eq!(
+        publication["remote_url"],
+        format!("http://{}/@stan/11000", fake.host)
+    );
+    let statuses = fake.statuses();
+    assert_eq!(statuses.len(), 1);
+    assert_eq!(statuses[0].text, "Copy");
+    assert_eq!(statuses[0].idempotency_key.as_deref(), Some(id.as_str()));
+    let attempts = org.attempts(&id).await;
+    assert_eq!(attempts.len(), 1);
+    assert_eq!(attempts[0]["result"], "published");
+
+    drop(worker);
+    drop(restate);
+    org.instance.close().await;
+}
+
+/// 00002 D4's commit guard: Worker crashes after the instance accepts a post,
+/// before the result is durable. The run that resumes finds its own claim, so
+/// it records `outcome_unknown` and never posts again.
+#[tokio::test]
+async fn a_crash_after_the_instance_accepts_a_post_never_posts_again() {
+    let mut org = Organization::start().await;
+    let fake = FakeMastodon::start().await;
+    org.link_mastodon(&fake).await;
+    fake.post_then_hold();
+    let restate = Restate::start().await;
+    let db = org.instance.api_db.clone();
+    let old = Worker::start(&db, 0, mastodon_adapter(&db)).await;
+    register(&restate.admin_url, &old.url()).await.unwrap();
+    let poller = Poller::new(db.clone(), restate.ingress_url.clone()).unwrap();
+
+    let id = org.create_publication(json!({})).await;
+    poller.send_run(&id).await.unwrap();
+    wait_until("the instance posts", async || fake.statuses().len() == 1).await;
+    assert_eq!(org.read(&id).await["state"], "publishing");
+
+    let port = old.port;
+    drop(old);
+    fake.post();
+    let new = Worker::start(&db, port, mastodon_adapter(&db)).await;
+    register(&restate.admin_url, &new.url()).await.unwrap();
+
+    org.wait_for_state(&id, "outcome_unknown").await;
+    restate.wait_until_idle().await;
+    assert_eq!(fake.status_requests(), 1);
+    let attempts = org.attempts(&id).await;
+    assert_eq!(attempts.len(), 1);
+    assert_eq!(attempts[0]["result"], "outcome_unknown");
 
     drop(new);
     drop(restate);

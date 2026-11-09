@@ -1,4 +1,5 @@
-//! Connecting a Mastodon account, per 00004 D3 and D4.
+//! Connecting a Mastodon account, per 00004 D3 and D4. Publishing to it is in
+//! [`publish`].
 
 use std::time::Duration;
 
@@ -14,6 +15,10 @@ use crate::access::OrgCaller;
 use crate::channels::{Channel, read_channel};
 use crate::error::{ApiError, ErrorBody, JsonBody};
 use crate::ids::new_id;
+
+mod publish;
+
+pub use publish::{MastodonAdapter, PUBLISH_LIMIT};
 
 // `write:media` is not used yet. Media will need it, and a scope added later
 // takes every connected account through approval again.
@@ -41,6 +46,10 @@ impl Mastodon {
             // An operator waits on every call made while connecting.
             http: reqwest::Client::builder()
                 .timeout(Duration::from_secs(10))
+                // Following a redirect sends a post again, or drops the token
+                // when it leads to another host, whose 401 would revoke a
+                // working channel.
+                .redirect(reqwest::redirect::Policy::none())
                 .build()
                 .expect("the client builds"),
             scheme,

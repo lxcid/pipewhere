@@ -15,7 +15,7 @@ You need Docker with Compose v2.
    rm .env.bak
    ```
 
-   `CREDENTIALS_KEY` encrypts the access API stores for each channel. Back it up with your database. If it is lost or changed, API cannot read what it stored, and every channel must be connected again.
+   `CREDENTIALS_KEY` encrypts the access Pipewhere stores for each channel. API and Worker both read it. Back it up with your database. If it is lost or changed, Pipewhere cannot read what it stored. Publications to every channel fail until each one is connected again.
 
    An `.env` made before Mastodon channels existed lacks `CREDENTIALS_KEY` and `API_URL`, and Compose refuses to start without them. Add each one only if it is missing, so a key already in use is never replaced:
 
@@ -55,7 +55,8 @@ Web listens on port 3000, Auth on port 3001, and API on port 3002, all on `127.0
 Worker runs each publication when its time comes:
 
 - Every 5 seconds it looks in PostgreSQL for `scheduled` publications whose planned time has passed, and sends up to 100 of them to Restate, oldest first. A failed tick is logged, and the next one tries again.
-- No provider can publish yet. A publication that reaches its time becomes `failed`, with the reason `Pipewhere cannot publish to Mastodon yet.`
+- It posts to a connected Mastodon account. A Threads channel cannot publish yet, so its publication becomes `failed`, with the reason `Pipewhere cannot publish to Threads yet.`
+- If the instance no longer accepts Pipewhere's access, the publication fails and the channel shows its access as revoked. Connect the account again, then retry.
 
 API serves its OpenAPI schema at `http://localhost:3002/openapi.json`.
 
