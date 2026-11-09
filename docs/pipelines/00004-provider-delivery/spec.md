@@ -76,6 +76,7 @@ Proposed: awaiting operator approval.
 **Finishing.** API exchanges the code at `POST /oauth/token`, then reads the account through `GET /api/v1/accounts/verify_credentials`.
 
 - **Reconnecting.** A channel is its organization's link to one account, identified by the instance and the account's id, per the intent's constraints. If the organization already links the account, the channel keeps its id, so its publications and attempts stay with it. It gets the new token and handle, and its status becomes `active`. API answers 200.
+  - An account that already approved Pipewhere, and has not revoked it, sees no approval page when it reconnects. The instance sends the browser straight back with a new code. Mastodon v4.5.20's `OAuth::AuthorizationsController#render_success` skips the page whenever the account holds a token for the client with the same scopes, unless the request sets `force_login`. The operator saw this on their instance on 2026-11-10.
 - **A new channel.** If the organization does not link the account, API creates a channel and answers 201.
 - **Organizations stay apart.** Several organizations can link one account. The lookup reads only the request's organization's channels, per [publication contract D7](../00002-publication-contract/spec.md).
 
