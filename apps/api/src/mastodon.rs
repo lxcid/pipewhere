@@ -292,7 +292,7 @@ pub async fn authorize(
 }
 
 /// Registers Pipewhere with the instance unless it already holds a client
-/// for this redirect address.
+/// for this redirect address whose secret opens.
 ///
 /// Two first connections to one instance can both register. The first to
 /// store its client wins, and both send the operator to it. The other client
@@ -314,7 +314,12 @@ async fn registered_client(
         Some((client_id, sealed)) if state.credentials.open(host, &sealed).is_ok() => {
             return Ok(client_id);
         }
-        Some((_, sealed)) => Some(sealed),
+        Some((_, sealed)) => {
+            tracing::warn!(
+                "The client secret for {host} does not open under CREDENTIALS_KEY, so API registers with {host} again. If the key was changed by mistake, restore it before connecting more channels."
+            );
+            Some(sealed)
+        }
         None => None,
     };
     let app = state.mastodon.register(host, redirect_uri).await?;
