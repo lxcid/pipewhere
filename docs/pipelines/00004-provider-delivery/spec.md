@@ -103,6 +103,11 @@ Tolerated:
   - Impact: the organization has two channels for one account.
   - Recoverability: nothing in the API removes a channel yet.
   - Cost: a unique constraint needs the organization on `mastodon_channel`. That copy could disagree with the channel's, unless a composite foreign key keeps them equal, as [publication contract D19](../00002-publication-contract/spec.md) found for attempts.
+- **An instance that forgets Pipewhere's client refuses every connection to it.** An admin may delete the app, or restore a database from before the registration. Mastodon v4.5.20 deletes no app by itself: its scheduled vacuums remove expired and revoked tokens and grants, but no application.
+  - Likelihood: it needs an unusual act by the instance's admin.
+  - Impact: no organization can connect or reconnect through that instance. The instance shows its own error instead of the approval page, or the token step answers `authorization_refused`.
+  - Recoverability: only by SQL. Setting the instance row's `redirect_uri` to any other value makes the next connection register again. Deleting the row is blocked by its channels.
+  - Cost: registering again on a 401 `invalid_client` would be small, but it adds behavior for a case no operator has met.
 - **API sends requests to any host a member names, including a private address.** A self-hosting operator can only reach their own network this way. A hosted deployment must refuse private and loopback addresses before strangers can create organizations.
 
 ### D5 — Provider secrets are sealed with AES-256-GCM under `CREDENTIALS_KEY`
