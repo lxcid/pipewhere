@@ -17,11 +17,11 @@ You need Docker with Compose v2.
 
    `CREDENTIALS_KEY` encrypts the access API stores for each channel. Back it up with your database. If it is lost or changed, API cannot read what it stored, and every channel must be connected again.
 
-   An `.env` made before Mastodon channels existed lacks `CREDENTIALS_KEY` and `API_URL`, and Compose refuses to start without them. Add them:
+   An `.env` made before Mastodon channels existed lacks `CREDENTIALS_KEY` and `API_URL`, and Compose refuses to start without them. Add each one only if it is missing, so a key already in use is never replaced:
 
    ```sh
-   echo "CREDENTIALS_KEY=$(openssl rand -hex 32)" >> .env
-   echo "API_URL=http://localhost:3002" >> .env
+   grep -q '^CREDENTIALS_KEY=.' .env || echo "CREDENTIALS_KEY=$(openssl rand -hex 32)" >> .env
+   grep -q '^API_URL=.' .env || echo "API_URL=http://localhost:3002" >> .env
    ```
 
 2. Start everything:
