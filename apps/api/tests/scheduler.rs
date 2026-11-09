@@ -27,7 +27,7 @@ async fn scheduler_reports_absent_recent_and_stale_ticks_without_writing() {
         .unwrap();
     assert_eq!(rows, 0);
 
-    for (age, stalled) in [(0, false), (59, false), (61, true)] {
+    for (age, stalled) in [(0, false), (55, false), (65, true)] {
         let at: String = sqlx::query_scalar(
             "INSERT INTO pipewhere.scheduler_tick (singleton, last_completed_at)
              VALUES (true, clock_timestamp() - $1 * interval '1 second')

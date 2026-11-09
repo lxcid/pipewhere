@@ -44,8 +44,8 @@ Worker runs each publication when its time comes:
 
 - Every 5 seconds it looks in PostgreSQL for `scheduled` publications whose planned time has passed, and sends up to 100 of them to Restate, oldest first. A failed tick is logged, and the next one tries again.
 - No provider can publish yet. A publication that reaches its time becomes `failed`, with the reason `Pipewhere cannot publish to Mastodon yet.`
-- `GET /v1/orgs/{organization_id}/scheduler` shows `last_completed_at` (null until the first successful tick) and `stalled`. A tick counts only when its query and every send succeed, including when no work is due. No completion for 60 seconds means stalled. This is the installation's scheduler status, available to any member or key of the named organization. It does not prove that Restate can execute accepted work; use the overdue publication list as well.
 
+`GET /v1/orgs/{organization_id}/scheduler` shows `last_completed_at` (null until the first successful tick) and `stalled`. A tick counts only when its query and every send succeed, including when no work is due. No completion for 60 seconds means stalled. This is the installation's scheduler status, available to any member or key of the named organization. It does not prove that Restate can execute accepted work; use the overdue publication list as well.
 
 API serves its OpenAPI schema at `http://localhost:3002/openapi.json`.
 

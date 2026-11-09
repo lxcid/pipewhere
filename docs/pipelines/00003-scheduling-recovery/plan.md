@@ -392,10 +392,10 @@ Draft PR [#40](https://github.com/lxcid/pipewhere/pull/40), for approved D10. Th
 Verification on the isolated `feat/31-scheduler-health` checkout, Rust 1.95.0 and Node 26.10.0:
 
 - The generated-route test and the first real API behavior test failed before implementation; the latter returned 404.
-- API's existing integration suite and four new scheduler tests pass against real Auth and a dedicated PostgreSQL 18.6 container. They cover no tick, recent and stale ticks, timestamp serialization, member and key reads, wrong-organization and anonymous refusals, removed membership and the table constraints.
-- All 10 Worker integration tests pass through Restate 1.7.13. The tick tests cover empty and successful batches, query/send failures and a batch whose second send fails.
-- Auth's 20 tests pass. Test accounts and secrets are dummy fixtures. A test-only wrapper runs `psql` in the dedicated container because the host has no `psql`.
-- Lint, build, format and independent Claude/Codex review results are recorded in the draft PR as they complete. This repository has no hosted CI.
+- `cargo test -p pipewhere-api --locked -- --test-threads=1`: the existing integration suite and four new scheduler tests pass against real Auth and a dedicated PostgreSQL 18.6 container. `cargo test -p pipewhere-api --lib --locked` also passes all 8 unit tests, including the generated schema checks. They cover no tick, recent and stale ticks, timestamp serialization, member and key reads, wrong-organization and anonymous refusals, removed membership and the table constraints.
+- `cargo test -p pipewhere-worker --locked -- --test-threads=1`: all 10 Worker integration tests pass through Restate 1.7.13. The tick tests cover empty and successful batches, query/send failures and a batch whose second send fails.
+- `pnpm --filter @pipewhere/auth test` (the package script was invoked directly as `node --test --test-concurrency=1 'test/**/*.test.ts'` from `apps/auth`): all 20 tests pass. Test accounts and secrets are dummy fixtures. A test-only wrapper runs `psql` in the dedicated container because the host has no `psql`.
+- `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo build --workspace --locked`, `cargo fmt --all --check` and `git diff --check` pass. This repository has no hosted CI. Independent Claude/Codex review receipts and their reconciliation are in the draft PR.
 
 Not verified: a whole-stack Compose restart with the new migration, a deployed installation, or any provider. This slice adds a read-only API status, not the founder feedback/approval/slot UI or a publishing adapter.
 

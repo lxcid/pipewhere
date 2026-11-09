@@ -20,7 +20,7 @@ pub struct Scheduler {
     stalled: bool,
 }
 
-/// Called after the poller's query and every send succeed, including no sends.
+/// Records the installation's tick completion using PostgreSQL's current clock.
 pub async fn record_tick(db: &PgPool) -> Result<(), sqlx::Error> {
     sqlx::query(
         "INSERT INTO pipewhere.scheduler_tick (singleton, last_completed_at)
