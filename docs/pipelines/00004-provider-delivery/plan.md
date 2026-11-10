@@ -116,10 +116,12 @@ At `91bc190`:
 - `pnpm --filter @pipewhere/auth test`: 20 pass.
 - `pnpm --filter @pipewhere/web typecheck`, clippy, and fmt are clean.
 - The Mastodon facts that D7 to D9 rest on were read in Mastodon v4.5.20's source: `PostStatusService`, `Api::V1::StatusesController`, `Api::ErrorHandling`, `RateLimitable`, and `RateLimiter`. reqwest 0.13.5's redirect handling was read in its source. Restate 1.7.13's timeouts come from `--dump-config` on its image.
+- On 2026-11-10, with the operator's go-ahead, the throwaway Compose stack from #42 was rebuilt at `2b558c1`. `api-migrate` applied the migration over the channel connected in #42, which stayed `active`. Then a publish-now publication went to the operator's account on their Mastodon 4.5.20 instance, through the API:
+  - The instance answered 401. Its `WWW-Authenticate` said `The access token was revoked`, and a read-only `verify_credentials` with the stored token answered the same. The token had been revoked at the instance after #42's connection. The publication failed in 130 ms with D9's reason, and the channel became `access_revoked`.
+  - The operator connected the account again. The channel kept its id and became `active`.
+  - A retry of the same publication was `published` in 156 ms, with the status's id and address. The instance's public API showed that status once, with the publication's text, as the account's newest. The publication holds two attempts: the refusal and the published one.
 
 ### Not verified
 
-- A post to a live instance. It needs the operator's go-ahead, because it posts.
-- Any answer from a real instance other than the fake's. In particular, the 404 for a deleted post, and the 401 for a revoked token, follow the source, not a live instance.
+- A real instance's answers other than 401 and a successful post. In particular, the 404 for a deleted post follows the source, through the fake.
 - The Channels card showing `access_revoked` in a browser. Only the typecheck ran.
-- The migration over existing rows. It only widens a check, so existing statuses stay valid.
