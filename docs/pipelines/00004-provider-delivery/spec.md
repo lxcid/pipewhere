@@ -33,10 +33,11 @@ Binding: 00008, and later pipelines that add a provider adapter or show a channe
 | `active` | Pipewhere holds access to the account and can publish to it. |
 | `disconnected` | Pipewhere holds no access to the account. Channels stored before 00004 start here, because they hold no credentials. |
 | `access_revoked` | The provider no longer accepts Pipewhere's access to the account. Connecting it again fixes this. Set per D9. |
+| `account_unavailable` | The provider reports the account unavailable, such as a disabled or unapproved login. A check that finds it available clears this. Set per D12. |
 
 A channel stored before 00004 cannot be reconnected. No account is recorded for it, so connecting its account creates a new channel, and the old one keeps its publications. This is tolerated: before 00004 no endpoint created channels, so such rows exist only where someone inserted them by hand.
 
-#44 adds a status for an unavailable account. Each new value widens `ChannelStatus`, with [publication contract D8](../00002-publication-contract/spec.md)'s cost for a client that validates the enum strictly. A value arrives with the code that sets it.
+Each new value widens `ChannelStatus`, with [publication contract D8](../00002-publication-contract/spec.md)'s cost for a client that validates the enum strictly. A value arrives with the code that sets it.
 
 The status changes only on evidence that the channel itself is broken, per [scheduling and recovery D4](../00003-scheduling-recovery/spec.md). A timeout or a server error is not such evidence.
 
@@ -215,7 +216,7 @@ Tolerated:
   - Impact: one failed publication, with the reason.
   - Recoverability: the operator retries it.
   - Cost: `CommitResult` would need a result that asks for a later run, and a run would need to schedule one.
-- **A 403 fails the publication, but does not change the channel's status.** This covers a disabled, suspended, or unapproved login. #44 adds the status for an unavailable account.
+- **A 403 fails the publication.** This covers a disabled, suspended, or unapproved login. D12 says how it changes the channel's status.
 
 What would overturn this: a Mastodon version or fork that saves a status and then answers 4xx, or brief failures common enough that operators retry by hand often.
 
@@ -254,3 +255,57 @@ This is what makes D8's row "No connection made" refused. reqwest 0.13.5 reports
 - The tests' plain-HTTP client uses 1 second, because a server on the same machine accepts a connection at once or not at all.
 
 What would overturn this: an instance in scope that often takes more than 5 seconds to connect.
+
+### D11 — Worker checks each Mastodon channel's access every 5 minutes
+
+Proposed: awaiting operator approval.
+
+This serves the intent's outcome that a channel's status says why it cannot publish, and [scheduling and recovery D3](../00003-scheduling-recovery/spec.md): a channel whose access was lost shows it before its publications fail.
+
+Every 5 minutes, Worker calls `GET /api/v1/accounts/verify_credentials` for each Mastodon channel that is `active` or `account_unavailable`. It also checks once when it starts. The check runs beside the poller, not in its tick, so a slow instance never delays due work.
+
+| Answer | Status |
+| --- | --- |
+| 2xx | `account_unavailable` becomes `active`. |
+| 401 | `access_revoked`, per D9. |
+| 403 with Mastodon's JSON error | `account_unavailable`, per D12. |
+| Anything else, or no answer | Unchanged, and Worker logs it. |
+
+The rest follows from 00003 D4: only evidence that the channel itself is broken changes its status.
+
+- A timeout, a 5xx, or a 429 says nothing about the account.
+- A 403 that is not Mastodon's JSON comes from a proxy in front of the instance, so it says nothing either.
+- A token that does not open under `CREDENTIALS_KEY` is Pipewhere's own problem, per D5. Worker logs it, and the channel's status stays.
+- A revoked token never works again, so a revoked channel is not checked. Only reconnecting clears `access_revoked`.
+
+**The interval.** 5 minutes keeps a status at most 5 minutes stale, in either direction. Once 00003's #33 reads the status at the claim, a stale `account_unavailable` fails publications that would have posted, so the interval bounds that too. Each check is one request per channel. Mastodon v4.5.20's `rack_attack.rb` allows 300 API requests per token, and 1,500 per account, in 5 minutes.
+
+**One at a time.** Worker checks the channels in turn. Each call has D10's connection limit and the client's 10 seconds, so a slow instance delays the next channel's check by at most 10 seconds.
+
+Tolerated:
+
+- **A check's 401 that arrives after a reconnect revokes the new access.** This is D9's case, and recovery is the same: connect the account again.
+- **Many channels on one instance, from one deployment.** Each token has its own limit, so this needs no change while one operator self-hosts. A hosted deployment would check more channels from one address, and may need to spread them out.
+
+What would overturn this: operators who need a revoked channel to show sooner, or instances that object to the checks.
+
+### D12 — An instance's 403 makes a channel's account unavailable
+
+Proposed: awaiting operator approval.
+
+Mastodon v4.5.20's `Api::BaseController` answers 403 with a JSON error before any action runs, for:
+
+- a suspended account: "Your login is currently disabled", from `require_not_suspended!`. `Account#unavailable?` is an alias of `suspended?`.
+- a disabled login, an account that has moved, or a memorial account: the same text, from `require_user!`, because `User#functional?` is false
+- a login that is unconfirmed or awaiting approval: "Your login is missing a confirmed e-mail address", or "Your login is currently pending approval", from `require_user!`
+
+`verify_credentials` and `POST /api/v1/statuses` both run `require_user!`.
+
+Each one shows that the account itself cannot publish. So both a check and a post that get such a 403 set the channel's status to `account_unavailable`. The post's publication fails with the instance's error as its reason, per D8.
+
+- `account_unavailable` replaces only `active`. A revoked channel stays revoked.
+- A check that finds the account available sets it back to `active`. So does reconnecting, per D4.
+- Doorkeeper also answers 403, "This action is outside the authorized scopes", for a token without the scope. That cannot happen to Pipewhere's tokens, because every connection grants `read:accounts` and `write:statuses`, per D4.
+
+What would overturn this: an instance that answers Mastodon's JSON 403 for a reason other than the account.
+

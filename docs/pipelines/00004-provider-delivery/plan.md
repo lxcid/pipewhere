@@ -14,7 +14,7 @@ The build runs as one PR per issue, as 00002's and 00003's did. Each issue carri
 
 1. **#42 Connect and reconnect a Mastodon account.** Instance registration, the authorization redirect through Web, the token exchange, encrypted credentials, and the channel's handle and status. API allows Web's origin. Answers the intent's question on token expiry.
 2. **#43 Publish to Mastodon.** The adapter, its `Idempotency-Key`, its time limit, how each answer maps to a result, and a revoked token setting the channel's status. Answers the intent's question on `Idempotency-Key`. Depends on #42.
-3. **#44 Check each Mastodon channel's access.** Depends on #42. It changes Worker's poller, so it follows #40.
+3. **#44 Check each Mastodon channel's access.** Depends on #42. It runs beside Worker's poller rather than in it, so it does not wait for #40.
 4. **00003's #33** then reads the channel's status at the claim and shows it on a waiting publication.
 
 ## Verification approach
@@ -128,3 +128,36 @@ At `6ad86de`:
 ### Not verified
 
 - A real instance's answers other than 401 and a successful post. In particular, the 404 for a deleted post follows the source, through the fake.
+
+## #44 — what was built
+
+Built in PR #47. D11 and D12.
+
+- **Checks.** `apps/api/src/mastodon/checks.rs` calls `verify_credentials` for each Mastodon channel that is `active` or `account_unavailable`, one at a time, every 5 minutes and once at start, per D11. Each answer sets the status per D11's table.
+- **Unavailable accounts.** A migration widens the status check again, and `ChannelStatus` gains `account_unavailable`, per D12. Web's Channels card says the instance reports the account unavailable.
+- **Publishing.** The adapter's 403 with Mastodon's JSON error now also makes the channel's account unavailable, per D12. Its 401 and the check's 401 revoke through the same code.
+- **Status changes.** Each one names the statuses it may replace, so nothing but reconnecting clears `access_revoked`.
+- **Worker** runs the checks beside the poller and the Restate endpoint, sharing the adapter's credentials.
+
+The checks run in their own loop rather than in the poller's tick, so a slow instance never delays due work. This also keeps #44 off the poller, which #40 changes.
+
+### Verified
+
+At `d587c12`:
+
+- `cargo test -p pipewhere-api`: 129 tests pass. 6 are new in `tests/mastodon_publishing.rs`, against the fake instance, whose `verify_credentials` now also answers what a test sets. They cover:
+  - a post refused with "Your login is currently disabled", which makes the account unavailable
+  - a check of a working channel, which changes nothing and posts nothing
+  - a check with a revoked token, which revokes the channel. A later check with a working token leaves it revoked.
+  - a check refused with "Your login is currently pending approval", which makes the account unavailable. A 500 leaves it so, and a check that succeeds makes it `active`.
+  - a proxy's HTML 403, a 500, a 502, a 429, and an unreachable instance, which change nothing
+  - a channel whose token does not open under the key, which is skipped while the next channel is still checked
+- The publishing tests' existing 403 case is now a proxy's HTML 403. It refuses the post and leaves the channel `active`.
+- `cargo test -p pipewhere-worker`: 11 pass. `pnpm --filter @pipewhere/auth test`: 20 pass.
+- `pnpm --filter @pipewhere/web typecheck`, clippy, and fmt are clean.
+- The Mastodon facts that D11 and D12 rest on were read in Mastodon v4.5.20's source: `Api::BaseController`, `Api::V1::Accounts::CredentialsController`, `Api::V1::StatusesController`, `Account`, `User`, and `config/initializers/rack_attack.rb`.
+
+### Not verified
+
+- A real instance's 403. Every answer D12 maps follows the source, through the fake.
+- Worker's check loop itself. The tests call `check_all` directly. Nothing tests that Worker starts the loop, or the 5-minute interval.
