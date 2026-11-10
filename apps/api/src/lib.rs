@@ -28,6 +28,7 @@ pub mod ids;
 pub mod mastodon;
 pub mod publications;
 pub mod runs;
+pub mod scheduler;
 pub mod settings;
 pub mod tokens;
 
@@ -97,6 +98,7 @@ fn api() -> OpenApiRouter<AppState> {
         .routes(routes!(publications::resolve_publication))
         .routes(routes!(publications::list_publication_attempts))
         .routes(routes!(settings::get_settings, settings::update_settings))
+        .routes(routes!(scheduler::get_scheduler))
 }
 
 #[derive(OpenApi)]
@@ -196,8 +198,27 @@ mod tests {
                 "/v1/orgs/{organization_id}/publications/{publication_id}/cancel",
                 "/v1/orgs/{organization_id}/publications/{publication_id}/resolve",
                 "/v1/orgs/{organization_id}/publications/{publication_id}/retry",
+                "/v1/orgs/{organization_id}/scheduler",
                 "/v1/orgs/{organization_id}/settings",
             ]
+        );
+    }
+
+    #[test]
+    fn the_schema_describes_scheduler_health() {
+        let schema = serde_json::to_value(api().into_openapi()).unwrap();
+        let endpoint = &schema["paths"]["/v1/orgs/{organization_id}/scheduler"]["get"];
+        assert!(endpoint["responses"]["200"].is_object());
+        assert!(endpoint["responses"]["401"].is_object());
+        assert!(endpoint["responses"]["404"].is_object());
+        assert_eq!(endpoint["security"][0], serde_json::json!({ "bearer": [] }));
+        let status = &schema["components"]["schemas"]["Scheduler"];
+        assert_eq!(status["properties"]["stalled"]["type"], "boolean");
+        assert!(
+            status["required"]
+                .as_array()
+                .unwrap()
+                .contains(&serde_json::json!("last_completed_at"))
         );
     }
 

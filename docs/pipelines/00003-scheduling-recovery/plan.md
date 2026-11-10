@@ -379,6 +379,26 @@ Not verified:
 - Losing Restate's volume. #32 tests this.
 - The tests' setup through a real `psql` on the host, which this machine does not have. They ran with a script that runs `psql` 18.6 in the test server's container.
 
+## #31 — scheduler visibility
+
+Draft PR [#40](https://github.com/lxcid/pipewhere/pull/40), for approved D10. The pipeline remains in progress.
+
+- API's migration adds `pipewhere.scheduler_tick`, initially empty. A boolean primary key and check permit only one row, and its completion time cannot be null.
+- `scheduler::record_tick` in API's library records PostgreSQL's clock after the poller's query and every send succeed. An empty tick counts. A failed or partially sent tick leaves the last completion unchanged. A failure to record the tick fails the tick.
+- `GET /v1/orgs/{organization_id}/scheduler` uses the existing membership/key authorization. It returns `last_completed_at` and `stalled`. Before the first completion it returns null and true. At 60 seconds without a completion it reports stalled. The clock and the comparison both come from PostgreSQL.
+- The status is installation-wide, as D10 requires. A healthy tick does not establish that Restate can execute accepted work; the overdue publication list remains necessary.
+- The generated OpenAPI includes the endpoint, response and bearer authentication. No handler journal, publication state or provider call changes.
+
+Verification on the isolated `feat/31-scheduler-health` checkout, Rust 1.95.0 and Node 26.10.0:
+
+- The generated-route test and the first real API behavior test failed before implementation; the latter returned 404.
+- `cargo test -p pipewhere-api --locked -- --test-threads=1`: the existing integration suite and four new scheduler tests pass against real Auth and a dedicated PostgreSQL 18.6 container. `cargo test -p pipewhere-api --lib --locked` also passes all 8 unit tests, including the generated schema checks. The scheduler integration tests cover no tick, recent and stale ticks, timestamp serialization, member and key reads, wrong-organization and anonymous refusals, removed membership and the table constraints.
+- `cargo test -p pipewhere-worker --locked -- --test-threads=1`: all 10 Worker integration tests pass through Restate 1.7.13. The tick tests cover empty and successful batches, query/send failures and a batch whose second send fails.
+- `node --test --test-concurrency=1 'test/**/*.test.ts'` from `apps/auth`: all 20 tests pass. Test accounts and secrets are dummy fixtures. A test-only wrapper runs `psql` in the dedicated container because the host has no `psql`.
+- `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo build --workspace --locked`, `cargo fmt --all --check` and `git diff --check` pass. This repository has no hosted CI. Independent Claude/Codex review receipts and their reconciliation are in the draft PR.
+
+Not verified: a whole-stack Compose restart with the new migration, a deployed installation, or any provider. This slice adds a read-only API status, not the founder feedback/approval/slot UI or a publishing adapter.
+
 ## Not yet built
 
-#31–#33. #33 is blocked on 00004, per D12.
+#32–#33. #33 is blocked on 00004, per D12.
