@@ -9,13 +9,14 @@ interface Channel {
   id: string;
   provider: "mastodon" | "threads";
   handle: string | null;
-  status: "active" | "disconnected" | "access_revoked";
+  status: "active" | "disconnected" | "access_revoked" | "account_unavailable";
 }
 
 const STATUS: Record<Channel["status"], string> = {
   active: "Can publish",
   disconnected: "Not connected",
   access_revoked: "Access revoked. Connect the account again.",
+  account_unavailable: "The instance reports the account unavailable. Check it there.",
 };
 
 /** Where the organization is kept while the browser is at the instance. */

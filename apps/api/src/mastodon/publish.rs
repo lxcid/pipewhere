@@ -1,4 +1,4 @@
-//! Publishing to Mastodon, per 00004 D7 to D9.
+//! Publishing to Mastodon, per 00004 D7 to D10 and D12.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -7,7 +7,8 @@ use reqwest::{StatusCode, Url};
 use serde::Deserialize;
 use sqlx::PgPool;
 
-use super::Mastodon;
+use super::checks::{make_unavailable, revoke};
+use super::{InstanceError, Mastodon, described};
 use crate::channels::Provider;
 use crate::credentials::Credentials;
 use crate::runs::{Adapter, Commit, CommitResult, NoAdapter};
@@ -38,11 +39,6 @@ struct Access {
 struct Status {
     id: String,
     url: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct Error {
-    error: String,
 }
 
 impl Adapter for MastodonAdapter {
@@ -124,7 +120,7 @@ impl Adapter for MastodonAdapter {
 
         let status = response.status();
         if status == StatusCode::UNAUTHORIZED {
-            self.revoke(&commit.channel_id).await;
+            revoke(&self.db, &commit.channel_id).await;
             return refused(format!(
                 "{host} no longer accepts Pipewhere's access to {handle}, so nothing was posted. Connect the account again, then retry."
             ));
@@ -156,11 +152,16 @@ impl Adapter for MastodonAdapter {
             Err(_) => Default::default(),
         };
         if !status.is_success() {
-            return refused(match serde_json::from_slice::<Error>(&body) {
-                Ok(Error { error }) => format!(
-                    "{host} refused the post with {status}: {}",
-                    shortened(&error)
-                ),
+            return refused(match serde_json::from_slice::<InstanceError>(&body) {
+                Ok(InstanceError { error }) => {
+                    if status == StatusCode::FORBIDDEN {
+                        make_unavailable(&self.db, &commit.channel_id).await;
+                    }
+                    format!(
+                        "{host} refused the post with {status}: {}",
+                        shortened(&error)
+                    )
+                }
                 Err(_) => format!("{host} refused the post with {status}."),
             });
         }
@@ -194,24 +195,6 @@ impl Adapter for MastodonAdapter {
     }
 }
 
-impl MastodonAdapter {
-    /// Shows that the channel cannot publish, per 00004 D9. Failing to record
-    /// it leaves the publication's reason as the only sign, so it is logged.
-    async fn revoke(&self, channel_id: &str) {
-        let revoked =
-            sqlx::query("UPDATE pipewhere.channel SET status = 'access_revoked' WHERE id = $1")
-                .bind(channel_id)
-                .execute(&self.db)
-                .await;
-        if let Err(error) = revoked {
-            tracing::error!(
-                channel_id,
-                "a revoked channel's status was not recorded: {error}"
-            );
-        }
-    }
-}
-
 fn refused(reason: impl Into<String>) -> CommitResult {
     CommitResult::Refused {
         reason: reason.into(),
@@ -222,19 +205,6 @@ fn ambiguous(reason: impl Into<String>) -> CommitResult {
     CommitResult::Ambiguous {
         reason: reason.into(),
     }
-}
-
-/// A failed request with its causes. reqwest's own text names the request,
-/// not why it failed, such as a refused connection or a bad certificate.
-fn described(error: &reqwest::Error) -> String {
-    let mut text = error.to_string();
-    let mut cause = std::error::Error::source(error);
-    while let Some(error) = cause {
-        text.push_str(": ");
-        text.push_str(&error.to_string());
-        cause = error.source();
-    }
-    text
 }
 
 /// An instance's error, as a reason can hold it. PostgreSQL text cannot hold

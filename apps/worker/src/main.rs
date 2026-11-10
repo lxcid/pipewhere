@@ -3,7 +3,7 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use pipewhere_api::credentials::Credentials;
-use pipewhere_api::mastodon::{Mastodon, MastodonAdapter, PUBLISH_LIMIT};
+use pipewhere_api::mastodon::{AccessChecks, Mastodon, MastodonAdapter, PUBLISH_LIMIT};
 use pipewhere_worker::poller::Poller;
 use pipewhere_worker::publication::Publication;
 use pipewhere_worker::{Error, register};
@@ -46,15 +46,20 @@ async fn serve() -> Result<(), Error> {
     let db = PgPoolOptions::new()
         .connect(&required("DATABASE_URL")?)
         .await?;
-    let credentials = Credentials::from_hex(&required("CREDENTIALS_KEY")?)?;
+    let credentials = Arc::new(Credentials::from_hex(&required("CREDENTIALS_KEY")?)?);
     let poller = Poller::new(db.clone(), required("RESTATE_INGRESS_URL")?)?;
+    let checks = AccessChecks {
+        db: db.clone(),
+        credentials: credentials.clone(),
+        mastodon: Mastodon::https(),
+    };
     let listener = TcpListener::bind(("0.0.0.0", port()?)).await?;
     let endpoint = Endpoint::builder()
         .bind(Publication {
             db: db.clone(),
             adapter: Arc::new(MastodonAdapter {
                 db,
-                credentials: Arc::new(credentials),
+                credentials,
                 mastodon: Mastodon::https(),
                 limit: PUBLISH_LIMIT,
             }),
@@ -63,6 +68,7 @@ async fn serve() -> Result<(), Error> {
     tokio::select! {
         () = HttpServer::new(endpoint).serve_with_cancel(listener, shutdown()) => {}
         () = poller.run() => {}
+        () = checks.run() => {}
     }
     Ok(())
 }

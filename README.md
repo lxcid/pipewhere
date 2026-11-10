@@ -57,6 +57,7 @@ Worker runs each publication when its time comes:
 - Every 5 seconds it looks in PostgreSQL for `scheduled` publications whose planned time has passed, and sends up to 100 of them to Restate, oldest first. A failed tick is logged, and the next one tries again.
 - It posts to a connected Mastodon account. A Threads channel cannot publish yet, so its publication becomes `failed`, with the reason `Pipewhere cannot publish to Threads yet.`
 - If the instance no longer accepts Pipewhere's access, the publication fails and the channel shows its access as revoked. Connect the account again, then retry.
+- Every 5 minutes it checks each connected Mastodon account with its instance. A channel whose access was revoked, or whose account the instance reports unavailable, shows that on its organization's page. An unavailable account clears when a later check finds it available.
 
 API serves its OpenAPI schema at `http://localhost:3002/openapi.json`.
 

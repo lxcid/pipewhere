@@ -242,7 +242,12 @@ mod tests {
         );
         assert_eq!(
             schemas["ChannelStatus"]["enum"],
-            serde_json::json!(["active", "disconnected", "access_revoked"])
+            serde_json::json!([
+                "active",
+                "disconnected",
+                "access_revoked",
+                "account_unavailable"
+            ])
         );
         assert_eq!(
             schemas["PublicationState"]["enum"],

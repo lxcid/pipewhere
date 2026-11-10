@@ -1,5 +1,5 @@
 //! Connecting a Mastodon account, per 00004 D3 and D4. Publishing to it is in
-//! [`publish`].
+//! [`publish`], and checking its access in [`checks`].
 
 use std::time::Duration;
 
@@ -16,8 +16,10 @@ use crate::channels::{Channel, read_channel};
 use crate::error::{ApiError, ErrorBody, JsonBody};
 use crate::ids::new_id;
 
+mod checks;
 mod publish;
 
+pub use checks::AccessChecks;
 pub use publish::{MastodonAdapter, PUBLISH_LIMIT};
 
 // `write:media` is not used yet. Media will need it, and a scope added later
@@ -167,6 +169,25 @@ async fn read<T: serde::de::DeserializeOwned>(
             "{url} answered {status} with a body Pipewhere cannot read: {error}"
         ))
     })
+}
+
+/// The JSON body `Api::ErrorHandling` and `Api::BaseController` answer with.
+#[derive(Deserialize)]
+struct InstanceError {
+    error: String,
+}
+
+/// A failed request with its causes. reqwest's own text names the request,
+/// not why it failed, such as a refused connection or a bad certificate.
+fn described(error: &reqwest::Error) -> String {
+    let mut text = error.to_string();
+    let mut cause = std::error::Error::source(error);
+    while let Some(error) = cause {
+        text.push_str(": ");
+        text.push_str(&error.to_string());
+        cause = error.source();
+    }
+    text
 }
 
 #[derive(Deserialize)]

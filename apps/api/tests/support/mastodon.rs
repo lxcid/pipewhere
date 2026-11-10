@@ -179,8 +179,8 @@ impl FakeMastodon {
         self.state.lock().unwrap().answer = Answer::Post;
     }
 
-    /// Answers every `POST /api/v1/statuses` with `status` and `body`, and
-    /// posts nothing.
+    /// Answers every `POST /api/v1/statuses` and every token's
+    /// `verify_credentials` with `status` and `body`, and posts nothing.
     pub fn respond(&self, status: StatusCode, body: &str) {
         self.state.lock().unwrap().answer = Answer::Respond(status, body.to_owned());
     }
@@ -302,7 +302,11 @@ async fn token(
 
 async fn account(State(state): State<Arc<Mutex<Fake>>>, headers: HeaderMap) -> Response {
     let fake = state.lock().unwrap();
-    match bearer_account(&fake, &headers) {
+    let account = bearer_account(&fake, &headers);
+    if let (Some(_), Answer::Respond(status, body)) = (&account, &fake.answer) {
+        return (*status, body.clone()).into_response();
+    }
+    match account {
         Some(account) => Json(json!({
             "id": account.id,
             "username": account.username,

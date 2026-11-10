@@ -28,6 +28,9 @@ pub enum ChannelStatus {
     /// The provider no longer accepts Pipewhere's access to the account.
     /// Connect the account again.
     AccessRevoked,
+    /// The provider reports the account unavailable, such as a disabled or
+    /// unapproved login. It clears when a check finds the account available.
+    AccountUnavailable,
 }
 
 /// One organization's link to one external account.

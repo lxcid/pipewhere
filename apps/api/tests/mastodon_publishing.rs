@@ -1,6 +1,7 @@
-//! Publishing to Mastodon, per 00004 D7 to D9, against a fake instance that
-//! answers as Mastodon v4.5.20 does. The adapter is called directly, as a run's
-//! commit step calls it.
+//! Publishing to Mastodon, per 00004 D7 to D10, and checking a channel's
+//! access, per D11 and D12, against a fake instance that answers as Mastodon
+//! v4.5.20 does. The adapter is called directly, as a run's commit step calls
+//! it, and the checks as Worker's interval runs them.
 
 mod support;
 
@@ -10,7 +11,7 @@ use std::time::Duration;
 use pipewhere_api::channels::Provider;
 use pipewhere_api::credentials::Credentials;
 use pipewhere_api::ids::new_id;
-use pipewhere_api::mastodon::{Mastodon, MastodonAdapter, PUBLISH_LIMIT};
+use pipewhere_api::mastodon::{AccessChecks, Mastodon, MastodonAdapter, PUBLISH_LIMIT};
 use pipewhere_api::runs::{Adapter, Commit, CommitResult};
 use reqwest::StatusCode;
 use support::mastodon::{FakeMastodon, STAN, link};
@@ -49,6 +50,17 @@ impl Linked {
         }
     }
 
+    async fn check(&self) {
+        AccessChecks {
+            db: self.instance.api_db.clone(),
+            credentials: Arc::new(Credentials::from_hex(CREDENTIALS_KEY).unwrap()),
+            mastodon: Mastodon::http(),
+        }
+        .check_all()
+        .await
+        .unwrap();
+    }
+
     async fn publish(&self, publication_id: &str) -> CommitResult {
         let commit = commit(&self.channel_id, publication_id);
         self.adapter(PUBLISH_LIMIT).commit(&commit).await
@@ -64,6 +76,20 @@ impl Linked {
 
     fn handle(&self) -> String {
         format!("@stan@{}", self.fake.host)
+    }
+
+    /// Stores `token` as the channel's access, as reconnecting does, without
+    /// changing its status.
+    async fn reseal(&self, token: &str) {
+        let credentials = Credentials::from_hex(CREDENTIALS_KEY).unwrap();
+        sqlx::query(
+            "UPDATE pipewhere.mastodon_channel SET access_token = $1 WHERE channel_id = $2",
+        )
+        .bind(credentials.seal(&self.channel_id, token))
+        .bind(&self.channel_id)
+        .execute(&self.instance.admin)
+        .await
+        .unwrap();
     }
 
     /// Points the channel at another host, as if its instance had moved there.
@@ -167,8 +193,8 @@ async fn an_answer_that_shows_nothing_was_posted_refuses() {
     let cases = [
         (
             StatusCode::FORBIDDEN,
-            r#"{"error":"Your login is currently disabled"}"#,
-            format!("{host} refused the post with 403 Forbidden: Your login is currently disabled"),
+            "<html>Forbidden</html>",
+            format!("{host} refused the post with 403 Forbidden."),
         ),
         (
             StatusCode::UNPROCESSABLE_ENTITY,
@@ -463,5 +489,133 @@ async fn a_threads_channel_cannot_publish_yet() {
             reason: "Pipewhere cannot publish to Threads yet.".to_owned(),
         }
     );
+    linked.instance.close().await;
+}
+
+/// 00004 D12: `Api::BaseController#require_user!` answers 403 for a disabled,
+/// unconfirmed, or unapproved login.
+#[tokio::test]
+async fn a_disabled_login_refuses_the_post_and_makes_the_account_unavailable() {
+    let linked = Linked::start().await;
+    linked.fake.respond(
+        StatusCode::FORBIDDEN,
+        r#"{"error":"Your login is currently disabled"}"#,
+    );
+
+    assert_eq!(
+        linked.publish(&new_id("publication")).await,
+        CommitResult::Refused {
+            reason: format!(
+                "{} refused the post with 403 Forbidden: Your login is currently disabled",
+                linked.fake.host
+            ),
+        }
+    );
+    assert_eq!(linked.channel_status().await, "account_unavailable");
+    linked.instance.close().await;
+}
+
+#[tokio::test]
+async fn checking_a_working_channel_changes_nothing_and_posts_nothing() {
+    let linked = Linked::start().await;
+
+    linked.check().await;
+    assert_eq!(linked.channel_status().await, "active");
+    assert_eq!(linked.fake.status_requests(), 0);
+    linked.instance.close().await;
+}
+
+/// 00004 D11: a revoked token never works again, so a check never clears the
+/// status. Only reconnecting does.
+#[tokio::test]
+async fn a_check_with_a_revoked_token_revokes_the_channel_for_good() {
+    let linked = Linked::start().await;
+    linked.fake.revoke(&linked.token);
+
+    linked.check().await;
+    assert_eq!(linked.channel_status().await, "access_revoked");
+
+    linked.fake.post();
+    let token = linked.fake.grant(&STAN);
+    linked.reseal(&token).await;
+    linked.check().await;
+    assert_eq!(linked.channel_status().await, "access_revoked");
+    linked.instance.close().await;
+}
+
+/// 00004 D12: the account becomes available again as soon as a check shows it.
+#[tokio::test]
+async fn a_disabled_login_makes_the_account_unavailable_until_a_check_succeeds() {
+    let linked = Linked::start().await;
+    linked.fake.respond(
+        StatusCode::FORBIDDEN,
+        r#"{"error":"Your login is currently pending approval"}"#,
+    );
+
+    linked.check().await;
+    assert_eq!(linked.channel_status().await, "account_unavailable");
+
+    linked.fake.respond(StatusCode::INTERNAL_SERVER_ERROR, "");
+    linked.check().await;
+    assert_eq!(linked.channel_status().await, "account_unavailable");
+
+    linked.fake.post();
+    linked.check().await;
+    assert_eq!(linked.channel_status().await, "active");
+    linked.instance.close().await;
+}
+
+/// 00003 D4: only evidence that the channel itself is broken changes its
+/// status. A proxy's 403 is not Mastodon's, and says nothing about the account.
+#[tokio::test]
+async fn a_check_that_shows_nothing_about_the_account_changes_nothing() {
+    let linked = Linked::start().await;
+    for (status, body) in [
+        (StatusCode::FORBIDDEN, "<html>Forbidden</html>"),
+        (StatusCode::INTERNAL_SERVER_ERROR, ""),
+        (StatusCode::BAD_GATEWAY, "<html>Bad Gateway</html>"),
+        (
+            StatusCode::TOO_MANY_REQUESTS,
+            r#"{"error":"Too many requests"}"#,
+        ),
+    ] {
+        linked.fake.respond(status, body);
+        linked.check().await;
+        assert_eq!(linked.channel_status().await, "active", "{status}");
+    }
+
+    linked.move_to("127.0.0.1:1").await;
+    linked.check().await;
+    assert_eq!(linked.channel_status().await, "active");
+    linked.instance.close().await;
+}
+
+/// A channel the check cannot read is skipped, and the others are still
+/// checked.
+#[tokio::test]
+async fn a_channel_whose_token_does_not_open_does_not_stop_the_others() {
+    let linked = Linked::start().await;
+    let lost = Credentials::from_hex(&"ab".repeat(32)).unwrap();
+    sqlx::query("UPDATE pipewhere.mastodon_channel SET access_token = $1 WHERE channel_id = $2")
+        .bind(lost.seal(&linked.channel_id, &linked.token))
+        .bind(&linked.channel_id)
+        .execute(&linked.instance.admin)
+        .await
+        .unwrap();
+    let owner = linked.instance.sign_up("other@example.com").await;
+    let other = linked.instance.create_organization(&owner, "other").await;
+    let (other_channel, other_token) =
+        link(&linked.instance.api_db, &other, &linked.fake, &STAN).await;
+    linked.fake.revoke(&other_token);
+
+    linked.check().await;
+    assert_eq!(linked.channel_status().await, "active");
+    let other_status: String =
+        sqlx::query_scalar("SELECT status FROM pipewhere.channel WHERE id = $1")
+            .bind(&other_channel)
+            .fetch_one(&linked.instance.admin)
+            .await
+            .unwrap();
+    assert_eq!(other_status, "access_revoked");
     linked.instance.close().await;
 }
