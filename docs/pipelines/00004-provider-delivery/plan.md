@@ -86,10 +86,10 @@ At `ff5dc6a`:
 
 ## #43 — what was built
 
-Built in PR #46. D7 to D9.
+Built in PR #46. D7 to D10.
 
 - **Adapter.** `apps/api/src/mastodon/publish.rs` posts a publication's body to `POST /api/v1/statuses`, with the publication's id as its `Idempotency-Key`, per D7. It maps each answer to a result per D8, and ends the call after 30 seconds. A channel of another provider answers as `NoAdapter` did.
-- **Connection limit.** Connecting to an instance has its own limit of 5 seconds. reqwest reports a connection error only when that limit ends the wait. Without it, a host that drops packets let the 30-second limit end the wait, and a post that was never sent became `outcome_unknown`. With it, the post is refused, as D8's table says.
+- **Connection limit.** Connecting to an instance has its own limit of 5 seconds, per D10. reqwest reports a connection error only when that limit ends the wait. Without it, a host that drops packets let the 30-second limit end the wait, and a post that was never sent became `outcome_unknown`. With it, the post is refused, as D8's table says.
 - **Reasons.** A failed request's reason carries its causes, such as `tcp connect error: Connection refused`. reqwest's own text names only the request.
 - **Revoked access.** A 401 sets the channel's status to `access_revoked`, per D9. A migration widens the status check, `ChannelStatus` gains the value, and Web's Channels card says to connect the account again.
 - **Redirects.** Mastodon calls no longer follow redirects, per D8. This also covers connecting, where a redirect answers `instance_unavailable`.

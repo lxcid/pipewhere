@@ -49,7 +49,7 @@ impl Mastodon {
             http: reqwest::Client::builder()
                 .timeout(Duration::from_secs(10))
                 // A post whose connection was never made sent nothing, so it
-                // is refused, per 00004 D8. reqwest reports a connection error
+                // is refused, per 00004 D8 and D10. reqwest reports a connection error
                 // only when this limit ends the wait, not the request's own.
                 .connect_timeout(connect_limit)
                 // Following a redirect sends a post again, or drops the token

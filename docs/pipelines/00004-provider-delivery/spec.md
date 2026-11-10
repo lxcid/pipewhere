@@ -194,7 +194,7 @@ Each `Ambiguous` reason tells the operator to check the account before resolving
 
 **Redirects.** Mastodon calls do not follow redirects. reqwest 0.13.5 follows up to 10 by default. Following one would send a post again, for a 307 or 308. Following one to another host also drops the token. That host's 401 would then revoke a working channel. A test shows that happening under reqwest's default. This applies to connecting too, where a redirect now answers `instance_unavailable` and API logs it.
 
-**The time limit** is 30 seconds. It is short compared with a person checking the account, as D19 asks. Restate 1.7.13 asks an invocation that has been silent for a minute to suspend, according to its `inactivity-timeout`. Ending the call well within that keeps Restate out of a commit in flight. A post normally takes well under a second.
+**The time limit** is 30 seconds. It is short compared with a person checking the account, as D19 asks. Restate 1.7.13 asks an invocation that has been silent for a minute to suspend, according to its `inactivity-timeout`. Ending the call well within that keeps Restate out of a commit in flight. A post normally takes well under a second. Making the connection has a shorter limit of its own, per D10.
 
 **[Scheduling and recovery D18](../00003-scheduling-recovery/spec.md).** A blank id, or one holding U+0000, answers `Ambiguous`, because the post may exist. A `url` that is not http or https is dropped, and the post keeps its id. Refusing the answer would lose the record of a post that exists. API logs the dropped address.
 
@@ -241,3 +241,18 @@ Tolerated:
   - Cost: the update would compare the token it used, or a version, with the channel's current one.
 
 What would overturn this: an instance that answers 401 for a reason other than the token, such as a proxy's own authentication.
+
+### D10 — Connecting to an instance has a 5-second limit
+
+Proposed: awaiting operator approval.
+
+Every call to a Mastodon instance has 5 seconds to make its connection, which covers DNS, TCP, and TLS. D8's 30-second limit still covers the whole call.
+
+This is what makes D8's row "No connection made" refused. reqwest 0.13.5 reports a connection error only when the connection's own limit ends the wait. Without one, a host that drops packets let the 30-second limit end the wait instead. reqwest reports that as a timeout, so the post became `Ambiguous`, though no request was sent.
+
+- Connecting to an instance normally takes well under a second. 5 seconds allows for a lost packet or two.
+- A connection slower than that fails the publication as unreachable. The reason gives the cause, and the operator retries it.
+- Connecting an account gets the same limit, inside its own 10 seconds.
+- The tests' plain-HTTP client uses 1 second, because a server on the same machine accepts a connection at once or not at all.
+
+What would overturn this: an instance in scope that often takes more than 5 seconds to connect.
