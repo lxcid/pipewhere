@@ -89,6 +89,8 @@ At `ff5dc6a`:
 Built in PR #46. D7 to D9.
 
 - **Adapter.** `apps/api/src/mastodon/publish.rs` posts a publication's body to `POST /api/v1/statuses`, with the publication's id as its `Idempotency-Key`, per D7. It maps each answer to a result per D8, and ends the call after 30 seconds. A channel of another provider answers as `NoAdapter` did.
+- **Connection limit.** Connecting to an instance has its own limit of 5 seconds. reqwest reports a connection error only when that limit ends the wait. Without it, a host that drops packets let the 30-second limit end the wait, and a post that was never sent became `outcome_unknown`. With it, the post is refused, as D8's table says.
+- **Reasons.** A failed request's reason carries its causes, such as `tcp connect error: Connection refused`. reqwest's own text names only the request.
 - **Revoked access.** A 401 sets the channel's status to `access_revoked`, per D9. A migration widens the status check, `ChannelStatus` gains the value, and Web's Channels card says to connect the account again.
 - **Redirects.** Mastodon calls no longer follow redirects, per D8. This also covers connecting, where a redirect answers `instance_unavailable`.
 - **Worker** reads `CREDENTIALS_KEY` and runs the adapter. Compose passes Worker the key.
@@ -96,9 +98,9 @@ Built in PR #46. D7 to D9.
 
 ### Verified
 
-At `91bc190`:
+At `6ad86de`:
 
-- `cargo test -p pipewhere-api`: 122 tests pass. 14 are new in `tests/mastodon_publishing.rs`. They call the adapter directly, against the fake instance, which now answers `POST /api/v1/statuses` as Mastodon v4.5.20's `PostStatusService` does. They cover:
+- `cargo test -p pipewhere-api`: 123 tests pass. 15 are new in `tests/mastodon_publishing.rs`. They call the adapter directly, against the fake instance, which now answers `POST /api/v1/statuses` as Mastodon v4.5.20's `PostStatusService` does. They cover:
   - a post carrying the body and the key, recorded with its id and address
   - a repeated key, which answers the first status and posts nothing
   - a revoked token, which refuses and marks the channel `access_revoked`
@@ -108,7 +110,8 @@ At `91bc190`:
   - 500, 502, an HTML 200, and a 200 with a blank id, which are ambiguous
   - an address that is not http or https, which is dropped while the id is kept
   - an instance that answers too late, with a 300 ms limit, which is ambiguous
-  - an unreachable instance, a channel with no token, a token sealed under another key, and a Threads channel, which refuse
+  - an unreachable instance, a channel with no token, a token sealed under another key, and a Threads channel, which refuse. The unreachable instance's reason says the connection was refused.
+  - a host that never answers the connection, which refuses after the connection limit. The test fills a local listener's accept queue, so the kernel drops each new connection, and gives the request a 5-second limit. That is shorter than the 8 seconds macOS waits before it ends a loopback connection itself. Without the connection limit, this test answers `Ambiguous` after 5 seconds.
   - an error over 300 characters holding U+0000, which is cut and cleaned
 - `cargo test -p pipewhere-worker`: 11 pass. 2 are new in `tests/publication_runs.rs`, through Restate 1.7.13:
   - A due publication posts once, and records the status's id, address, and the published attempt.
