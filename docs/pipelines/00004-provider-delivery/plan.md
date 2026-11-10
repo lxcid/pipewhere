@@ -83,3 +83,48 @@ At `ff5dc6a`:
 
 - The connect page's error messages in a browser: a refused approval, an expired authorization, and a redirect that reaches another tab. Only a successful connection was seen.
 - The migration over existing channel rows. It ran only on new databases. Existing rows take the column's default, `disconnected`.
+
+## #43 — what was built
+
+Built in PR #46. D7 to D10.
+
+- **Adapter.** `apps/api/src/mastodon/publish.rs` posts a publication's body to `POST /api/v1/statuses`, with the publication's id as its `Idempotency-Key`, per D7. It maps each answer to a result per D8, and ends the call after 30 seconds. A channel of another provider answers as `NoAdapter` did.
+- **Connection limit.** Connecting to an instance has its own limit of 5 seconds, per D10. reqwest reports a connection error only when that limit ends the wait. Without it, a host that drops packets let the 30-second limit end the wait, and a post that was never sent became `outcome_unknown`. With it, the post is refused, as D8's table says.
+- **Reasons.** A failed request's reason carries its causes, such as `tcp connect error: Connection refused`. reqwest's own text names only the request.
+- **Revoked access.** A 401 sets the channel's status to `access_revoked`, per D9. A migration widens the status check, `ChannelStatus` gains the value, and Web's Channels card says to connect the account again.
+- **Redirects.** Mastodon calls no longer follow redirects, per D8. This also covers connecting, where a redirect answers `instance_unavailable`.
+- **Worker** reads `CREDENTIALS_KEY` and runs the adapter. Compose passes Worker the key.
+- **The commit step** hands the adapter the publication's and the channel's ids.
+
+### Verified
+
+At `6ad86de`:
+
+- `cargo test -p pipewhere-api`: 123 tests pass. 15 are new in `tests/mastodon_publishing.rs`. They call the adapter directly, against the fake instance, which now answers `POST /api/v1/statuses` as Mastodon v4.5.20's `PostStatusService` does. They cover:
+  - a post carrying the body and the key, recorded with its id and address
+  - a repeated key, which answers the first status and posts nothing
+  - a revoked token, which refuses and marks the channel `access_revoked`
+  - 403, 422, 429, and 400, which refuse with the instance's error and leave the channel `active`
+  - a 404, whose reason says when to retry
+  - a 307 to another host, which refuses without following it. Under reqwest's default policy this test fails: the token is dropped, the 401 revokes the channel.
+  - 500, 502, an HTML 200, and a 200 with a blank id, which are ambiguous
+  - an address that is not http or https, which is dropped while the id is kept
+  - an instance that answers too late, with a 300 ms limit, which is ambiguous
+  - an unreachable instance, a channel with no token, a token sealed under another key, and a Threads channel, which refuse. The unreachable instance's reason says the connection was refused.
+  - a host that never answers the connection, which refuses after the connection limit. The test fills a local listener's accept queue, so the kernel drops each new connection, and gives the request a 5-second limit. That is shorter than the 8 seconds macOS waits before it ends a loopback connection itself. Without the connection limit, this test answers `Ambiguous` after 5 seconds.
+  - an error over 300 characters holding U+0000, which is cut and cleaned
+- `cargo test -p pipewhere-worker`: 11 pass. 2 are new in `tests/publication_runs.rs`, through Restate 1.7.13:
+  - A due publication posts once, and records the status's id, address, and the published attempt.
+  - The instance saves the post and holds its answer. Worker is dropped, as a crash drops it, and a new Worker starts on the same port. The publication becomes `outcome_unknown`, with one attempt, and the instance received one request. This is the crash after acceptance that publication contract D4 asks the adapter's pipeline to test.
+- `pnpm --filter @pipewhere/auth test`: 20 pass.
+- `pnpm --filter @pipewhere/web typecheck`, clippy, and fmt are clean.
+- The Mastodon facts that D7 to D9 rest on were read in Mastodon v4.5.20's source: `PostStatusService`, `Api::V1::StatusesController`, `Api::ErrorHandling`, `RateLimitable`, and `RateLimiter`. reqwest 0.13.5's redirect handling was read in its source. Restate 1.7.13's timeouts come from `--dump-config` on its image.
+- On 2026-11-10, with the operator's go-ahead, the throwaway Compose stack from #42 was rebuilt at `2b558c1`. `api-migrate` applied the migration over the channel connected in #42, which stayed `active`. Then a publish-now publication went to the operator's account on their Mastodon 4.5.20 instance, through the API:
+  - The instance answered 401. Its `WWW-Authenticate` said `The access token was revoked`, and a read-only `verify_credentials` with the stored token answered the same. The token had been revoked at the instance after #42's connection. The publication failed in 130 ms with D9's reason, and the channel became `access_revoked`.
+  - Before reconnecting, the operator saw the Channels card say `Access revoked. Connect the account again.`
+  - The operator connected the account again. The channel kept its id and became `active`.
+  - A retry of the same publication was `published` in 156 ms, with the status's id and address. The instance's public API showed that status once, with the publication's text, as the account's newest. The publication holds two attempts: the refusal and the published one.
+
+### Not verified
+
+- A real instance's answers other than 401 and a successful post. In particular, the 404 for a deleted post follows the source, through the fake.

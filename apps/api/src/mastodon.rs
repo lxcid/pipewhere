@@ -1,4 +1,5 @@
-//! Connecting a Mastodon account, per 00004 D3 and D4.
+//! Connecting a Mastodon account, per 00004 D3 and D4. Publishing to it is in
+//! [`publish`].
 
 use std::time::Duration;
 
@@ -15,6 +16,10 @@ use crate::channels::{Channel, read_channel};
 use crate::error::{ApiError, ErrorBody, JsonBody};
 use crate::ids::new_id;
 
+mod publish;
+
+pub use publish::{MastodonAdapter, PUBLISH_LIMIT};
+
 // `write:media` is not used yet. Media will need it, and a scope added later
 // takes every connected account through approval again.
 const SCOPES: &str = "read:accounts write:statuses write:media";
@@ -27,20 +32,30 @@ pub struct Mastodon {
 
 impl Mastodon {
     pub fn https() -> Self {
-        Self::new("https")
+        // Connecting to an instance takes well under a second, and this allows
+        // for a lost packet or two.
+        Self::new("https", Duration::from_secs(5))
     }
 
     /// Plain HTTP, for a server on this machine, such as a test's fake
-    /// instance.
+    /// instance. It accepts a connection at once or not at all.
     pub fn http() -> Self {
-        Self::new("http")
+        Self::new("http", Duration::from_secs(1))
     }
 
-    fn new(scheme: &'static str) -> Self {
+    fn new(scheme: &'static str, connect_limit: Duration) -> Self {
         Self {
             // An operator waits on every call made while connecting.
             http: reqwest::Client::builder()
                 .timeout(Duration::from_secs(10))
+                // A post whose connection was never made sent nothing, so it
+                // is refused, per 00004 D8 and D10. reqwest reports a connection error
+                // only when this limit ends the wait, not the request's own.
+                .connect_timeout(connect_limit)
+                // Following a redirect sends a post again, or drops the token
+                // when it leads to another host, whose 401 would revoke a
+                // working channel.
+                .redirect(reqwest::redirect::Policy::none())
                 .build()
                 .expect("the client builds"),
             scheme,

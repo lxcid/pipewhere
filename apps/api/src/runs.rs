@@ -18,8 +18,11 @@ const STOPPED_DURING_COMMIT: &str = "Pipewhere stopped while the commit may have
 pub struct Commit {
     pub provider: Provider,
     pub body: String,
+    pub publication_id: String,
+    pub channel_id: String,
 }
 
+#[derive(Debug, PartialEq, Eq)]
 pub enum CommitResult {
     Published {
         remote_id: String,
@@ -35,7 +38,8 @@ pub trait Adapter: Sync {
     fn commit(&self, commit: &Commit) -> impl Future<Output = CommitResult> + Send;
 }
 
-/// What runs until 00004 adds a provider's adapter, per 00003 D8.
+/// Refuses every commit, for a provider Pipewhere cannot publish to yet, per
+/// 00003 D8.
 pub struct NoAdapter;
 
 impl Adapter for NoAdapter {
@@ -199,7 +203,8 @@ async fn claim_commit(db: &PgPool, publication_id: &str) -> Result<CommitClaim, 
              AND a.publication_id = p.id AND a.result IS NULL
              AND clock_timestamp() <= ",
         deadline!(),
-        " RETURNING c.provider, p.body, a.id AS attempt_id"
+        " RETURNING c.provider, p.body, p.id AS publication_id, c.id AS channel_id,
+             a.id AS attempt_id"
     ))
     .bind(publication_id)
     .fetch_optional(&mut *tx)

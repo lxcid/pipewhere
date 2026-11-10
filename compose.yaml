@@ -137,6 +137,7 @@ services:
     environment:
       DATABASE_URL: postgres://pipewhere_api:${API_DB_PASSWORD}@postgres:5432/pipewhere
       RESTATE_INGRESS_URL: http://restate:8080
+      CREDENTIALS_KEY: ${CREDENTIALS_KEY:?set CREDENTIALS_KEY in .env}
     healthcheck:
       test: ["CMD", "worker", "health"]
       interval: 2s
