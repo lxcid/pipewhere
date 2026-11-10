@@ -4,8 +4,6 @@
 
 ### D1 — A Mastodon access token lasts until it is revoked
 
-Proposed: awaiting operator approval.
-
 This answers the open question "Do the Mastodon instances in scope expire access tokens?"
 
 No. Mastodon v4.5.20's `config/initializers/doorkeeper.rb` sets `access_token_expires_in nil` and leaves `use_refresh_token` commented out. A token therefore has no expiry, and the instance issues no refresh token. On 2026-11-09, the operator's instance reported version 4.5.20 from `mastodon/mastodon` at `/api/v2/instance`.
@@ -140,8 +138,6 @@ D3 makes Web's pages call API from the browser. API answers CORS requests from `
 
 ### D7 — A Mastodon post's `Idempotency-Key` is its publication's id
 
-Proposed: awaiting operator approval.
-
 This answers the open question "Within its hour, does a repeated `Idempotency-Key` return the original status, so a lost response can be settled without a second commit?"
 
 Yes, once the first request has saved its status. Mastodon v4.5.20's `PostStatusService` handles the key this way:
@@ -171,8 +167,6 @@ Tolerated:
 What would overturn this: an instance version whose repeated key does something else, or a need to repost an edited publication within the hour.
 
 ### D8 — How the Mastodon adapter maps an instance's answer
-
-Proposed: awaiting operator approval.
 
 The adapter posts a publication's body to `POST /api/v1/statuses` with the channel's token and D7's key. It maps the answer to a result for [publication contract D3 and D4](../00002-publication-contract/spec.md):
 
@@ -226,8 +220,6 @@ Tolerated:
 What would overturn this: a Mastodon version or fork that saves a status and then answers 4xx, or brief failures common enough that operators retry by hand often.
 
 ### D9 — A token the instance no longer accepts revokes the channel's access
-
-Proposed: awaiting operator approval.
 
 When an instance answers 401 to a post, the adapter sets the channel's status to `access_revoked`, per D2. The publication fails with a reason that says to connect the account again, then retry. Reconnecting sets the status back to `active`, per D4. Web shows the status on the Channels card.
 
