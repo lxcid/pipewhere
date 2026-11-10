@@ -244,8 +244,6 @@ What would overturn this: an instance that answers 401 for a reason other than t
 
 ### D10 — Connecting to an instance has a 5-second limit
 
-Proposed: awaiting operator approval.
-
 Every call to a Mastodon instance has 5 seconds to make its connection, which covers DNS, TCP, and TLS. D8's 30-second limit still covers the whole call.
 
 This is what makes D8's row "No connection made" refused. reqwest 0.13.5 reports a connection error only when the connection's own limit ends the wait. Without one, a host that drops packets let the 30-second limit end the wait instead. reqwest reports that as a timeout, so the post became `Ambiguous`, though no request was sent.
