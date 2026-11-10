@@ -470,7 +470,7 @@ async fn a_commit_records_what_the_provider_answered() {
 }
 
 #[tokio::test]
-async fn production_refuses_at_the_commit_because_it_has_no_adapter() {
+async fn a_provider_with_no_adapter_refuses_at_the_commit() {
     let instance = Instance::start().await;
     let (organization_id, _) = set_up(&instance).await;
     let db = &instance.api_db;

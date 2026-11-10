@@ -38,7 +38,8 @@ pub trait Adapter: Sync {
     fn commit(&self, commit: &Commit) -> impl Future<Output = CommitResult> + Send;
 }
 
-/// What runs until 00004 adds a provider's adapter, per 00003 D8.
+/// Refuses every commit, for a provider Pipewhere cannot publish to yet, per
+/// 00003 D8.
 pub struct NoAdapter;
 
 impl Adapter for NoAdapter {
