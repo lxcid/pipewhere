@@ -65,6 +65,23 @@ impl Linked {
     fn handle(&self) -> String {
         format!("@stan@{}", self.fake.host)
     }
+
+    /// Points the channel at another host, as if its instance had moved there.
+    async fn move_to(&self, host: &str) {
+        sqlx::query(
+            "INSERT INTO pipewhere.mastodon_instance (host, redirect_uri, client_id, client_secret)
+             VALUES ($1, 'http://localhost:3000/connect/mastodon', 'client', '')",
+        )
+        .bind(host)
+        .execute(&self.instance.admin)
+        .await
+        .unwrap();
+        sqlx::query("UPDATE pipewhere.mastodon_channel SET host = $1")
+            .bind(host)
+            .execute(&self.instance.admin)
+            .await
+            .unwrap();
+    }
 }
 
 fn commit(channel_id: &str, publication_id: &str) -> Commit {
@@ -194,7 +211,7 @@ async fn a_publication_whose_post_was_deleted_says_when_to_retry() {
         result,
         CommitResult::Refused {
             reason: format!(
-                "{} answered 404 Not Found, so nothing was posted. Mastodon answers this when the publication posted within the last hour and that post was deleted. Retry an hour after it posted.",
+                "{} answered 404 Not Found, so nothing was posted. If the publication posted within the last hour and that post was deleted, Mastodon answers this way, so retry an hour after it posted.",
                 linked.fake.host
             ),
         }
@@ -339,24 +356,48 @@ async fn an_instance_that_answers_too_late_is_ambiguous() {
 #[tokio::test]
 async fn an_instance_pipewhere_cannot_reach_refuses() {
     let linked = Linked::start().await;
-    let closed = "127.0.0.1:1";
-    sqlx::query(
-        "INSERT INTO pipewhere.mastodon_instance (host, redirect_uri, client_id, client_secret)
-         VALUES ($1, 'http://localhost:3000/connect/mastodon', 'client', '')",
-    )
-    .bind(closed)
-    .execute(&linked.instance.admin)
-    .await
-    .unwrap();
-    sqlx::query("UPDATE pipewhere.mastodon_channel SET host = $1")
-        .bind(closed)
-        .execute(&linked.instance.admin)
-        .await
-        .unwrap();
+    linked.move_to("127.0.0.1:1").await;
 
     let reason = reason(linked.publish(&new_id("publication")).await);
     assert!(
         reason.starts_with("Pipewhere could not reach 127.0.0.1:1, so nothing was posted: "),
+        "{reason}"
+    );
+    assert!(reason.contains("Connection refused"), "{reason}");
+    linked.instance.close().await;
+}
+
+/// 00004 D8: a connection that is never made sends nothing, even when the host
+/// drops it rather than refusing it, as a firewall that drops packets does.
+#[tokio::test]
+async fn an_instance_that_never_answers_the_connection_refuses() {
+    let linked = Linked::start().await;
+    // A full accept queue makes the kernel drop each new connection silently.
+    let socket = tokio::net::TcpSocket::new_v4().unwrap();
+    socket.bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    let listener = socket.listen(1).unwrap();
+    let address = listener.local_addr().unwrap();
+    let mut queued = Vec::new();
+    loop {
+        let connecting = tokio::net::TcpStream::connect(address);
+        match tokio::time::timeout(Duration::from_millis(200), connecting).await {
+            Ok(Ok(stream)) => queued.push(stream),
+            Ok(Err(error)) => panic!("the full queue refused a connection: {error}"),
+            Err(_) => break,
+        }
+        assert!(queued.len() < 64, "the accept queue never filled");
+    }
+    let host = address.to_string();
+    linked.move_to(&host).await;
+
+    // Shorter than the kernel's own wait for a connection, which on macOS
+    // ends a loopback connection after about 8 seconds.
+    let commit = commit(&linked.channel_id, &new_id("publication"));
+    let reason = reason(linked.adapter(Duration::from_secs(5)).commit(&commit).await);
+    assert!(
+        reason.starts_with(&format!(
+            "Pipewhere could not reach {host}, so nothing was posted: "
+        )),
         "{reason}"
     );
     linked.instance.close().await;

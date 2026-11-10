@@ -104,7 +104,8 @@ impl Adapter for MastodonAdapter {
             Ok(response) => response,
             Err(error) if error.is_connect() => {
                 return refused(format!(
-                    "Pipewhere could not reach {host}, so nothing was posted: {error}"
+                    "Pipewhere could not reach {host}, so nothing was posted: {}",
+                    described(&error)
                 ));
             }
             Err(error) if error.is_timeout() => {
@@ -113,7 +114,12 @@ impl Adapter for MastodonAdapter {
                     self.limit
                 ));
             }
-            Err(error) => return ambiguous(format!("{host} did not answer: {error}. {check}")),
+            Err(error) => {
+                return ambiguous(format!(
+                    "{host} did not answer: {}. {check}",
+                    described(&error)
+                ));
+            }
         };
 
         let status = response.status();
@@ -130,7 +136,7 @@ impl Adapter for MastodonAdapter {
         // A repeated key whose post was deleted finds no status, per D7.
         if status == StatusCode::NOT_FOUND {
             return refused(format!(
-                "{host} answered {status}, so nothing was posted. Mastodon answers this when the publication posted within the last hour and that post was deleted. Retry an hour after it posted."
+                "{host} answered {status}, so nothing was posted. If the publication posted within the last hour and that post was deleted, Mastodon answers this way, so retry an hour after it posted."
             ));
         }
         let body = match response.bytes().await {
@@ -142,7 +148,10 @@ impl Adapter for MastodonAdapter {
                 ));
             }
             Err(error) if status.is_success() => {
-                return ambiguous(format!("{host} did not answer: {error}. {check}"));
+                return ambiguous(format!(
+                    "{host} did not answer: {}. {check}",
+                    described(&error)
+                ));
             }
             Err(_) => Default::default(),
         };
@@ -213,6 +222,19 @@ fn ambiguous(reason: impl Into<String>) -> CommitResult {
     CommitResult::Ambiguous {
         reason: reason.into(),
     }
+}
+
+/// A failed request with its causes. reqwest's own text names the request,
+/// not why it failed, such as a refused connection or a bad certificate.
+fn described(error: &reqwest::Error) -> String {
+    let mut text = error.to_string();
+    let mut cause = std::error::Error::source(error);
+    while let Some(error) = cause {
+        text.push_str(": ");
+        text.push_str(&error.to_string());
+        cause = error.source();
+    }
+    text
 }
 
 /// An instance's error, as a reason can hold it. PostgreSQL text cannot hold
