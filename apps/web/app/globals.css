@@ -349,6 +349,8 @@ h3 {
 }
 
 .reason {
+  display: grid;
+  gap: 2px;
   padding: 8px 10px;
   border-radius: 6px;
   background: var(--bg);

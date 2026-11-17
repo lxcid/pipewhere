@@ -285,10 +285,10 @@ function Compose({
       {unconfirmed !== null && (
         <div className="notice" role="alert">
           <p>
-            Pipewhere did not confirm this publication ({unconfirmed}). It may have been created.
-            Send it again to find out: Pipewhere answers with the first one instead of creating a
-            second.
+            Pipewhere did not confirm this publication, so it may have been created. Send it again
+            to find out: Pipewhere answers with the first one instead of creating a second.
           </p>
+          <p className="muted">{unconfirmed}</p>
           <div className="row">
             <button type="button" onClick={resend} disabled={sending}>
               Send again
@@ -435,7 +435,7 @@ function Reason({
   if (!attempt?.reason) return null;
   return (
     <p className="reason">
-      {attempt.reason}{" "}
+      {attempt.reason}
       <span className="muted">
         Attempt ended {formatTime(attempt.ended_at ?? attempt.started_at)}.
       </span>
