@@ -28,7 +28,7 @@ Built in one PR, against #41. API and Worker do not change. Every endpoint Web n
 
 ### Commands
 
-Run at `6ef1ffa`, from the repository root unless noted:
+Run at `76ce507`, from the repository root unless noted:
 
 - `pnpm --filter @pipewhere/web test`: 27 pass. `publishing.test.ts` covers the key, the submission state including a refused resend, local times in New York including both daylight-saving changes, the list's order, reloading every page shown, merging, the state descriptions, and the messages. `api.test.ts` runs the real request code against a stubbed `fetch`: an unreadable 2xx, a 5xx, a failed connection, a 4xx, and a create whose answer is cut off after API stored it, sent again with the same key.
 - `pnpm --filter @pipewhere/web typecheck`: clean.
@@ -39,7 +39,7 @@ API, Worker, and Auth do not change, so their suites were not run.
 
 ### Browser checks against a local stack
 
-Verified at `6ef1ffa`. The stack ran only on the builder's machine, with its own PostgreSQL and Restate containers. Web ran as a production build. API and Worker ran from their libraries with the plain-HTTP Mastodon client, against a fake Mastodon instance on a local port. The fake's account is `@fixture-demo`, and every post text starts with "Fixture". No real instance was called. A script drove headless Chrome 157 through the DevTools protocol, and read the database to check each result. It simulated network failures by intercepting requests in the browser.
+Verified at `76ce507`. The stack ran only on the builder's machine, with its own PostgreSQL and Restate containers. Web ran as a production build. API and Worker ran from their libraries with the plain-HTTP Mastodon client, against a fake Mastodon instance on a local port. The fake's account is `@fixture-demo`, and every post text starts with "Fixture". No real instance was called. A script drove headless Chrome 157 through the DevTools protocol, and read the database to check each result. It simulated network failures by intercepting requests in the browser.
 
 All 42 checks passed:
 
@@ -71,6 +71,7 @@ Screenshots from that run, all of fixture data:
 - [The daylight-saving gap in America/New_York](evidence/daylight-saving-gap.png)
 - [Failed and outcome unknown, each with its reason](evidence/failed-and-unknown.png)
 - [An unconfirmed create, and a cancel that lost the race](evidence/unconfirmed-and-cancel-race.png)
+- [An unconfirmed submission kept while its channel loses access](evidence/channel-loses-access.png)
 - [The second organization, after the first's late answer](evidence/organization-switch.png)
 - [Phone width](evidence/phone.png)
 - [Dark scheme](evidence/dark-scheme.png)
