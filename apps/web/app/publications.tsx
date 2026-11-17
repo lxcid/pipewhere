@@ -243,7 +243,7 @@ function Compose({
   }
 
   return (
-    <form onSubmit={submit} className="compose">
+    <form onSubmit={submit} onChange={() => setDone(null)} className="compose">
       {!channel && (
         <p className="muted">Connect a Mastodon account above to write a publication.</p>
       )}
