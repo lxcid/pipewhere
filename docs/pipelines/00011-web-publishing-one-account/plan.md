@@ -16,14 +16,19 @@ Built in one PR, against #41. API and Worker do not change. Every endpoint Web n
 3. The organization page guard against stale answers. Done.
 4. Tests for an unreadable successful answer, then `api.ts`. Done.
 5. Check every interaction in a browser against a local stack, and capture screenshots. Done.
+6. Fixes from the first review round, each with its test or browser check. Done.
+   - A refresh reloads every page shown, not only the first.
+   - A refused "Send again" keeps the submission unconfirmed, with its key.
+   - The form stays mounted when no channel can publish, so its draft and an unconfirmed submission survive.
+   - A waiting publication's row states why its channel cannot publish, instead of pointing at the Channels card.
 
 ## Verification
 
 ### Commands
 
-Run at `0169f7d`, from the repository root unless noted:
+Run at `513cc51`, from the repository root unless noted:
 
-- `pnpm --filter @pipewhere/web test`: 23 pass. `publishing.test.ts` covers the key, the submission state, local times in New York including both daylight-saving changes, the list's order, merging, the state descriptions, and the messages. `api.test.ts` runs the real request code against a stubbed `fetch`: an unreadable 2xx, a 5xx, a failed connection, a 4xx, and a create whose answer is cut off after API stored it, sent again with the same key.
+- `pnpm --filter @pipewhere/web test`: 27 pass. `publishing.test.ts` covers the key, the submission state including a refused resend, local times in New York including both daylight-saving changes, the list's order, reloading every page shown, merging, the state descriptions, and the messages. `api.test.ts` runs the real request code against a stubbed `fetch`: an unreadable 2xx, a 5xx, a failed connection, a 4xx, and a create whose answer is cut off after API stored it, sent again with the same key.
 - `pnpm --filter @pipewhere/web typecheck`: clean.
 - `pnpm --filter @pipewhere/web build`: passes. In an agent's shell, Next.js 16.4.2 first stops with a notice that this version has a known security advisory, and passes when run again. The notice is about the installed Next.js, not this change.
 - `pnpm fmt:check`: reports only three files that `main` already leaves unformatted. This change does not touch them.
@@ -32,9 +37,9 @@ API, Worker, and Auth do not change, so their suites were not run.
 
 ### Browser checks against a local stack
 
-Verified at `0169f7d`. The stack ran only on the builder's machine, with its own PostgreSQL and Restate containers. Web ran as a production build. API and Worker ran from their libraries with the plain-HTTP Mastodon client, against a fake Mastodon instance on a local port. The fake's account is `@fixture-demo`, and every post text starts with "Fixture". No real instance was called. A script drove headless Chrome 157 through the DevTools protocol, and read the database to check each result. It simulated network failures by intercepting requests in the browser.
+Verified on the Web code of `513cc51`. The stack ran only on the builder's machine, with its own PostgreSQL and Restate containers. Web ran as a production build. API and Worker ran from their libraries with the plain-HTTP Mastodon client, against a fake Mastodon instance on a local port. The fake's account is `@fixture-demo`, and every post text starts with "Fixture". No real instance was called. A script drove headless Chrome 157 through the DevTools protocol, and read the database to check each result. It simulated network failures by intercepting requests in the browser.
 
-All 33 checks passed:
+All 39 checks passed:
 
 - Without an active channel, the card asks to connect one. Connecting the fake account shows the form.
 - Publish now with a double click sends one request and creates one publication. Within the list's refresh, it shows as published, with the post's address.
@@ -48,9 +53,12 @@ All 33 checks passed:
 - A 201 whose body is cut off: API stored the publication, the form locks and says the request was not confirmed, and "Send again" reuses the key and finds the one publication.
 - A request that never reaches API: nothing is stored, and "Send again" reuses the key and creates it once.
 - A 422 from API keeps the form editable, and the next submission takes a new key.
-- While the first organization's answer is held, its page shows only "Loading…". After moving to a second organization and then releasing the held answer, the page still shows the second organization, without the first's form.
+- A first send that never reaches API, then a "Send again" refused with 401: the notice and the lock stay. The third send uses the same key, and API holds one publication.
+- A scheduled submission left unconfirmed while its channel loses access: the form stays, with its text and notice, and says no channel can publish. The waiting row says Mastodon no longer accepts Pipewhere's access. Once the channel is active again, "Send again" finds the one publication.
+- While the first organization's answer is held, its page shows only "Loading…". After moving to a second organization and then releasing the held answer, the page still shows the second organization, without the first's channel.
 - A failed list load says so, and Refresh recovers.
 - With 101 more publications, the first page shows 100 and "Show older", which loads the rest.
+- A publication that only "Show older" loaded, cancelled in the database, shows as cancelled after Refresh.
 - No sideways scroll at 390 pixels wide. No console errors.
 
 Screenshots from that run, all of fixture data:

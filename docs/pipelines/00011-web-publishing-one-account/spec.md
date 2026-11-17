@@ -49,6 +49,8 @@ While any loaded publication is `scheduled`, `preparing`, or `publishing`, Web r
 
 Worker looks for due work every 5 seconds, so a publication sent now shows its outcome within one or two refreshes. No background work runs while every publication has settled.
 
+An operator who schedules ahead nearly always has a `scheduled` publication, so an open tab refreshes all the time. Each refresh with one page shown makes two API calls, and Web fetches a token from Auth for each: about 35,000 requests a day for a tab left open. Tolerated for one operator. Refreshing only near a planned time would need a timer for each publication.
+
 ### D5 — A failure's reason comes from the newest attempt
 
 Proposed: awaiting operator approval.
