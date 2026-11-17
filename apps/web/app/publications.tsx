@@ -41,6 +41,8 @@ export function Publications({ organizationId }: { organizationId: string }) {
   // without being remade.
   const [older, setOlder] = useState<string | null | undefined>(undefined);
   const shownThrough = useRef<string | null | undefined>(undefined);
+  // Counts the answers that changed the list outside a refresh.
+  const changes = useRef(0);
   const [problem, setProblem] = useState<string | null>(null);
 
   const fetchPage = useCallback(
@@ -52,14 +54,19 @@ export function Publications({ organizationId }: { organizationId: string }) {
   );
 
   const refresh = useCallback(async () => {
-    const through = shownThrough.current;
+    const seen = changes.current;
     try {
       const [loaded, list] = await Promise.all([
-        loadThrough(fetchPage, through),
+        loadThrough(fetchPage, shownThrough.current),
         api<{ channels: Channel[] }>(`/v1/orgs/${organizationId}/channels`),
       ]);
-      // "Show older" moved on while this refresh ran, and the next one covers it.
-      if (shownThrough.current !== through) return;
+      // A create, a cancel, or "Show older" was answered while this refresh
+      // ran. Its answer may predate that change, and replacing the list with it
+      // would undo the change, so load again.
+      if (changes.current !== seen) {
+        await refresh();
+        return;
+      }
       setChannels(list.channels);
       setPublications(loaded.publications);
       shownThrough.current = loaded.older;
@@ -88,6 +95,7 @@ export function Publications({ organizationId }: { organizationId: string }) {
     if (!cursor) return;
     try {
       const page = await fetchPage(cursor);
+      changes.current++;
       setPublications((loaded) => merged(loaded ?? [], page.publications));
       shownThrough.current = page.next_cursor;
       setOlder(page.next_cursor);
@@ -99,6 +107,7 @@ export function Publications({ organizationId }: { organizationId: string }) {
   }
 
   function show(publication: Publication) {
+    changes.current++;
     setPublications((loaded) => merged(loaded ?? [], [publication]));
   }
 
