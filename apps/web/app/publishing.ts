@@ -24,6 +24,12 @@ export interface Publication {
   remote_url: string | null;
 }
 
+/** One page of the publication list, newest first, per 00002 D14. */
+export interface Page {
+  publications: Publication[];
+  next_cursor: string | null;
+}
+
 export interface PublicationAttempt {
   id: string;
   publication_id: string;
@@ -152,6 +158,26 @@ export function chronological(publications: Publication[]): Publication[] {
       Date.parse(b.planned_at) - Date.parse(a.planned_at) ||
       (a.id < b.id ? 1 : a.id > b.id ? -1 : 0),
   );
+}
+
+/**
+ * Loads the list from its newest page down to the page that ended at `older`,
+ * the cursor after the oldest page shown, per 00011 D4. Undefined loads only
+ * the first page, and null loads every page. Answers the cursor after the
+ * last page loaded.
+ */
+export async function loadThrough(
+  fetchPage: (cursor: string | null) => Promise<Page>,
+  older: string | null | undefined,
+): Promise<{ publications: Publication[]; older: string | null }> {
+  let page = await fetchPage(null);
+  const publications = [...page.publications];
+  // Ids sort in creation order, as API's cursor compares them.
+  while (page.next_cursor && older !== undefined && (older === null || page.next_cursor > older)) {
+    page = await fetchPage(page.next_cursor);
+    publications.push(...page.publications);
+  }
+  return { publications, older: page.next_cursor };
 }
 
 /** A fresh page replaces what was loaded under the same ids. */

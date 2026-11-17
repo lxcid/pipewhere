@@ -5,10 +5,12 @@ import {
   Submitter,
   chronological,
   describeState,
+  loadThrough,
   merged,
   newIdempotencyKey,
   plannedAt,
   problemOf,
+  type Page,
   type Publication,
   type Sent,
 } from "./publishing.ts";
@@ -169,6 +171,55 @@ describe("chronological", () => {
       list.map((item) => item.id),
       ["pub_03", "pub_02", "pub_01", "pub_04"],
     );
+  });
+});
+
+describe("loadThrough", () => {
+  // API's list: newest id first, `id < cursor`, here two to a page.
+  function api(ids: string[]) {
+    const requests: (string | null)[] = [];
+    const fetchPage = async (cursor: string | null): Promise<Page> => {
+      requests.push(cursor);
+      const rest = ids.filter((id) => cursor === null || id < cursor);
+      const page = rest.slice(0, 2);
+      return {
+        publications: page.map((id) => publication({ id })),
+        next_cursor: rest.length > 2 ? page[page.length - 1] : null,
+      };
+    };
+    return { requests, fetchPage };
+  }
+  const ids = ["pub_06", "pub_05", "pub_04", "pub_03", "pub_02", "pub_01"];
+
+  test("loads only the first page before anything older is shown", async () => {
+    const { requests, fetchPage } = api(ids);
+    const loaded = await loadThrough(fetchPage, undefined);
+    assert.deepEqual(requests, [null]);
+    assert.deepEqual(
+      loaded.publications.map((item) => item.id),
+      ["pub_06", "pub_05"],
+    );
+    assert.equal(loaded.older, "pub_05");
+  });
+
+  test("reloads every page already shown, even after newer publications push them down", async () => {
+    const { requests, fetchPage } = api(["pub_08", "pub_07", ...ids]);
+    const loaded = await loadThrough(fetchPage, "pub_03");
+    assert.deepEqual(requests, [null, "pub_07", "pub_05"]);
+    assert.deepEqual(
+      loaded.publications.map((item) => item.id),
+      ["pub_08", "pub_07", "pub_06", "pub_05", "pub_04", "pub_03"],
+    );
+    assert.equal(loaded.older, "pub_03");
+  });
+
+  test("stops at the oldest page shown, and reloads to the end once every page was shown", async () => {
+    const shown = api(ids);
+    assert.equal((await loadThrough(shown.fetchPage, "pub_03")).older, "pub_03");
+    assert.deepEqual(shown.requests, [null, "pub_05"]);
+    const everything = api(ids);
+    assert.equal((await loadThrough(everything.fetchPage, null)).publications.length, 6);
+    assert.deepEqual(everything.requests, [null, "pub_05", "pub_03"]);
   });
 });
 

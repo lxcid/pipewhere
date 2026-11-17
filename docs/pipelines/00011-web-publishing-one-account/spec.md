@@ -43,7 +43,7 @@ Tolerated for one operator's volume. An API order by planned time would remove i
 
 Proposed: awaiting operator approval.
 
-While any loaded publication is `scheduled`, `preparing`, or `publishing`, Web reloads the first page and the channels every 10 seconds. A Refresh button does the same at any time. A refreshed page replaces the publications it holds and keeps older pages already loaded.
+While any loaded publication is `scheduled`, `preparing`, or `publishing`, Web reloads the publications and the channels every 10 seconds. A Refresh button does the same at any time. A refresh reloads every page the list shows, from the newest down to the oldest page shown, and replaces what the list holds. A publication that "Show older" loaded therefore updates too, and a refused cancel's reload shows its current state. With one page shown, a refresh is one request for the list.
 
 Worker looks for due work every 5 seconds, so a publication sent now shows its outcome within one or two refreshes. No background work runs while every publication has settled.
 

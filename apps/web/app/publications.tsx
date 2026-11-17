@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 
 import { answer } from "./api";
 import { useApi } from "./api-client";
@@ -10,19 +10,16 @@ import {
   chronological,
   describeState,
   formatTime,
+  loadThrough,
   merged,
   plannedAt,
   problemOf,
+  type Page,
   type Publication,
   type PublicationAttempt,
   type PublicationRequest,
   sendCreate,
 } from "./publishing";
-
-interface Page {
-  publications: Publication[];
-  next_cursor: string | null;
-}
 
 // Worker looks for due work every 5 seconds, so a publication sent now shows
 // its outcome within one or two refreshes.
@@ -34,26 +31,41 @@ export function Publications({ organizationId }: { organizationId: string }) {
   const api = useApi();
   const [publications, setPublications] = useState<Publication[] | null>(null);
   const [channels, setChannels] = useState<Channel[] | null>(null);
-  // The cursor for the next older page: undefined until the first page loads.
+  // The cursor after the oldest page shown: undefined until the first page
+  // loads, and null once every page is shown. The ref lets a refresh read it
+  // without being remade.
   const [older, setOlder] = useState<string | null | undefined>(undefined);
+  const shownThrough = useRef<string | null | undefined>(undefined);
   const [problem, setProblem] = useState<string | null>(null);
 
+  const fetchPage = useCallback(
+    (cursor: string | null) =>
+      api<Page>(
+        `/v1/orgs/${organizationId}/publications${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`,
+      ),
+    [api, organizationId],
+  );
+
   const refresh = useCallback(async () => {
+    const through = shownThrough.current;
     try {
-      const [page, list] = await Promise.all([
-        api<Page>(`/v1/orgs/${organizationId}/publications`),
+      const [loaded, list] = await Promise.all([
+        loadThrough(fetchPage, through),
         api<{ channels: Channel[] }>(`/v1/orgs/${organizationId}/channels`),
       ]);
+      // "Show older" moved on while this refresh ran, and the next one covers it.
+      if (shownThrough.current !== through) return;
       setChannels(list.channels);
-      setPublications((loaded) => (loaded ? merged(loaded, page.publications) : page.publications));
-      setOlder((cursor) => (cursor === undefined ? page.next_cursor : cursor));
+      setPublications(loaded.publications);
+      shownThrough.current = loaded.older;
+      setOlder(loaded.older);
       setProblem(null);
     } catch (caught) {
       setProblem(
         `The list could not be loaded: ${caught instanceof Error ? caught.message : String(caught)}`,
       );
     }
-  }, [api, organizationId]);
+  }, [api, fetchPage, organizationId]);
 
   useEffect(() => {
     refresh();
@@ -67,12 +79,12 @@ export function Publications({ organizationId }: { organizationId: string }) {
   }, [waiting, refresh]);
 
   async function loadOlder() {
-    if (!older) return;
+    const cursor = shownThrough.current;
+    if (!cursor) return;
     try {
-      const page = await api<Page>(
-        `/v1/orgs/${organizationId}/publications?cursor=${encodeURIComponent(older)}`,
-      );
+      const page = await fetchPage(cursor);
       setPublications((loaded) => merged(loaded ?? [], page.publications));
+      shownThrough.current = page.next_cursor;
       setOlder(page.next_cursor);
     } catch (caught) {
       setProblem(
