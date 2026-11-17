@@ -27,6 +27,11 @@ const REFRESH_MS = 10_000;
 
 const WAITING: Publication["state"][] = ["scheduled", "preparing", "publishing"];
 
+const CANNOT_PUBLISH: Record<Exclude<Channel["status"], "active">, string> = {
+  disconnected: "Its channel is not connected.",
+  access_revoked: "Mastodon no longer accepts Pipewhere's access to its channel.",
+};
+
 export function Publications({ organizationId }: { organizationId: string }) {
   const api = useApi();
   const [publications, setPublications] = useState<Publication[] | null>(null);
@@ -359,7 +364,7 @@ function PublicationItem({
 
   const blocked =
     publication.state === "scheduled" && channel && channel.status !== "active"
-      ? "Its channel cannot publish now, as Channels above says. It fails at its planned time unless the account is connected again."
+      ? `${CANNOT_PUBLISH[channel.status]} It fails at its planned time unless the account is connected again.`
       : null;
 
   return (
