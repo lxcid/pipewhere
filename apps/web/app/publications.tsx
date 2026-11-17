@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 
-import { ApiError, useApi } from "./api-client";
+import { answer } from "./api";
+import { useApi } from "./api-client";
 import type { Channel } from "./channels";
 import {
   Submitter,
@@ -15,7 +16,7 @@ import {
   type Publication,
   type PublicationAttempt,
   type PublicationRequest,
-  type Sent,
+  sendCreate,
 } from "./publishing";
 
 interface Page {
@@ -28,23 +29,6 @@ interface Page {
 const REFRESH_MS = 10_000;
 
 const WAITING: Publication["state"][] = ["scheduled", "preparing", "publishing"];
-
-/** Runs a request, and says whether API refused it or left its outcome unconfirmed. */
-async function answer<T>(
-  call: () => Promise<T>,
-): Promise<{ kind: "answered"; value: T } | Exclude<Sent, { kind: "created" }>> {
-  try {
-    return { kind: "answered", value: await call() };
-  } catch (caught) {
-    if (caught instanceof ApiError && caught.status < 500) {
-      return { kind: "refused", status: caught.status, code: caught.code };
-    }
-    return {
-      kind: "unconfirmed",
-      reason: caught instanceof Error ? caught.message : String(caught),
-    };
-  }
-}
 
 export function Publications({ organizationId }: { organizationId: string }) {
   const api = useApi();
@@ -166,19 +150,7 @@ function Compose({
   onCreated: (publication: Publication) => void;
 }) {
   const api = useApi();
-  const [submitter] = useState(
-    () =>
-      new Submitter(async (key, request): Promise<Sent> => {
-        const sent = await answer(() =>
-          api<Publication>(`/v1/orgs/${organizationId}/publications`, {
-            method: "POST",
-            body: request,
-            headers: { "idempotency-key": key },
-          }),
-        );
-        return sent.kind === "answered" ? { kind: "created", publication: sent.value } : sent;
-      }),
-  );
+  const [submitter] = useState(() => new Submitter(sendCreate(api, organizationId)));
   const [channelId, setChannelId] = useState(channels[0].id);
   // A refresh can find the chosen channel no longer active.
   const channel = channels.find((each) => each.id === channelId) ?? channels[0];

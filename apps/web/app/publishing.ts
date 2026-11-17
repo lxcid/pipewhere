@@ -1,3 +1,5 @@
+import { answer, type ApiRequest } from "./api.ts";
+
 /** A publication's place on the path to a remote post, per 00002 D3. */
 export type PublicationState =
   | "scheduled"
@@ -38,10 +40,7 @@ export interface PublicationRequest {
   planned_at?: string;
 }
 
-/**
- * How API answered a request. `unconfirmed` means no answer says whether the
- * request took effect: the network failed, or API answered 5xx.
- */
+/** How API answered a create request, with `unconfirmed` as in `answer`. */
 export type Sent =
   | { kind: "created"; publication: Publication }
   | { kind: "refused"; status: number; code: string }
@@ -94,6 +93,23 @@ export class Submitter {
   discard() {
     if (!this.#sending) this.#pending = null;
   }
+}
+
+/** Creates publications in one organization, through `useApi` or `callApi`. */
+export function sendCreate(
+  api: <T>(path: string, request?: ApiRequest) => Promise<T>,
+  organizationId: string,
+) {
+  return async (key: string, request: PublicationRequest): Promise<Sent> => {
+    const sent = await answer(() =>
+      api<Publication>(`/v1/orgs/${organizationId}/publications`, {
+        method: "POST",
+        body: request,
+        headers: { "idempotency-key": key },
+      }),
+    );
+    return sent.kind === "answered" ? { kind: "created", publication: sent.value } : sent;
+  };
 }
 
 const LOCAL_TIME = /^(\d{4,})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/;
