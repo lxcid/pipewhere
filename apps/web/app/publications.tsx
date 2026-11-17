@@ -169,8 +169,9 @@ function Compose({
     setProblem(null);
     setDone(null);
     const sent = await submitter.submit(request);
-    setSending(false);
+    // An earlier submission is still unanswered, and its own call settles the form.
     if (!sent) return;
+    setSending(false);
     if (sent.kind === "created") {
       setUnconfirmed(null);
       setBody("");
