@@ -26,11 +26,17 @@ export function useApi() {
   if (!apiUrl) throw new Error("useApi must be used inside ApiProvider");
   const { authUrl } = useAuth();
   return useCallback(
-    async <T,>(path: string, request: { method?: string; body?: unknown } = {}): Promise<T> => {
+    async <T,>(
+      path: string,
+      request: { method?: string; body?: unknown; headers?: Record<string, string> } = {},
+    ): Promise<T> => {
       const issued = await fetch(`${authUrl}/api/auth/token`, { credentials: "include" });
       if (!issued.ok) throw new Error(`Auth did not issue a token (${issued.status}).`);
       const { token } = (await issued.json()) as { token: string };
-      const headers: Record<string, string> = { authorization: `Bearer ${token}` };
+      const headers: Record<string, string> = {
+        ...request.headers,
+        authorization: `Bearer ${token}`,
+      };
       if (request.body !== undefined) headers["content-type"] = "application/json";
       const response = await fetch(`${apiUrl}${path}`, {
         method: request.method ?? "GET",

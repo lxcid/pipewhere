@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 
 import { useAuth } from "../../auth-client";
 import { Channels } from "../../channels";
+import { Publications } from "../../publications";
 import { Claims, ErrorText, Shell, useAction } from "../../ui";
 
 interface Organization {
@@ -26,14 +27,21 @@ export default function OrganizationPage() {
   const { client } = useAuth();
   const session = client.useSession();
   const [organization, setOrganization] = useState<Organization | null>(null);
-  const [missing, setMissing] = useState(false);
+  const [missing, setMissing] = useState<string | null>(null);
 
+  // An answer for an organization the page has moved on from is dropped, and
+  // the page shows only the organization its address names.
   useEffect(() => {
     if (!session.data) return;
+    let current = true;
     client.organization.getFullOrganization({ query: { organizationId } }).then(({ data }) => {
+      if (!current) return;
       if (data) setOrganization(data as Organization);
-      else setMissing(true);
+      else setMissing(organizationId);
     });
+    return () => {
+      current = false;
+    };
   }, [client, organizationId, session.data]);
 
   if (session.isPending) {
@@ -52,14 +60,14 @@ export default function OrganizationPage() {
       </Shell>
     );
   }
-  if (missing) {
+  if (missing === organizationId) {
     return (
       <Shell>
         <p>This organization does not exist, or you are not a member.</p>
       </Shell>
     );
   }
-  if (!organization) {
+  if (organization?.id !== organizationId) {
     return (
       <Shell>
         <p className="muted">Loading…</p>
@@ -95,6 +103,7 @@ export default function OrganizationPage() {
         </table>
       </section>
       <Channels organizationId={organization.id} />
+      <Publications key={organization.id} organizationId={organization.id} />
       <ApiKeys organizationId={organization.id} />
     </Shell>
   );
