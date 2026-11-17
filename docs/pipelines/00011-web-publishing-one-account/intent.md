@@ -1,5 +1,5 @@
 ---
-status: approved
+status: in-progress
 ---
 
 # Intent 00011 — Publishing to one Mastodon account from the web UI
