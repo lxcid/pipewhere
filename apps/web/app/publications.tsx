@@ -103,12 +103,8 @@ export function Publications({ organizationId }: { organizationId: string }) {
   return (
     <section className="card">
       <h2>Publications</h2>
-      {channels &&
-        (active.length ? (
-          <Compose organizationId={organizationId} channels={active} onCreated={show} />
-        ) : (
-          <p className="muted">Connect a Mastodon account above to write a publication.</p>
-        ))}
+      {/* Kept mounted when no channel can publish, so a draft and an unconfirmed submission survive a refresh. */}
+      {channels && <Compose organizationId={organizationId} channels={active} onCreated={show} />}
       <div className="row spread">
         <h3>Chronological list</h3>
         <button className="ghost" onClick={refresh}>
@@ -163,8 +159,8 @@ function Compose({
 }) {
   const api = useApi();
   const [submitter] = useState(() => new Submitter(sendCreate(api, organizationId)));
-  const [channelId, setChannelId] = useState(channels[0].id);
-  // A refresh can find the chosen channel no longer active.
+  const [channelId, setChannelId] = useState(channels[0]?.id);
+  // A refresh can find the chosen channel, or every channel, no longer active.
   const channel = channels.find((each) => each.id === channelId) ?? channels[0];
   const [body, setBody] = useState("");
   const [when, setWhen] = useState<"now" | "later">("now");
@@ -205,6 +201,7 @@ function Compose({
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!channel) return;
     if (!body.trim()) {
       setProblem("Write some text to publish.");
       return;
@@ -233,7 +230,10 @@ function Compose({
 
   return (
     <form onSubmit={submit} className="compose">
-      <fieldset disabled={sending || unconfirmed !== null} className="stack">
+      {!channel && (
+        <p className="muted">Connect a Mastodon account above to write a publication.</p>
+      )}
+      <fieldset disabled={sending || unconfirmed !== null || !channel} className="stack">
         <label>
           Text
           <textarea
@@ -245,7 +245,9 @@ function Compose({
         </label>
         <label>
           Channel
-          {channels.length > 1 ? (
+          {!channel ? (
+            <span className="value">None can publish</span>
+          ) : channels.length > 1 ? (
             <select value={channel.id} onChange={(event) => setChannelId(event.target.value)}>
               {channels.map((channel) => (
                 <option key={channel.id} value={channel.id}>
@@ -254,7 +256,7 @@ function Compose({
               ))}
             </select>
           ) : (
-            <span className="value">{channels[0].handle}</span>
+            <span className="value">{channel.handle}</span>
           )}
         </label>
         <div className="choices" role="radiogroup" aria-label="When to publish">

@@ -14,6 +14,7 @@ Proposed: awaiting operator approval.
 - **Refused after an unconfirmed send.** A 4xx to "Send again", such as an ended session, says nothing about the first send, which may have created the publication. The submission stays unconfirmed, with its key, and the form shows the refusal beside the notice.
 - **Unconfirmed.** A request with no answer, a 2xx whose body Web cannot read, or a 5xx may have created the publication. Web keeps the key and the request, and locks the form. It never shows this as success. "Send again" sends the same request with the same key, so API answers with the first publication if there is one. "Discard" drops the key and unlocks the form, with a warning that sending the text again can post it twice.
 - **Publish now leaves out `planned_at`.** API then sets the time by its own clock, and a resent request hashes the same as the first.
+- **The form outlives its channel.** When a refresh finds that no channel can publish, the form stays on the page, disabled, with a prompt to connect an account. A draft and an unconfirmed submission survive it.
 
 The key lives in the page's memory. Reloading the page loses it. Tolerated: after a reload the list shows whether the publication exists, so the operator can see it before writing the text again. Keeping the key in browser storage would add a store, an expiry rule, and a cleanup path to save a check the list already gives.
 
