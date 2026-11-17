@@ -5,42 +5,58 @@ Built in one PR, against #41. API and Worker do not change. Every endpoint Web n
 ## Shape
 
 - `apps/web/app/publishing.ts` holds the logic, with no React: the idempotency key, the submission state (D1), reading a local time (D2), the list's order (D3), merging a refreshed page, what each state means, and what to say about a refused or unconfirmed request.
+- `apps/web/app/api.ts` holds the request to API, also without React. An answer whose body is not a JSON object throws a plain error, so a cut-off 2xx counts as unconfirmed, not created. `useApi` wraps it.
 - `apps/web/app/publications.tsx` is the organization page's Publications card. It has the form, the chronological list, the newest attempt's reason (D5), and cancel (D6). It refreshes while work can still change (D4).
-- The organization page shows the card under Channels. The page renders only the organization its address names, and drops an answer for one it has moved on from.
-- `useApi` passes extra headers, for `Idempotency-Key`.
+- The organization page shows the card under Channels. The page renders only the organization its address names, and drops an answer for one it has moved on from. Next.js 16.4.2 already mounts a new page for each organization id, because its layout router keys a segment by its value. The guard keeps the page correct without relying on that.
 
 ## Steps
 
 1. Tests for `publishing.ts`, then the module. Done.
 2. The Publications card, and its place on the organization page. Done.
 3. The organization page guard against stale answers. Done.
-4. Check every interaction in a browser against a local stack, and capture screenshots. In progress.
+4. Tests for an unreadable successful answer, then `api.ts`. Done.
+5. Check every interaction in a browser against a local stack, and capture screenshots. Done.
 
 ## Verification
 
 ### Commands
 
-Run at the PR's head, from the repository root unless noted:
+Run at `0169f7d`, from the repository root unless noted:
 
-- `pnpm --filter @pipewhere/web test`: the tests in `publishing.test.ts`.
-- `pnpm --filter @pipewhere/web typecheck`
-- `pnpm --filter @pipewhere/web build`
-- `pnpm fmt:check`. It also reports three files that `main` already leaves unformatted. This change does not touch them.
+- `pnpm --filter @pipewhere/web test`: 23 pass. `publishing.test.ts` covers the key, the submission state, local times in New York including both daylight-saving changes, the list's order, merging, the state descriptions, and the messages. `api.test.ts` runs the real request code against a stubbed `fetch`: an unreadable 2xx, a 5xx, a failed connection, a 4xx, and a create whose answer is cut off after API stored it, sent again with the same key.
+- `pnpm --filter @pipewhere/web typecheck`: clean.
+- `pnpm --filter @pipewhere/web build`: passes. In an agent's shell, Next.js 16.4.2 first stops with a notice that this version has a known security advisory, and passes when run again. The notice is about the installed Next.js, not this change.
+- `pnpm fmt:check`: reports only three files that `main` already leaves unformatted. This change does not touch them.
 
-API, Worker, and Auth do not change, so their suites are not part of this change's verification.
+API, Worker, and Auth do not change, so their suites were not run.
 
 ### Browser checks against a local stack
 
-The stack runs only on this machine, with its own PostgreSQL and Restate containers. API and Worker run from their libraries with the plain-HTTP Mastodon client, against a fake Mastodon instance on a local port. Its account is `@fixture-demo`. No real instance is called.
+Verified at `0169f7d`. The stack ran only on the builder's machine, with its own PostgreSQL and Restate containers. Web ran as a production build. API and Worker ran from their libraries with the plain-HTTP Mastodon client, against a fake Mastodon instance on a local port. The fake's account is `@fixture-demo`, and every post text starts with "Fixture". No real instance was called. A script drove headless Chrome 157 through the DevTools protocol, and read the database to check each result. It simulated network failures by intercepting requests in the browser.
 
-Pending: the results of each check below.
+All 33 checks passed:
 
-- Publish now, and the list showing the post go out.
-- Schedule for a time, and the time shown in the browser's zone.
-- A double click sending one request.
-- A request that gets no answer, then "Send again" answering with the same publication.
-- A refused text.
-- An instance refusal, shown as failed with the instance's reason.
-- A server error at the instance, shown as outcome unknown with its reason.
-- Cancel, and a cancel that arrives after the publication has started.
-- Moving between organizations while an organization's answer is delayed.
+- Without an active channel, the card asks to connect one. Connecting the fake account shows the form.
+- Publish now with a double click sends one request and creates one publication. Within the list's refresh, it shows as published, with the post's address.
+- Scheduling in Asia/Singapore names the zone, previews the time, and stores the same instant in UTC.
+- A time in the past is refused before sending.
+- In America/New_York, 2:30 on 2027-03-14, which the clock skips, previews as 3:30 GMT-4.
+- The instance's 422 shows as failed, with the instance's reason.
+- The instance's 500 shows as outcome unknown, with its reason and no cancel. 15 seconds later it still has one attempt.
+- Cancel asks to confirm, then cancels.
+- A cancel that arrives after the publication moved to `publishing` shows that it could no longer be cancelled, and the list shows `publishing`. The move was made in the database, standing in for Worker's claim.
+- A 201 whose body is cut off: API stored the publication, the form locks and says the request was not confirmed, and "Send again" reuses the key and finds the one publication.
+- A request that never reaches API: nothing is stored, and "Send again" reuses the key and creates it once.
+- A 422 from API keeps the form editable, and the next submission takes a new key.
+- While the first organization's answer is held, its page shows only "Loading…". After moving to a second organization and then releasing the held answer, the page still shows the second organization, without the first's form.
+- A failed list load says so, and Refresh recovers.
+- With 101 more publications, the first page shows 100 and "Show older", which loads the rest.
+- No sideways scroll at 390 pixels wide. No console errors.
+
+The screenshots are attached to the handoff, not committed.
+
+### Not verified
+
+- A real Mastodon instance. The fake follows the answers the API's own test fake uses.
+- Auth refusing a token mid-session. That error is unconfirmed, like any other request that is not answered.
+- Browsers other than Chrome.

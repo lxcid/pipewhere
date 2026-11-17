@@ -11,7 +11,7 @@ Proposed: awaiting operator approval.
 - **One key per submission.** Web makes the key from 16 random bytes in base64url, 22 characters, when the operator submits. A second submit while the first is unanswered sends nothing.
 - **Created.** A 201 ends the key. The form clears, and the next submission is a new publication with a new key.
 - **Refused.** A 4xx created nothing, because API stores nothing for a refused request. The form shows why and stays editable. The next submission takes a new key.
-- **Unconfirmed.** A request with no answer, or a 5xx, may have created the publication. Web keeps the key and the request, and locks the form. It never shows this as success. "Send again" sends the same request with the same key, so API answers with the first publication if there is one. "Discard" drops the key and unlocks the form, with a warning that sending the text again can post it twice.
+- **Unconfirmed.** A request with no answer, a 2xx whose body Web cannot read, or a 5xx may have created the publication. Web keeps the key and the request, and locks the form. It never shows this as success. "Send again" sends the same request with the same key, so API answers with the first publication if there is one. "Discard" drops the key and unlocks the form, with a warning that sending the text again can post it twice.
 - **Publish now leaves out `planned_at`.** API then sets the time by its own clock, and a resent request hashes the same as the first.
 
 The key lives in the page's memory. Reloading the page loses it. Tolerated: after a reload the list shows whether the publication exists, so the operator can see it before writing the text again. Keeping the key in browser storage would add a store, an expiry rule, and a cleanup path to save a check the list already gives.
@@ -67,7 +67,7 @@ If Worker moves the publication to `publishing` before the cancel arrives, API a
 
 Proposed: awaiting operator approval.
 
-Web had no tests. Its new logic lives in `publishing.ts`, which imports nothing from React. Node 26 runs TypeScript test files by removing their types, so `node --test` runs that module's tests without a test framework. `tsconfig.json` allows the `.ts` import the test needs.
+Web had no tests. Its new logic lives in `publishing.ts` and `api.ts`, which import nothing from React. Node 26 runs TypeScript test files by removing their types, so `node --test` runs their tests without a test framework. `api.ts` sends the real requests, so its tests stub only `fetch`. `tsconfig.json` allows the `.ts` imports the tests need.
 
 The React components hold no decisions of their own. They are checked by running Web against a local stack in a browser, as the plan records.
 
