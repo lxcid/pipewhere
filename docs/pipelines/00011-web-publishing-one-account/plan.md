@@ -21,12 +21,14 @@ Built in one PR, against #41. API and Worker do not change. Every endpoint Web n
    - A refused "Send again" keeps the submission unconfirmed, with its key.
    - The form stays mounted when no channel can publish, so its draft and an unconfirmed submission survive.
    - A waiting publication's row states why its channel cannot publish, instead of pointing at the Channels card.
+7. Fix from the second review round, with its browser check. Done.
+   - A refresh that a create, a cancel, or "Show older" overtakes loads again, instead of replacing the list with its older answer.
 
 ## Verification
 
 ### Commands
 
-Run at `513cc51`, from the repository root unless noted:
+Run at `6ef1ffa`, from the repository root unless noted:
 
 - `pnpm --filter @pipewhere/web test`: 27 pass. `publishing.test.ts` covers the key, the submission state including a refused resend, local times in New York including both daylight-saving changes, the list's order, reloading every page shown, merging, the state descriptions, and the messages. `api.test.ts` runs the real request code against a stubbed `fetch`: an unreadable 2xx, a 5xx, a failed connection, a 4xx, and a create whose answer is cut off after API stored it, sent again with the same key.
 - `pnpm --filter @pipewhere/web typecheck`: clean.
@@ -37,9 +39,9 @@ API, Worker, and Auth do not change, so their suites were not run.
 
 ### Browser checks against a local stack
 
-Verified on the Web code of `513cc51`. The stack ran only on the builder's machine, with its own PostgreSQL and Restate containers. Web ran as a production build. API and Worker ran from their libraries with the plain-HTTP Mastodon client, against a fake Mastodon instance on a local port. The fake's account is `@fixture-demo`, and every post text starts with "Fixture". No real instance was called. A script drove headless Chrome 157 through the DevTools protocol, and read the database to check each result. It simulated network failures by intercepting requests in the browser.
+Verified at `6ef1ffa`. The stack ran only on the builder's machine, with its own PostgreSQL and Restate containers. Web ran as a production build. API and Worker ran from their libraries with the plain-HTTP Mastodon client, against a fake Mastodon instance on a local port. The fake's account is `@fixture-demo`, and every post text starts with "Fixture". No real instance was called. A script drove headless Chrome 157 through the DevTools protocol, and read the database to check each result. It simulated network failures by intercepting requests in the browser.
 
-All 39 checks passed:
+All 42 checks passed:
 
 - Without an active channel, the card asks to connect one. Connecting the fake account shows the form.
 - Publish now with a double click sends one request and creates one publication. Within the list's refresh, it shows as published, with the post's address.
@@ -59,6 +61,7 @@ All 39 checks passed:
 - A failed list load says so, and Refresh recovers.
 - With 101 more publications, the first page shows 100 and "Show older", which loads the rest.
 - A publication that only "Show older" loaded, cancelled in the database, shows as cancelled after Refresh.
+- A refresh whose answer is held until a create has been answered: the new publication stays in the list when the held answer arrives.
 - No sideways scroll at 390 pixels wide. No console errors.
 
 Screenshots from that run, all of fixture data:
