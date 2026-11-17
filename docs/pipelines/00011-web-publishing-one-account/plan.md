@@ -53,7 +53,16 @@ All 33 checks passed:
 - With 101 more publications, the first page shows 100 and "Show older", which loads the rest.
 - No sideways scroll at 390 pixels wide. No console errors.
 
-The screenshots are attached to the handoff, not committed.
+Screenshots from that run, all of fixture data:
+
+- [The form, with the fake account connected](evidence/compose.png)
+- [Scheduling in Asia/Singapore, with the preview](evidence/schedule-preview.png)
+- [The daylight-saving gap in America/New_York](evidence/daylight-saving-gap.png)
+- [Failed and outcome unknown, each with its reason](evidence/failed-and-unknown.png)
+- [An unconfirmed create, and a cancel that lost the race](evidence/unconfirmed-and-cancel-race.png)
+- [The second organization, after the first's late answer](evidence/organization-switch.png)
+- [Phone width](evidence/phone.png)
+- [Dark scheme](evidence/dark-scheme.png)
 
 ### Not verified
 
