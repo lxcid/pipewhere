@@ -104,6 +104,21 @@ describe("Submitter", () => {
     assert.notEqual(calls[1].key, calls[0].key);
   });
 
+  test("a refused resend stays unconfirmed, because the first send may have created it", async () => {
+    const { calls, send } = recorder([
+      { kind: "unconfirmed", reason: "Failed to fetch" },
+      { kind: "refused", status: 401, code: "unauthorized" },
+      { kind: "created", publication: created },
+    ]);
+    const submitter = new Submitter(send);
+    await submitter.submit(request);
+    const refused = await submitter.submit(request);
+    assert.equal(refused?.kind, "refused");
+    assert.deepEqual(submitter.unconfirmed, request);
+    await submitter.submit(request);
+    assert.equal(calls[2].key, calls[0].key);
+  });
+
   test("a created publication ends its key, so the next submission is a new publication", async () => {
     const { calls, send } = recorder([
       { kind: "created", publication: created },

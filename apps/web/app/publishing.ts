@@ -69,7 +69,7 @@ export function newIdempotencyKey(): string {
  */
 export class Submitter {
   #send: (key: string, request: PublicationRequest) => Promise<Sent>;
-  #pending: { key: string; request: PublicationRequest } | null = null;
+  #pending: { key: string; request: PublicationRequest; sent: boolean } | null = null;
   #sending = false;
 
   constructor(send: (key: string, request: PublicationRequest) => Promise<Sent>) {
@@ -84,13 +84,19 @@ export class Submitter {
   /** Answers null, and sends nothing, while an earlier submission is unanswered. */
   async submit(request: PublicationRequest): Promise<Sent | null> {
     if (this.#sending) return null;
-    this.#pending ??= { key: newIdempotencyKey(), request };
+    this.#pending ??= { key: newIdempotencyKey(), request, sent: false };
+    const pending = this.#pending;
     this.#sending = true;
     try {
-      const sent = await this.#send(this.#pending.key, this.#pending.request);
-      if (sent.kind !== "unconfirmed") this.#pending = null;
+      const sent = await this.#send(pending.key, pending.request);
+      // A refusal says only that this request did nothing. After an earlier
+      // send went unanswered, that one may still have created the publication.
+      if (sent.kind === "created" || (sent.kind === "refused" && !pending.sent)) {
+        this.#pending = null;
+      }
       return sent;
     } finally {
+      pending.sent = true;
       this.#sending = false;
     }
   }

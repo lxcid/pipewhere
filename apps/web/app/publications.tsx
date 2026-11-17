@@ -197,7 +197,8 @@ function Compose({
     } else if (sent.kind === "unconfirmed") {
       setUnconfirmed(sent.reason);
     } else {
-      setUnconfirmed(null);
+      // A refused resend leaves the first send unconfirmed, and its notice stays.
+      if (!submitter.unconfirmed) setUnconfirmed(null);
       setProblem(problemOf(sent));
     }
   }

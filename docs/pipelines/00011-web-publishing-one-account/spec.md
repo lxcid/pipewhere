@@ -10,7 +10,8 @@ Proposed: awaiting operator approval.
 
 - **One key per submission.** Web makes the key from 16 random bytes in base64url, 22 characters, when the operator submits. A second submit while the first is unanswered sends nothing.
 - **Created.** A 201 ends the key. The form clears, and the next submission is a new publication with a new key.
-- **Refused.** A 4xx created nothing, because API stores nothing for a refused request. The form shows why and stays editable. The next submission takes a new key.
+- **Refused.** A 4xx to a submission's first send created nothing, because API stores nothing for a refused request. The form shows why and stays editable. The next submission takes a new key.
+- **Refused after an unconfirmed send.** A 4xx to "Send again", such as an ended session, says nothing about the first send, which may have created the publication. The submission stays unconfirmed, with its key, and the form shows the refusal beside the notice.
 - **Unconfirmed.** A request with no answer, a 2xx whose body Web cannot read, or a 5xx may have created the publication. Web keeps the key and the request, and locks the form. It never shows this as success. "Send again" sends the same request with the same key, so API answers with the first publication if there is one. "Discard" drops the key and unlocks the form, with a warning that sending the text again can post it twice.
 - **Publish now leaves out `planned_at`.** API then sets the time by its own clock, and a resent request hashes the same as the first.
 
