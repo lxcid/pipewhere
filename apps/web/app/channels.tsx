@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { ApiError, useApi } from "./api-client";
 import { ErrorText, useAction } from "./ui";
 
-interface Channel {
+export interface Channel {
   id: string;
   provider: "mastodon" | "threads";
   handle: string | null;
