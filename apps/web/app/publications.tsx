@@ -391,7 +391,7 @@ function PublicationItem({
       ? publication.state === "scheduled"
         ? `${CANNOT_PUBLISH[channel.status]} It fails at its planned time unless the account is connected again.`
         : publication.state === "awaiting_approval"
-          ? `${CANNOT_PUBLISH[channel.status]} If approved, it fails at its planned time unless the account is connected again.`
+          ? `${CANNOT_PUBLISH[channel.status]} If approved, it fails unless the account is connected again before it is sent.`
           : null
       : null;
 

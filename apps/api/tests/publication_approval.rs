@@ -241,16 +241,15 @@ async fn a_key_may_withdraw_its_waiting_publication() {
     )
     .await;
     let id = waiting["id"].as_str().unwrap();
-    let cancelled = ok_json(
-        instance
-            .post(
-                &format!("/v1/orgs/{organization_id}/publications/{id}/cancel"),
-                Some(&key_token),
-                json!({}),
-            )
-            .await,
-    )
-    .await;
+    let cancel = format!("/v1/orgs/{organization_id}/publications/{id}/cancel");
+    let cancelled = ok_json(instance.post(&cancel, Some(&key_token), json!({})).await).await;
     assert_eq!(cancelled["state"], "cancelled");
+
+    // A withdrawal sent again after a lost response is told the draft moved on,
+    // as a member would be, not that keys may not cancel.
+    assert_eq!(
+        refusal(instance.post(&cancel, Some(&key_token), json!({})).await).await,
+        (StatusCode::CONFLICT, "state_conflict".to_owned())
+    );
     instance.close().await;
 }

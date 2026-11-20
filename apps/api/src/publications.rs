@@ -619,7 +619,7 @@ pub async fn update_publication(
         (status = 200, body = Publication, description = "The cancelled publication"),
         (status = 401, body = ErrorBody, description = "No valid access token"),
         (status = 404, body = ErrorBody, description = "No such publication in the organization, or the caller is not in it"),
-        (status = 403, body = ErrorBody, description = "An API key may cancel only an `awaiting_approval` publication"),
+        (status = 403, body = ErrorBody, description = "An API key may not cancel a `scheduled` or `preparing` publication; it may cancel only an `awaiting_approval` one"),
         (status = 409, body = ErrorBody, description = "The publication is not `awaiting_approval`, `scheduled`, or `preparing`"),
         (status = 500, body = ErrorBody, description = "A database query failed"),
         (status = 503, body = ErrorBody, description = "Auth's signing keys could not be fetched"),
@@ -651,10 +651,23 @@ pub async fn cancel_publication(
     .await?;
     match cancelled {
         Some(publication) => Ok(Json(publication)),
-        None => match refusal(&state.db, organization_id, &publication_id).await {
-            ApiError::StateConflict if by_key => Err(ApiError::Forbidden),
-            refused => Err(refused),
-        },
+        None if by_key => {
+            let current: Option<PublicationState> = sqlx::query_scalar(
+                "SELECT state FROM pipewhere.publication WHERE id = $1 AND organization_id = $2",
+            )
+            .bind(&publication_id)
+            .bind(organization_id)
+            .fetch_optional(&state.db)
+            .await?;
+            Err(match current {
+                None => ApiError::NotFound,
+                Some(PublicationState::Scheduled | PublicationState::Preparing) => {
+                    ApiError::Forbidden
+                }
+                Some(_) => ApiError::StateConflict,
+            })
+        }
+        None => Err(refusal(&state.db, organization_id, &publication_id).await),
     }
 }
 

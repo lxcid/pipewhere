@@ -292,8 +292,17 @@ describe("describeState", () => {
 
   test("offers approval only while a publication awaits it", () => {
     const approvable = (state: Publication["state"]) =>
-      describeState(publication({ state }), now).approvable;
+      describeState(publication({ state, deadline: "2026-11-19T00:30:00Z" }), now).approvable;
     assert.deepEqual(STATES.filter(approvable), ["awaiting_approval"]);
+  });
+
+  test("stops offering approval once the deadline has passed", () => {
+    const view = describeState(
+      publication({ state: "awaiting_approval", deadline: "2026-11-18T12:00:00Z" }),
+      now,
+    );
+    assert.equal(view.approvable, false);
+    assert.equal(view.cancellable, true);
   });
 
   test("says an agent's publication goes out only once approved", () => {

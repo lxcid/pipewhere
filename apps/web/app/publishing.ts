@@ -214,7 +214,10 @@ export interface StateView {
  * it, per 00002 D3 and 00010 D4.
  */
 export function describeState(publication: Publication, now: Date): StateView {
-  return { ...describe(publication, now), approvable: publication.state === "awaiting_approval" };
+  return {
+    ...describe(publication, now),
+    approvable: publication.state === "awaiting_approval" && !approvalTooLate(publication, now),
+  };
 }
 
 function describe(publication: Publication, now: Date): Omit<StateView, "approvable"> {
