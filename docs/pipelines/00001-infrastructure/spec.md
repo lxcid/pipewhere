@@ -81,6 +81,8 @@ Joining an organization needs a verified email. The operator chose this over let
 
 A team deployment therefore needs email delivery, or a sign-in provider that reports the email as verified, before a teammate can join. A single operator needs neither.
 
+[00012 D1](../00012-team-members/spec.md) overturns this rule. An invited person now joins without a verified email.
+
 Organization deletion is off, through Better Auth's `disableOrganizationDeletion`. Better Auth's delete would leave the organization's API keys behind, since a key's owner is an unconstrained reference, and the organization's `pipewhere` rows would block it. A pipeline that needs deletion defines one lifecycle for business rows and keys.
 
 API owns resource-level authorization. On every request it checks, in Auth's tables, that the caller may act in the organization the request names:
