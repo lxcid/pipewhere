@@ -21,11 +21,19 @@ Run at `abf69ca`, from the repository root unless noted:
 
 - `pnpm --filter @pipewhere/auth test`: 20 pass. An invitee whose email is not verified joins through the invitation. Another address is refused with 403. An unverified user is refused when listing their invitations, so they cannot find an invitation's id that way.
 - `cargo test -p pipewhere-api --test organization_roles`: 3 pass. A member and a key get 403 `forbidden` on starting and finishing a Mastodon connection and on changing settings. An owner and an admin get past the check, to the body's own error. A refused member changes nothing. A member made admin, then member again, gets the matching answer on the next request with the same token.
-- `cargo test -p pipewhere-api --test access --test mastodon_channels --test publication_approval --test publication_transitions --test settings`: pass, except one run where `publication_transitions::a_retry_waits_for_another_transaction_holding_its_key` failed because Auth did not answer `/health` within 10 seconds. It passed when run alone.
+- `cargo test -p pipewhere-api`, every test binary: pass, with one exception below. `settings.rs` now has an admin change the default tolerance, since D2 overturns 00003 D11's rule that any member or key may.
+
 - `cargo test -p pipewhere-api --lib`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo fmt --check`: clean.
 - `pnpm --filter @pipewhere/web test`: 39 pass. `roles.test.ts` covers which roles manage, a comma-separated role, which roles each role may grant, whom an admin may change, the invitation link, and which invitations count as pending.
 - `pnpm --filter @pipewhere/web typecheck`: clean.
 - `pnpm --filter @pipewhere/web build`: passes. As in 00011, Next.js 16.4.2 first stops with a notice about a known security advisory, and passes when run again.
+
+### Failures outside this change
+
+These were seen on the builder's machine, macOS on Darwin 27, as in 00010:
+
+- `mastodon_publishing::an_instance_that_never_answers_the_connection_refuses` fails in its own setup. It expects the kernel to drop a connection silently once a listener's accept queue is full. This kernel resets it instead.
+- `publication_transitions::a_retry_waits_for_another_transaction_holding_its_key` failed once in a parallel run because Auth did not answer `/health` within 10 seconds. It passed when run alone, and in the full run.
 
 ### Browser checks against a local stack
 

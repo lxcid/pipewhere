@@ -25,7 +25,9 @@ What would overturn this: Pipewhere gaining email delivery, or a deployment whos
 
 ### D2 — Owners and admins manage the organization; members publish
 
-This sets what each of Better Auth's three roles may do. The operator chose it on 2026-11-21.
+Overturns: 00003 D11, its rule that any member and any key may change the organization's default tolerance.
+
+This sets what each of Better Auth's three roles may do. The operator chose it on 2026-11-21. 00003 D11 left the default tolerance open to everyone only until a pipeline built forbidden, and left team permissions to 00006, which this intent splits from.
 
 In API:
 
