@@ -315,7 +315,7 @@ impl Instance {
     }
 
     /// Makes `invitee` a member with `role`, the way Auth allows: an invitation
-    /// accepted by a user whose email is verified.
+    /// accepted by the invited address.
     pub async fn add_member(
         &self,
         owner: &User,
@@ -324,11 +324,6 @@ impl Instance {
         email: &str,
         role: &str,
     ) {
-        sqlx::query(r#"UPDATE auth."user" SET "emailVerified" = true WHERE id = $1"#)
-            .bind(&invitee.id)
-            .execute(&self.admin)
-            .await
-            .unwrap();
         let body = json!({ "organizationId": organization_id, "email": email, "role": role });
         let invitation = self
             .auth_post(owner, "/organization/invite-member", body)

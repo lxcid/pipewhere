@@ -28,6 +28,33 @@ pub struct OrgCaller {
     pub actor: Actor,
 }
 
+impl OrgCaller {
+    /// Refuses an API key, per 00010 D4: a key may create, read, and cancel.
+    /// Any other change could put text in front of Worker that no member
+    /// approved.
+    pub fn require_member(&self) -> Result<(), ApiError> {
+        match self.actor {
+            Actor::User { .. } => Ok(()),
+            Actor::ApiKey { .. } => Err(ApiError::Forbidden),
+        }
+    }
+
+    /// Refuses anyone but an owner or admin, per 00012 D2. Better Auth stores
+    /// several roles as one comma-separated string.
+    pub fn require_manager(&self) -> Result<(), ApiError> {
+        match &self.actor {
+            Actor::User { role, .. }
+                if role
+                    .split(',')
+                    .any(|role| matches!(role.trim(), "owner" | "admin")) =>
+            {
+                Ok(())
+            }
+            _ => Err(ApiError::Forbidden),
+        }
+    }
+}
+
 impl<S> FromRequestParts<S> for OrgCaller
 where
     AppState: FromRef<S>,
