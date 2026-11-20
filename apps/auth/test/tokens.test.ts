@@ -101,9 +101,6 @@ test("a missing, unknown, disabled, or expired key is refused", async () => {
 test("a key keeps working after the member who created it is removed", async () => {
   // Better Auth's default roles let only an owner create an organization's keys.
   const coOwner = await signUp(instance, "co-owner@example.com");
-  await instance.authPool.query(`UPDATE "user" SET "emailVerified" = true WHERE id = $1`, [
-    coOwner.userId,
-  ]);
   const invitation = await json<{ id: string }>(
     await owner.request("/api/auth/organization/invite-member", {
       method: "POST",

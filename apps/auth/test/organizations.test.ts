@@ -83,21 +83,25 @@ test("setting an active organization explicitly is overridden", async () => {
   assert.deepEqual(await activeOrganizations(owner.userId), [null]);
 });
 
-test("an invitee with an unverified email cannot join; once verified, joining leaves no active organization", async () => {
+// 00012 D1: the link's unguessable id and the invited address are what admit
+// someone, so another address is refused, and an unverified user cannot list
+// the ids.
+test("an invitee joins through the link without a verified email; joining leaves no active organization", async () => {
   const organization = await createOrganization(owner, "team");
   const invitee = await signUp(instance, "invitee@example.com");
+  const stranger = await signUp(instance, "stranger@example.com");
   const invitation = await invite(organization.id, "invitee@example.com");
   assert.match(invitation.id, /^inv_/);
 
-  const refused = await invitee.request("/api/auth/organization/accept-invitation", {
+  const listed = await invitee.request("/api/auth/organization/list-user-invitations");
+  assert.equal(listed.status, 403);
+
+  const wrongAddress = await stranger.request("/api/auth/organization/accept-invitation", {
     method: "POST",
     body: JSON.stringify({ invitationId: invitation.id }),
   });
-  assert.equal(refused.status, 403);
+  assert.equal(wrongAddress.status, 403);
 
-  await instance.authPool.query(`UPDATE "user" SET "emailVerified" = true WHERE id = $1`, [
-    invitee.userId,
-  ]);
   const accepted = await json<{ member: { id: string } }>(
     await invitee.request("/api/auth/organization/accept-invitation", {
       method: "POST",

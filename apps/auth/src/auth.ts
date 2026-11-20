@@ -34,9 +34,10 @@ export function authOptions(pool: Pool, env: AuthEnv) {
     plugins: [
       organization({
         disableOrganizationDeletion: true,
-        // A verified email proves the invitee owns the invited address. Set
-        // explicitly because Better Auth's default depends on the id generator.
-        requireEmailVerificationOnInvitation: true,
+        // Auth sends no email, so the invitation's link admits the invited
+        // address (00012 D1). Set explicitly because Better Auth's default
+        // depends on the id generator.
+        requireEmailVerificationOnInvitation: false,
       }),
       apiKey({
         references: "organization",
