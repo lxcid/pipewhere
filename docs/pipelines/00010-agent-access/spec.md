@@ -36,8 +36,6 @@ A test checks that each action endpoint writes exactly one row, so an action tha
 
 ### D4 — `awaiting_approval` comes before `scheduled`, and only a member leaves it
 
-Proposed: awaiting operator approval.
-
 This is the approval state [publication contract D3](../00002-publication-contract/spec.md) lets an approval pipeline add.
 
 - **Who waits.** A publication created with an API key starts in `awaiting_approval`. One created by a member starts in `scheduled`, as before. API counts every API key as an agent. An operator's own script that uses a key is therefore reviewed too. Telling agents from other keys would need a kind of key that Auth does not have.
