@@ -1,7 +1,8 @@
 import { answer, type ApiRequest } from "./api.ts";
 
-/** A publication's place on the path to a remote post, per 00002 D3. */
+/** A publication's place on the path to a remote post, per 00002 D3 and 00010 D4. */
 export type PublicationState =
+  | "awaiting_approval"
   | "scheduled"
   | "preparing"
   | "publishing"
@@ -192,16 +193,46 @@ export function merged(loaded: Publication[], fresh: Publication[]): Publication
   return [...fresh, ...loaded.filter((publication) => !ids.has(publication.id))];
 }
 
+export const TOO_LATE =
+  "Its time has passed, so it can no longer be approved. Cancel it, and ask the agent for it again with a new time.";
+
+/** Worker fails a publication approved at or after its deadline, per 00003 D1. */
+export function approvalTooLate(publication: Publication, now: Date): boolean {
+  return Date.parse(publication.deadline) <= now.getTime();
+}
+
 export interface StateView {
   label: string;
   tone: "waiting" | "working" | "published" | "failed" | "unknown" | "cancelled";
   detail?: string;
   cancellable: boolean;
+  approvable: boolean;
 }
 
-/** What a state means to the operator, and whether they may cancel it, per 00002 D3. */
+/**
+ * What a state means to the operator, and whether they may cancel or approve
+ * it, per 00002 D3 and 00010 D4.
+ */
 export function describeState(publication: Publication, now: Date): StateView {
+  return {
+    ...describe(publication, now),
+    approvable: publication.state === "awaiting_approval" && !approvalTooLate(publication, now),
+  };
+}
+
+function describe(publication: Publication, now: Date): Omit<StateView, "approvable"> {
   switch (publication.state) {
+    case "awaiting_approval":
+      return {
+        label: "Awaiting approval",
+        tone: "waiting",
+        detail: approvalTooLate(publication, now)
+          ? TOO_LATE
+          : Date.parse(publication.planned_at) <= now.getTime()
+            ? `An API key created this. Its time has passed. Approved now, it goes out if it starts by ${formatTime(publication.deadline)}.`
+            : "An API key created this. It goes out at its time only after you approve it.",
+        cancellable: true,
+      };
     case "scheduled":
       return {
         label: "Scheduled",
@@ -250,7 +281,7 @@ const REFUSED: Record<string, string> = {
     "Pipewhere refused the text or the time. Write some text, and choose a time no later than the year 9999.",
   channel_not_found: "That channel is no longer in this organization. Reload the page.",
   state_conflict:
-    "It had already moved on, so it could no longer be cancelled. The list shows where it is now.",
+    "It had already moved on, so that could no longer be done. The list shows where it is now.",
 };
 
 /** What to tell the operator about a request API refused or did not confirm. */

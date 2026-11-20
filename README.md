@@ -71,6 +71,8 @@ curl -H "authorization: Bearer $TOKEN" http://localhost:3002/v1/orgs/$ORGANIZATI
 
 A token expires after 15 minutes. Exchange the key again for a new one.
 
+A publication created with a key waits as `awaiting_approval`. It goes out only after a member approves it on the organization's page in Web. Cancelling it there rejects it. A key may create and read publications, and cancel one that still awaits approval. It cannot approve, edit, retry, or resolve them, or cancel one a member scheduled or approved.
+
 Stop the stack with `docker compose down`. Your data stays in Docker volumes; `docker compose down --volumes` deletes it.
 
 ## Change Worker

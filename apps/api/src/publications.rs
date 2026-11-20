@@ -11,7 +11,7 @@ use sqlx::PgPool;
 use utoipa::ToSchema;
 
 use crate::AppState;
-use crate::access::OrgCaller;
+use crate::access::{Actor, OrgCaller};
 use crate::contents::checked_body;
 use crate::error::{ApiError, ErrorBody, JsonBody};
 use crate::ids::new_id;
@@ -38,11 +38,13 @@ macro_rules! columns {
     };
 }
 
-/// A publication's place on the path to a remote post, per 00002 D3.
+/// A publication's place on the path to a remote post, per 00002 D3 and
+/// 00010 D4.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema, sqlx::Type)]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
 pub enum PublicationState {
+    AwaitingApproval,
     Scheduled,
     Preparing,
     Publishing,
@@ -229,6 +231,11 @@ pub async fn create_publication(
     }
     let organization_id = &caller.organization_id;
     let id = new_id("publication");
+    // 00010 D4: API counts every key as an agent.
+    let initial_state = match caller.actor {
+        Actor::User { .. } => PublicationState::Scheduled,
+        Actor::ApiKey { .. } => PublicationState::AwaitingApproval,
+    };
 
     let mut tx = state.db.begin().await?;
     // A concurrent insert of the same key waits here until the first
@@ -304,7 +311,7 @@ pub async fn create_publication(
     let publication = sqlx::query_as(concat!(
         "INSERT INTO pipewhere.publication
              (id, organization_id, channel_id, content_id, body, state, planned_at, tolerance_seconds)
-         VALUES ($1, $2, $3, $4, $5, 'scheduled', COALESCE($6, now()), $7)
+         VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, now()), $8)
          RETURNING ",
         columns!()
     ))
@@ -313,6 +320,7 @@ pub async fn create_publication(
     .bind(&input.channel_id)
     .bind(&content_id)
     .bind(&body)
+    .bind(initial_state)
     .bind(planned_at)
     .bind(tolerance_seconds)
     .fetch_one(&mut *tx)
@@ -518,6 +526,15 @@ async fn refusal(db: &PgPool, organization_id: &str, publication_id: &str) -> Ap
     }
 }
 
+// 00010 D4: a key may create, read, and cancel. Any other change could put text
+// in front of Worker that no member approved.
+fn member_only(caller: &OrgCaller) -> Result<(), ApiError> {
+    match caller.actor {
+        Actor::User { .. } => Ok(()),
+        Actor::ApiKey { .. } => Err(ApiError::Forbidden),
+    }
+}
+
 // A field the edit does not define, such as `channel_id`, would otherwise be
 // dropped without changing anything.
 #[derive(Deserialize, ToSchema)]
@@ -548,8 +565,9 @@ pub struct PublicationEdit {
         (status = 200, body = Publication, description = "The edited publication"),
         (status = 400, body = ErrorBody, description = "The request body is not JSON"),
         (status = 401, body = ErrorBody, description = "No valid access token"),
+        (status = 403, body = ErrorBody, description = "An API key cannot take this action; only a member can"),
         (status = 404, body = ErrorBody, description = "No such publication in the organization, or the caller is not in it"),
-        (status = 409, body = ErrorBody, description = "The publication is not `scheduled` or `failed`"),
+        (status = 409, body = ErrorBody, description = "The publication is not `awaiting_approval`, `scheduled`, or `failed`"),
         (status = 413, body = ErrorBody, description = "The request body is over 2 MB"),
         (status = 415, body = ErrorBody, description = "The request body is not sent as application/json"),
         (status = 422, body = ErrorBody, description = "The request body is not a valid edit"),
@@ -563,6 +581,7 @@ pub async fn update_publication(
     Path((_, publication_id)): Path<(String, String)>,
     JsonBody(input): JsonBody<PublicationEdit>,
 ) -> Result<Json<Publication>, ApiError> {
+    member_only(&caller)?;
     let body = input.body.map(checked_body).transpose()?;
     let planned_at = checked_planned_at(input.planned_at)?;
     let tolerance_seconds = input.tolerance_seconds.map(checked_tolerance).transpose()?;
@@ -573,7 +592,8 @@ pub async fn update_publication(
     let edited = sqlx::query_as(concat!(
         "UPDATE pipewhere.publication SET body = COALESCE($3, body), planned_at = COALESCE($4, planned_at),
              tolerance_seconds = COALESCE($5, tolerance_seconds)
-         WHERE id = $1 AND organization_id = $2 AND state IN ('scheduled', 'failed')
+         WHERE id = $1 AND organization_id = $2
+             AND state IN ('awaiting_approval', 'scheduled', 'failed')
          RETURNING ",
         columns!()
     ))
@@ -599,7 +619,8 @@ pub async fn update_publication(
         (status = 200, body = Publication, description = "The cancelled publication"),
         (status = 401, body = ErrorBody, description = "No valid access token"),
         (status = 404, body = ErrorBody, description = "No such publication in the organization, or the caller is not in it"),
-        (status = 409, body = ErrorBody, description = "The publication is not `scheduled` or `preparing`"),
+        (status = 403, body = ErrorBody, description = "An API key may not cancel a `scheduled` or `preparing` publication; it may cancel only an `awaiting_approval` one"),
+        (status = 409, body = ErrorBody, description = "The publication is not `awaiting_approval`, `scheduled`, or `preparing`"),
         (status = 500, body = ErrorBody, description = "A database query failed"),
         (status = 503, body = ErrorBody, description = "Auth's signing keys could not be fetched"),
     )
@@ -613,9 +634,71 @@ pub async fn cancel_publication(
         return Err(ApiError::NotFound);
     }
     let organization_id = &caller.organization_id;
+    // 00010 D4: a key may withdraw a waiting draft, but not stop a post a member
+    // scheduled or approved.
+    let by_key = matches!(caller.actor, Actor::ApiKey { .. });
     let cancelled = sqlx::query_as(concat!(
         "UPDATE pipewhere.publication SET state = 'cancelled'
-         WHERE id = $1 AND organization_id = $2 AND state IN ('scheduled', 'preparing')
+         WHERE id = $1 AND organization_id = $2
+             AND (state = 'awaiting_approval' OR (NOT $3 AND state IN ('scheduled', 'preparing')))
+         RETURNING ",
+        columns!()
+    ))
+    .bind(&publication_id)
+    .bind(organization_id)
+    .bind(by_key)
+    .fetch_optional(&state.db)
+    .await?;
+    match cancelled {
+        Some(publication) => Ok(Json(publication)),
+        None if by_key => {
+            let current: Option<PublicationState> = sqlx::query_scalar(
+                "SELECT state FROM pipewhere.publication WHERE id = $1 AND organization_id = $2",
+            )
+            .bind(&publication_id)
+            .bind(organization_id)
+            .fetch_optional(&state.db)
+            .await?;
+            Err(match current {
+                None => ApiError::NotFound,
+                Some(PublicationState::Scheduled | PublicationState::Preparing) => {
+                    ApiError::Forbidden
+                }
+                Some(_) => ApiError::StateConflict,
+            })
+        }
+        None => Err(refusal(&state.db, organization_id, &publication_id).await),
+    }
+}
+
+#[utoipa::path(
+    post,
+    path = "/v1/orgs/{organization_id}/publications/{publication_id}/approve",
+    params(("organization_id" = String, Path), ("publication_id" = String, Path)),
+    security(("bearer" = [])),
+    responses(
+        (status = 200, body = Publication, description = "The publication is `scheduled`, for the time it already holds"),
+        (status = 401, body = ErrorBody, description = "No valid access token"),
+        (status = 403, body = ErrorBody, description = "An API key cannot approve; only a member can"),
+        (status = 404, body = ErrorBody, description = "No such publication in the organization, or the caller is not in it"),
+        (status = 409, body = ErrorBody, description = "The publication is not `awaiting_approval`"),
+        (status = 500, body = ErrorBody, description = "A database query failed"),
+        (status = 503, body = ErrorBody, description = "Auth's signing keys could not be fetched"),
+    )
+)]
+pub async fn approve_publication(
+    State(state): State<AppState>,
+    caller: OrgCaller,
+    Path((_, publication_id)): Path<(String, String)>,
+) -> Result<Json<Publication>, ApiError> {
+    member_only(&caller)?;
+    if holds_nul(&publication_id) {
+        return Err(ApiError::NotFound);
+    }
+    let organization_id = &caller.organization_id;
+    let approved = sqlx::query_as(concat!(
+        "UPDATE pipewhere.publication SET state = 'scheduled'
+         WHERE id = $1 AND organization_id = $2 AND state = 'awaiting_approval'
          RETURNING ",
         columns!()
     ))
@@ -623,7 +706,7 @@ pub async fn cancel_publication(
     .bind(organization_id)
     .fetch_optional(&state.db)
     .await?;
-    match cancelled {
+    match approved {
         Some(publication) => Ok(Json(publication)),
         None => Err(refusal(&state.db, organization_id, &publication_id).await),
     }
@@ -661,6 +744,7 @@ impl RetryInput {
         (status = 200, body = Publication, description = "The publication is `scheduled` again, or the key's first request retried it"),
         (status = 400, body = ErrorBody, description = "The request body is not JSON, or the Idempotency-Key is missing or not 22 to 255 visible ASCII characters"),
         (status = 401, body = ErrorBody, description = "No valid access token"),
+        (status = 403, body = ErrorBody, description = "An API key cannot take this action; only a member can"),
         (status = 404, body = ErrorBody, description = "No such publication in the organization, or the caller is not in it"),
         (status = 409, body = ErrorBody, description = "The publication is not `failed`"),
         (status = 413, body = ErrorBody, description = "The request body is over 2 MB"),
@@ -677,6 +761,7 @@ pub async fn retry_publication(
     IdempotencyKey(key): IdempotencyKey,
     JsonBody(input): JsonBody<RetryInput>,
 ) -> Result<Json<Publication>, ApiError> {
+    member_only(&caller)?;
     let planned_at = checked_planned_at(input.planned_at)?;
     if holds_nul(&publication_id) {
         return Err(ApiError::NotFound);
@@ -778,6 +863,7 @@ pub struct Resolution {
         (status = 200, body = Publication, description = "The publication is `published` or `failed`"),
         (status = 400, body = ErrorBody, description = "The request body is not JSON"),
         (status = 401, body = ErrorBody, description = "No valid access token"),
+        (status = 403, body = ErrorBody, description = "An API key cannot take this action; only a member can"),
         (status = 404, body = ErrorBody, description = "No such publication in the organization, or the caller is not in it"),
         (status = 409, body = ErrorBody, description = "The publication is not `outcome_unknown`"),
         (status = 413, body = ErrorBody, description = "The request body is over 2 MB"),
@@ -793,6 +879,7 @@ pub async fn resolve_publication(
     Path((_, publication_id)): Path<(String, String)>,
     JsonBody(input): JsonBody<Resolution>,
 ) -> Result<Json<Publication>, ApiError> {
+    member_only(&caller)?;
     let invalid = ApiError::InvalidBody(StatusCode::UNPROCESSABLE_ENTITY);
     let (outcome, remote_id, remote_url) = match (input.outcome, input.remote_id, input.remote_url)
     {

@@ -7,6 +7,8 @@ import { useApi } from "./api-client";
 import type { Channel } from "./channels";
 import {
   Submitter,
+  TOO_LATE,
+  approvalTooLate,
   chronological,
   describeState,
   formatTime,
@@ -25,7 +27,14 @@ import {
 // its outcome within one or two refreshes.
 const REFRESH_MS = 10_000;
 
-const WAITING: Publication["state"][] = ["scheduled", "preparing", "publishing"];
+// A waiting draft changes only when a person acts, but the list refreshes for it
+// too, so an agent's new drafts appear and the late-approval warning stays current.
+const WAITING: Publication["state"][] = [
+  "awaiting_approval",
+  "scheduled",
+  "preparing",
+  "publishing",
+];
 
 const CANNOT_PUBLISH: Record<Exclude<Channel["status"], "active">, string> = {
   disconnected: "Its channel is not connected.",
@@ -89,6 +98,18 @@ export function Publications({ organizationId }: { organizationId: string }) {
     const timer = setInterval(refresh, REFRESH_MS);
     return () => clearInterval(timer);
   }, [waiting, refresh]);
+
+  // With nothing waiting, no timer runs, so an agent's first draft would stay
+  // hidden until a reload. Returning to the page loads it instead. Only
+  // visibilitychange is heard: adding focus would start a second refresh on
+  // the same return, and the two could answer out of order.
+  useEffect(() => {
+    const onReturn = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    document.addEventListener("visibilitychange", onReturn);
+    return () => document.removeEventListener("visibilitychange", onReturn);
+  }, [refresh]);
 
   async function loadOlder() {
     const cursor = shownThrough.current;
@@ -351,18 +372,24 @@ function PublicationItem({
   const api = useApi();
   const view = describeState(publication, new Date());
   const [confirming, setConfirming] = useState(false);
-  const [cancelling, setCancelling] = useState(false);
+  const [acting, setActing] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
 
-  async function cancel() {
-    setCancelling(true);
+  async function act(action: "cancel" | "approve") {
+    // The card can be up to one refresh behind the deadline.
+    if (action === "approve" && approvalTooLate(publication, new Date())) {
+      setProblem(TOO_LATE);
+      onChanged(null);
+      return;
+    }
+    setActing(true);
     setProblem(null);
     const sent = await answer(() =>
-      api<Publication>(`/v1/orgs/${organizationId}/publications/${publication.id}/cancel`, {
+      api<Publication>(`/v1/orgs/${organizationId}/publications/${publication.id}/${action}`, {
         method: "POST",
       }),
     );
-    setCancelling(false);
+    setActing(false);
     setConfirming(false);
     if (sent.kind === "answered") onChanged(sent.value);
     else {
@@ -372,8 +399,12 @@ function PublicationItem({
   }
 
   const blocked =
-    publication.state === "scheduled" && channel && channel.status !== "active"
-      ? `${CANNOT_PUBLISH[channel.status]} It fails at its planned time unless the account is connected again.`
+    channel && channel.status !== "active"
+      ? publication.state === "scheduled"
+        ? `${CANNOT_PUBLISH[channel.status]} It fails at its planned time unless the account is connected again.`
+        : publication.state === "awaiting_approval"
+          ? `${CANNOT_PUBLISH[channel.status]} If approved, it fails unless the account is connected again before it is sent.`
+          : null
       : null;
 
   return (
@@ -402,16 +433,21 @@ function PublicationItem({
         (confirming ? (
           <div className="row">
             <span>Cancel this publication? It cannot be resumed.</span>
-            <button className="ghost" onClick={cancel} disabled={cancelling}>
+            <button className="ghost" onClick={() => act("cancel")} disabled={acting}>
               Yes, cancel it
             </button>
-            <button className="ghost" onClick={() => setConfirming(false)} disabled={cancelling}>
+            <button className="ghost" onClick={() => setConfirming(false)} disabled={acting}>
               Keep it
             </button>
           </div>
         ) : (
-          <div>
-            <button className="ghost" onClick={() => setConfirming(true)}>
+          <div className="row">
+            {view.approvable && (
+              <button onClick={() => act("approve")} disabled={acting}>
+                Approve
+              </button>
+            )}
+            <button className="ghost" onClick={() => setConfirming(true)} disabled={acting}>
               Cancel publication
             </button>
           </div>
