@@ -351,18 +351,18 @@ function PublicationItem({
   const api = useApi();
   const view = describeState(publication, new Date());
   const [confirming, setConfirming] = useState(false);
-  const [cancelling, setCancelling] = useState(false);
+  const [acting, setActing] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
 
-  async function cancel() {
-    setCancelling(true);
+  async function act(action: "cancel" | "approve") {
+    setActing(true);
     setProblem(null);
     const sent = await answer(() =>
-      api<Publication>(`/v1/orgs/${organizationId}/publications/${publication.id}/cancel`, {
+      api<Publication>(`/v1/orgs/${organizationId}/publications/${publication.id}/${action}`, {
         method: "POST",
       }),
     );
-    setCancelling(false);
+    setActing(false);
     setConfirming(false);
     if (sent.kind === "answered") onChanged(sent.value);
     else {
@@ -372,7 +372,9 @@ function PublicationItem({
   }
 
   const blocked =
-    publication.state === "scheduled" && channel && channel.status !== "active"
+    (publication.state === "scheduled" || publication.state === "awaiting_approval") &&
+    channel &&
+    channel.status !== "active"
       ? `${CANNOT_PUBLISH[channel.status]} It fails at its planned time unless the account is connected again.`
       : null;
 
@@ -402,16 +404,21 @@ function PublicationItem({
         (confirming ? (
           <div className="row">
             <span>Cancel this publication? It cannot be resumed.</span>
-            <button className="ghost" onClick={cancel} disabled={cancelling}>
+            <button className="ghost" onClick={() => act("cancel")} disabled={acting}>
               Yes, cancel it
             </button>
-            <button className="ghost" onClick={() => setConfirming(false)} disabled={cancelling}>
+            <button className="ghost" onClick={() => setConfirming(false)} disabled={acting}>
               Keep it
             </button>
           </div>
         ) : (
-          <div>
-            <button className="ghost" onClick={() => setConfirming(true)}>
+          <div className="row">
+            {view.approvable && (
+              <button onClick={() => act("approve")} disabled={acting}>
+                Approve
+              </button>
+            )}
+            <button className="ghost" onClick={() => setConfirming(true)} disabled={acting}>
               Cancel publication
             </button>
           </div>

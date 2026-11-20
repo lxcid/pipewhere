@@ -15,6 +15,7 @@ pub struct ErrorBody {
 #[serde(rename_all = "snake_case")]
 pub enum ErrorCode {
     Unauthorized,
+    Forbidden,
     NotFound,
     MethodNotAllowed,
     InvalidBody,
@@ -34,6 +35,9 @@ pub enum ErrorCode {
 #[derive(Debug)]
 pub enum ApiError {
     Unauthorized,
+    /// The caller is in the organization, but its kind of actor may not take
+    /// the action.
+    Forbidden,
     NotFound,
     MethodNotAllowed,
     /// A 4xx status: the one axum's `Json` extractor chose (400 for malformed
@@ -71,6 +75,7 @@ impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let (status, code) = match &self {
             Self::Unauthorized => (StatusCode::UNAUTHORIZED, ErrorCode::Unauthorized),
+            Self::Forbidden => (StatusCode::FORBIDDEN, ErrorCode::Forbidden),
             Self::NotFound => (StatusCode::NOT_FOUND, ErrorCode::NotFound),
             Self::MethodNotAllowed => (StatusCode::METHOD_NOT_ALLOWED, ErrorCode::MethodNotAllowed),
             Self::InvalidBody(status) => (*status, ErrorCode::InvalidBody),

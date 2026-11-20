@@ -390,6 +390,9 @@ async fn the_poller_runs_due_work_and_leaves_the_rest_waiting() {
     let waiting = org
         .create_publication(json!({ "planned_at": "9000-01-01T00:00:00Z" }))
         .await;
+    let unapproved = new_id("publication");
+    org.insert_publication(&unapproved, "awaiting_approval", "-1 minute")
+        .await;
 
     let poller = Poller::new(db, restate.ingress_url.clone()).unwrap();
     let polling = tokio::spawn(async move { poller.run().await });
@@ -411,6 +414,8 @@ async fn the_poller_runs_due_work_and_leaves_the_rest_waiting() {
     restate.wait_until_idle().await;
     assert_eq!(org.read(&waiting).await["state"], "scheduled");
     assert!(org.attempts(&waiting).await.is_empty());
+    assert_eq!(org.read(&unapproved).await["state"], "awaiting_approval");
+    assert!(org.attempts(&unapproved).await.is_empty());
 
     polling.abort();
     drop(worker);

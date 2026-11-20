@@ -272,23 +272,52 @@ describe("describeState", () => {
     assert.equal(view.cancellable, false);
   });
 
+  const STATES = [
+    "awaiting_approval",
+    "scheduled",
+    "preparing",
+    "publishing",
+    "published",
+    "failed",
+    "outcome_unknown",
+    "cancelled",
+  ] as const;
+
   test("offers cancel only before the post may have been sent", () => {
     const cancellable = (state: Publication["state"]) =>
       describeState(publication({ state, planned_at: "2026-11-19T00:00:00Z" }), now).cancellable;
-    assert.deepEqual(
-      (
-        [
-          "scheduled",
-          "preparing",
-          "publishing",
-          "published",
-          "failed",
-          "outcome_unknown",
-          "cancelled",
-        ] as const
-      ).filter(cancellable),
-      ["scheduled", "preparing"],
+    assert.deepEqual(STATES.filter(cancellable), ["awaiting_approval", "scheduled", "preparing"]);
+  });
+
+  test("offers approval only while a publication awaits it", () => {
+    const approvable = (state: Publication["state"]) =>
+      describeState(publication({ state }), now).approvable;
+    assert.deepEqual(STATES.filter(approvable), ["awaiting_approval"]);
+  });
+
+  test("says an agent's publication goes out only once approved", () => {
+    const view = describeState(
+      publication({
+        state: "awaiting_approval",
+        planned_at: "2026-11-19T00:00:00Z",
+        deadline: "2026-11-19T00:30:00Z",
+      }),
+      now,
     );
+    assert.equal(view.label, "Awaiting approval");
+    assert.match(view.detail ?? "", /only after/);
+  });
+
+  test("warns that approving a publication past its deadline does not post it", () => {
+    const view = describeState(
+      publication({
+        state: "awaiting_approval",
+        planned_at: "2026-11-18T11:00:00Z",
+        deadline: "2026-11-18T11:30:00Z",
+      }),
+      now,
+    );
+    assert.match(view.detail ?? "", /fails without posting/);
   });
 
   test("says a scheduled publication past its time is waiting, and until when", () => {
@@ -306,10 +335,10 @@ describe("problemOf", () => {
     assert.match(problemOf({ kind: "refused", status: 422, code: "invalid_body" }), /text/);
   });
 
-  test("tells an operator whose cancel lost the race that the list shows the current state", () => {
+  test("tells an operator whose action lost the race that the list shows the current state", () => {
     assert.match(
       problemOf({ kind: "refused", status: 409, code: "state_conflict" }),
-      /no longer be cancelled/,
+      /list shows where it is now/,
     );
   });
 

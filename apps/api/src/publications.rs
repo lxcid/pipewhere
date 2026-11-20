@@ -11,7 +11,7 @@ use sqlx::PgPool;
 use utoipa::ToSchema;
 
 use crate::AppState;
-use crate::access::OrgCaller;
+use crate::access::{Actor, OrgCaller};
 use crate::contents::checked_body;
 use crate::error::{ApiError, ErrorBody, JsonBody};
 use crate::ids::new_id;
@@ -38,11 +38,13 @@ macro_rules! columns {
     };
 }
 
-/// A publication's place on the path to a remote post, per 00002 D3.
+/// A publication's place on the path to a remote post, per 00002 D3 and
+/// 00010 D4.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema, sqlx::Type)]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
 pub enum PublicationState {
+    AwaitingApproval,
     Scheduled,
     Preparing,
     Publishing,
@@ -229,6 +231,11 @@ pub async fn create_publication(
     }
     let organization_id = &caller.organization_id;
     let id = new_id("publication");
+    // 00010 D4: API counts every key as an agent.
+    let initial_state = match caller.actor {
+        Actor::User { .. } => PublicationState::Scheduled,
+        Actor::ApiKey { .. } => PublicationState::AwaitingApproval,
+    };
 
     let mut tx = state.db.begin().await?;
     // A concurrent insert of the same key waits here until the first
@@ -304,7 +311,7 @@ pub async fn create_publication(
     let publication = sqlx::query_as(concat!(
         "INSERT INTO pipewhere.publication
              (id, organization_id, channel_id, content_id, body, state, planned_at, tolerance_seconds)
-         VALUES ($1, $2, $3, $4, $5, 'scheduled', COALESCE($6, now()), $7)
+         VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, now()), $8)
          RETURNING ",
         columns!()
     ))
@@ -313,6 +320,7 @@ pub async fn create_publication(
     .bind(&input.channel_id)
     .bind(&content_id)
     .bind(&body)
+    .bind(initial_state)
     .bind(planned_at)
     .bind(tolerance_seconds)
     .fetch_one(&mut *tx)
@@ -549,7 +557,7 @@ pub struct PublicationEdit {
         (status = 400, body = ErrorBody, description = "The request body is not JSON"),
         (status = 401, body = ErrorBody, description = "No valid access token"),
         (status = 404, body = ErrorBody, description = "No such publication in the organization, or the caller is not in it"),
-        (status = 409, body = ErrorBody, description = "The publication is not `scheduled` or `failed`"),
+        (status = 409, body = ErrorBody, description = "The publication is not `awaiting_approval`, `scheduled`, or `failed`"),
         (status = 413, body = ErrorBody, description = "The request body is over 2 MB"),
         (status = 415, body = ErrorBody, description = "The request body is not sent as application/json"),
         (status = 422, body = ErrorBody, description = "The request body is not a valid edit"),
@@ -573,7 +581,8 @@ pub async fn update_publication(
     let edited = sqlx::query_as(concat!(
         "UPDATE pipewhere.publication SET body = COALESCE($3, body), planned_at = COALESCE($4, planned_at),
              tolerance_seconds = COALESCE($5, tolerance_seconds)
-         WHERE id = $1 AND organization_id = $2 AND state IN ('scheduled', 'failed')
+         WHERE id = $1 AND organization_id = $2
+             AND state IN ('awaiting_approval', 'scheduled', 'failed')
          RETURNING ",
         columns!()
     ))
@@ -599,7 +608,7 @@ pub async fn update_publication(
         (status = 200, body = Publication, description = "The cancelled publication"),
         (status = 401, body = ErrorBody, description = "No valid access token"),
         (status = 404, body = ErrorBody, description = "No such publication in the organization, or the caller is not in it"),
-        (status = 409, body = ErrorBody, description = "The publication is not `scheduled` or `preparing`"),
+        (status = 409, body = ErrorBody, description = "The publication is not `awaiting_approval`, `scheduled`, or `preparing`"),
         (status = 500, body = ErrorBody, description = "A database query failed"),
         (status = 503, body = ErrorBody, description = "Auth's signing keys could not be fetched"),
     )
@@ -615,7 +624,8 @@ pub async fn cancel_publication(
     let organization_id = &caller.organization_id;
     let cancelled = sqlx::query_as(concat!(
         "UPDATE pipewhere.publication SET state = 'cancelled'
-         WHERE id = $1 AND organization_id = $2 AND state IN ('scheduled', 'preparing')
+         WHERE id = $1 AND organization_id = $2
+             AND state IN ('awaiting_approval', 'scheduled', 'preparing')
          RETURNING ",
         columns!()
     ))
@@ -624,6 +634,49 @@ pub async fn cancel_publication(
     .fetch_optional(&state.db)
     .await?;
     match cancelled {
+        Some(publication) => Ok(Json(publication)),
+        None => Err(refusal(&state.db, organization_id, &publication_id).await),
+    }
+}
+
+#[utoipa::path(
+    post,
+    path = "/v1/orgs/{organization_id}/publications/{publication_id}/approve",
+    params(("organization_id" = String, Path), ("publication_id" = String, Path)),
+    security(("bearer" = [])),
+    responses(
+        (status = 200, body = Publication, description = "The publication is `scheduled`, for the time it already holds"),
+        (status = 401, body = ErrorBody, description = "No valid access token"),
+        (status = 403, body = ErrorBody, description = "An API key cannot approve; only a member can"),
+        (status = 404, body = ErrorBody, description = "No such publication in the organization, or the caller is not in it"),
+        (status = 409, body = ErrorBody, description = "The publication is not `awaiting_approval`"),
+        (status = 500, body = ErrorBody, description = "A database query failed"),
+        (status = 503, body = ErrorBody, description = "Auth's signing keys could not be fetched"),
+    )
+)]
+pub async fn approve_publication(
+    State(state): State<AppState>,
+    caller: OrgCaller,
+    Path((_, publication_id)): Path<(String, String)>,
+) -> Result<Json<Publication>, ApiError> {
+    if let Actor::ApiKey { .. } = caller.actor {
+        return Err(ApiError::Forbidden);
+    }
+    if holds_nul(&publication_id) {
+        return Err(ApiError::NotFound);
+    }
+    let organization_id = &caller.organization_id;
+    let approved = sqlx::query_as(concat!(
+        "UPDATE pipewhere.publication SET state = 'scheduled'
+         WHERE id = $1 AND organization_id = $2 AND state = 'awaiting_approval'
+         RETURNING ",
+        columns!()
+    ))
+    .bind(&publication_id)
+    .bind(organization_id)
+    .fetch_optional(&state.db)
+    .await?;
+    match approved {
         Some(publication) => Ok(Json(publication)),
         None => Err(refusal(&state.db, organization_id, &publication_id).await),
     }

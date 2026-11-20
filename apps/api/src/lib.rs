@@ -93,6 +93,7 @@ fn api() -> OpenApiRouter<AppState> {
             publications::update_publication
         ))
         .routes(routes!(publications::cancel_publication))
+        .routes(routes!(publications::approve_publication))
         .routes(routes!(publications::retry_publication))
         .routes(routes!(publications::resolve_publication))
         .routes(routes!(publications::list_publication_attempts))
@@ -192,6 +193,7 @@ mod tests {
                 "/v1/orgs/{organization_id}/contents/{content_id}",
                 "/v1/orgs/{organization_id}/publications",
                 "/v1/orgs/{organization_id}/publications/{publication_id}",
+                "/v1/orgs/{organization_id}/publications/{publication_id}/approve",
                 "/v1/orgs/{organization_id}/publications/{publication_id}/attempts",
                 "/v1/orgs/{organization_id}/publications/{publication_id}/cancel",
                 "/v1/orgs/{organization_id}/publications/{publication_id}/resolve",
@@ -224,6 +226,7 @@ mod tests {
             schemas["ErrorCode"]["enum"],
             serde_json::json!([
                 "unauthorized",
+                "forbidden",
                 "not_found",
                 "method_not_allowed",
                 "invalid_body",
@@ -247,6 +250,7 @@ mod tests {
         assert_eq!(
             schemas["PublicationState"]["enum"],
             serde_json::json!([
+                "awaiting_approval",
                 "scheduled",
                 "preparing",
                 "publishing",
