@@ -78,8 +78,11 @@ Screenshots from that run, all of fixture data:
 - [Phone width](evidence/phone.png)
 - [Dark scheme](evidence/dark-scheme.png)
 
+### Verified by the operator
+
+On 2026-11-20, the operator used Web against their own Mastodon account on a real instance. Publishing now and scheduling for a time both posted. This is the operator's report. The builder did not repeat it.
+
 ### Not verified
 
-- A real Mastodon instance. The fake follows the answers the API's own test fake uses.
 - Auth refusing a token mid-session. That error is unconfirmed, like any other request that is not answered.
 - Browsers other than Chrome.
