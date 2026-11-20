@@ -1,5 +1,5 @@
 ---
-status: draft
+status: in-progress
 ---
 
 # Intent 00010 — Agent access over MCP
