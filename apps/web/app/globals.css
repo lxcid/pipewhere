@@ -128,6 +128,19 @@ h2 {
   flex: 1 1 160px;
 }
 
+.row.tight {
+  margin-top: 0;
+  align-items: center;
+}
+
+.heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 label {
   display: grid;
   gap: 4px;

@@ -1,19 +1,14 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 
 import { useAuth } from "../../auth-client";
 import { Channels } from "../../channels";
+import { OrganizationCard, type Organization } from "../../members";
 import { Publications } from "../../publications";
+import { isOwner, manages } from "../../roles";
 import { Claims, ErrorText, Shell, useAction } from "../../ui";
-
-interface Organization {
-  id: string;
-  name: string;
-  slug: string;
-  members: { id: string; role: string; user: { name: string; email: string } }[];
-}
 
 interface ApiKey {
   id: string;
@@ -29,20 +24,25 @@ export default function OrganizationPage() {
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [missing, setMissing] = useState<string | null>(null);
 
+  const shown = useRef(organizationId);
+  useEffect(() => {
+    shown.current = organizationId;
+  }, [organizationId]);
+
   // An answer for an organization the page has moved on from is dropped, and
   // the page shows only the organization its address names.
+  const load = useCallback(async () => {
+    const { data } = await client.organization.getFullOrganization({ query: { organizationId } });
+    if (shown.current !== organizationId) return;
+    if (data) setOrganization(data as unknown as Organization);
+    else setMissing(organizationId);
+  }, [client, organizationId]);
+
+  // Better Auth refetches the session when the window regains focus, so a role
+  // changed elsewhere shows on return.
   useEffect(() => {
-    if (!session.data) return;
-    let current = true;
-    client.organization.getFullOrganization({ query: { organizationId } }).then(({ data }) => {
-      if (!current) return;
-      if (data) setOrganization(data as Organization);
-      else setMissing(organizationId);
-    });
-    return () => {
-      current = false;
-    };
-  }, [client, organizationId, session.data]);
+    if (session.data) load();
+  }, [load, session.data]);
 
   if (session.isPending) {
     return (
@@ -67,7 +67,9 @@ export default function OrganizationPage() {
       </Shell>
     );
   }
-  if (organization?.id !== organizationId) {
+  const userId = session.data.user.id;
+  const me = organization?.members.find((member) => member.userId === userId);
+  if (organization?.id !== organizationId || !me) {
     return (
       <Shell>
         <p className="muted">Loading…</p>
@@ -77,34 +79,17 @@ export default function OrganizationPage() {
 
   return (
     <Shell>
-      <section className="card">
-        <h1>{organization.name}</h1>
-        <p className="muted">
-          <code>{organization.id}</code> · {organization.slug}
-        </p>
-        <h2>Members</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Email</th>
-              <th>Role</th>
-            </tr>
-          </thead>
-          <tbody>
-            {organization.members.map((member) => (
-              <tr key={member.id}>
-                <td>{member.user.name}</td>
-                <td>{member.user.email}</td>
-                <td>{member.role}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
-      <Channels organizationId={organization.id} />
+      <OrganizationCard organization={organization} me={me} reload={load} />
+      <Channels organizationId={organization.id} canConnect={manages(me.role)} />
       <Publications key={organization.id} organizationId={organization.id} />
-      <ApiKeys organizationId={organization.id} />
+      {isOwner(me.role) ? (
+        <ApiKeys organizationId={organization.id} />
+      ) : (
+        <section className="card">
+          <h2>API keys</h2>
+          <p className="muted">Only an owner sees and manages the organization&apos;s API keys.</p>
+        </section>
+      )}
     </Shell>
   );
 }

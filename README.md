@@ -36,6 +36,14 @@ You need Docker with Compose v2.
 
 4. On the organization's page, connect a Mastodon account: enter its instance's address, such as `mastodon.social`, and approve Pipewhere at the instance. Pipewhere registers itself with the instance, so there is no app to create first.
 
+To add someone to an organization, invite their email address on its page, and send them the invitation's link yourself. Pipewhere sends no email. Whoever opens the link joins after signing in with the invited address, so send it only to them. It expires after 48 hours.
+
+Each member has one of three roles:
+
+- A **member** writes, schedules, edits, cancels, retries, resolves, and approves publications.
+- An **admin** also connects channels, changes the organization's settings, invites people, changes roles, removes members, and renames the organization.
+- An **owner** also manages API keys, and is the only role that can make someone an owner. An organization always keeps an owner.
+
 Compose starts PostgreSQL, RustFS, and Restate, then Auth, Worker, API, and Web. Before them, three one-off steps run in order and exit:
 
 - `postgres-setup` creates the `auth` and `pipewhere` schemas and the two database roles.

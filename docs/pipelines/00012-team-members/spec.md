@@ -37,7 +37,7 @@ Better Auth enforces the rest, and Pipewhere keeps its defaults:
 - An owner or admin may invite, change roles, remove members, cancel invitations, and rename the organization.
 - Only an owner may make someone an owner, or change an owner's role. Inviting someone as an owner needs an owner too.
 - An organization always keeps an owner. Its only owner cannot leave or be demoted.
-- Only an owner may create or revoke API keys.
+- Only an owner may list, create, or revoke API keys.
 - A member may do none of these. A member may leave.
 
 Any member may list the organization's invitations, and so see their links. A member can already act in the organization, and a link admits only the invited address.
@@ -74,6 +74,6 @@ Web reads the signed-in user's role from the organization's member list. It hide
 - **Leaving.** Any member may leave. Web asks to confirm, then returns to the organization list.
 - **Renaming.** An owner or admin changes the name and the slug.
 - **Channels.** A member sees the channels and their status, without the form that connects one.
-- **API keys.** Only an owner sees the form that creates a key and the Revoke buttons.
+- **API keys.** Only an owner sees the organization's keys. Anyone else is told that only an owner manages them.
 
 Web reloads the member list after each change it makes. It does not watch for changes made elsewhere. A person whose role changes in another tab sees it after a reload, and API refuses what the new role cannot do meanwhile.
