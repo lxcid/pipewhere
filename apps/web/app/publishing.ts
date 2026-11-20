@@ -194,7 +194,7 @@ export function merged(loaded: Publication[], fresh: Publication[]): Publication
 }
 
 export const TOO_LATE =
-  "Its time has passed, so approving it now fails without posting. Cancel it, and ask the agent for it again with a new time.";
+  "Its time has passed, so it can no longer be approved. Cancel it, and ask the agent for it again with a new time.";
 
 /** Worker fails a publication approved at or after its deadline, per 00003 D1. */
 export function approvalTooLate(publication: Publication, now: Date): boolean {

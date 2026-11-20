@@ -345,7 +345,7 @@ describe("describeState", () => {
       }),
       now,
     );
-    assert.match(view.detail ?? "", /fails without posting/);
+    assert.match(view.detail ?? "", /can no longer be approved/);
   });
 
   test("says a scheduled publication past its time is waiting, and until when", () => {
