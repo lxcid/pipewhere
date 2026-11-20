@@ -52,6 +52,9 @@ export function Publications({ organizationId }: { organizationId: string }) {
   const shownThrough = useRef<string | null | undefined>(undefined);
   // Counts the answers that changed the list outside a refresh.
   const changes = useRef(0);
+  // Counts the refreshes started. Returning to the page can start two at once,
+  // and only the latest may replace the list.
+  const refreshes = useRef(0);
   const [problem, setProblem] = useState<string | null>(null);
 
   const fetchPage = useCallback(
@@ -63,12 +66,14 @@ export function Publications({ organizationId }: { organizationId: string }) {
   );
 
   const refresh = useCallback(async () => {
+    const run = ++refreshes.current;
     const seen = changes.current;
     try {
       const [loaded, list] = await Promise.all([
         loadThrough(fetchPage, shownThrough.current),
         api<{ channels: Channel[] }>(`/v1/orgs/${organizationId}/channels`),
       ]);
+      if (refreshes.current !== run) return;
       // A create, a cancel, or "Show older" was answered while this refresh
       // ran. Its answer may predate that change, and replacing the list with it
       // would undo the change, so load again.
@@ -82,6 +87,7 @@ export function Publications({ organizationId }: { organizationId: string }) {
       setOlder(loaded.older);
       setProblem(null);
     } catch (caught) {
+      if (refreshes.current !== run) return;
       setProblem(
         `The list could not be loaded: ${caught instanceof Error ? caught.message : String(caught)}`,
       );
