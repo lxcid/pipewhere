@@ -7,6 +7,8 @@ import { useApi } from "./api-client";
 import type { Channel } from "./channels";
 import {
   Submitter,
+  TOO_LATE,
+  approvalTooLate,
   chronological,
   describeState,
   formatTime,
@@ -362,6 +364,12 @@ function PublicationItem({
   const [problem, setProblem] = useState<string | null>(null);
 
   async function act(action: "cancel" | "approve") {
+    // The card can be up to one refresh behind the deadline.
+    if (action === "approve" && approvalTooLate(publication, new Date())) {
+      setProblem(TOO_LATE);
+      onChanged(null);
+      return;
+    }
     setActing(true);
     setProblem(null);
     const sent = await answer(() =>
@@ -383,7 +391,7 @@ function PublicationItem({
       ? publication.state === "scheduled"
         ? `${CANNOT_PUBLISH[channel.status]} It fails at its planned time unless the account is connected again.`
         : publication.state === "awaiting_approval"
-          ? `${CANNOT_PUBLISH[channel.status]} Approved before the account is connected again, it fails.`
+          ? `${CANNOT_PUBLISH[channel.status]} If approved, it fails at its planned time unless the account is connected again.`
           : null
       : null;
 

@@ -193,6 +193,14 @@ export function merged(loaded: Publication[], fresh: Publication[]): Publication
   return [...fresh, ...loaded.filter((publication) => !ids.has(publication.id))];
 }
 
+export const TOO_LATE =
+  "Its time has passed, so approving it now fails without posting. Cancel it, and ask the agent for it again with a new time.";
+
+/** Worker fails a publication approved at or after its deadline, per 00003 D1. */
+export function approvalTooLate(publication: Publication, now: Date): boolean {
+  return Date.parse(publication.deadline) <= now.getTime();
+}
+
 export interface StateView {
   label: string;
   tone: "waiting" | "working" | "published" | "failed" | "unknown" | "cancelled";
@@ -215,12 +223,11 @@ function describe(publication: Publication, now: Date): Omit<StateView, "approva
       return {
         label: "Awaiting approval",
         tone: "waiting",
-        detail:
-          Date.parse(publication.deadline) <= now.getTime()
-            ? "Its time has passed, so approving it now fails without posting. Cancel it, and ask the agent for it again with a new time."
-            : Date.parse(publication.planned_at) <= now.getTime()
-              ? "An API key created this. Its time has passed, so it goes out as soon as you approve it."
-              : "An API key created this. It goes out at its time only after you approve it.",
+        detail: approvalTooLate(publication, now)
+          ? TOO_LATE
+          : Date.parse(publication.planned_at) <= now.getTime()
+            ? `An API key created this. Its time has passed. Approved now, it goes out if it starts by ${formatTime(publication.deadline)}.`
+            : "An API key created this. It goes out at its time only after you approve it.",
         cancellable: true,
       };
     case "scheduled":

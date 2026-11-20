@@ -3,6 +3,7 @@ import { describe, test } from "node:test";
 
 import {
   Submitter,
+  approvalTooLate,
   chronological,
   describeState,
   loadThrough,
@@ -308,7 +309,7 @@ describe("describeState", () => {
     assert.match(view.detail ?? "", /only after/);
   });
 
-  test("says an agent's publication past its time goes out as soon as it is approved", () => {
+  test("says an agent's publication past its time goes out only if it starts by its deadline", () => {
     const view = describeState(
       publication({
         state: "awaiting_approval",
@@ -317,7 +318,13 @@ describe("describeState", () => {
       }),
       now,
     );
-    assert.match(view.detail ?? "", /as soon as you approve/);
+    assert.match(view.detail ?? "", /if it starts by/);
+  });
+
+  test("calls an approval too late once the deadline has passed", () => {
+    const waiting = publication({ state: "awaiting_approval", deadline: "2026-11-18T12:00:00Z" });
+    assert.equal(approvalTooLate(waiting, new Date("2026-11-18T11:59:59Z")), false);
+    assert.equal(approvalTooLate(waiting, new Date("2026-11-18T12:00:00Z")), true);
   });
 
   test("warns that approving a publication past its deadline does not post it", () => {

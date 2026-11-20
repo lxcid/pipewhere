@@ -164,10 +164,10 @@ async fn insert_publication(
     id
 }
 
-// A key could otherwise change text a member approved, or send a failed
-// publication out again, without a member seeing it.
+// A key could otherwise change text a member approved, send a failed
+// publication out again without a member seeing it, or stop a member's post.
 #[tokio::test]
-async fn a_key_cannot_edit_retry_or_resolve() {
+async fn a_key_cannot_change_a_publication_beyond_withdrawing_a_draft() {
     let instance = Instance::start().await;
     let owner = instance.sign_up("owner@example.com").await;
     let organization_id = instance.create_organization(&owner, "personal").await;
@@ -188,6 +188,8 @@ async fn a_key_cannot_edit_retry_or_resolve() {
         ("scheduled", Method::PATCH, "", json!({ "body": "Changed" })),
         ("failed", Method::PATCH, "", json!({ "body": "Changed" })),
         ("failed", Method::POST, "/retry", json!({})),
+        ("scheduled", Method::POST, "/cancel", json!({})),
+        ("preparing", Method::POST, "/cancel", json!({})),
         (
             "outcome_unknown",
             Method::POST,

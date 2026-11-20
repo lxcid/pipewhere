@@ -619,6 +619,7 @@ pub async fn update_publication(
         (status = 200, body = Publication, description = "The cancelled publication"),
         (status = 401, body = ErrorBody, description = "No valid access token"),
         (status = 404, body = ErrorBody, description = "No such publication in the organization, or the caller is not in it"),
+        (status = 403, body = ErrorBody, description = "An API key may cancel only an `awaiting_approval` publication"),
         (status = 409, body = ErrorBody, description = "The publication is not `awaiting_approval`, `scheduled`, or `preparing`"),
         (status = 500, body = ErrorBody, description = "A database query failed"),
         (status = 503, body = ErrorBody, description = "Auth's signing keys could not be fetched"),
@@ -633,20 +634,27 @@ pub async fn cancel_publication(
         return Err(ApiError::NotFound);
     }
     let organization_id = &caller.organization_id;
+    // 00010 D4: a key may withdraw a waiting draft, but not stop a post a member
+    // scheduled or approved.
+    let by_key = matches!(caller.actor, Actor::ApiKey { .. });
     let cancelled = sqlx::query_as(concat!(
         "UPDATE pipewhere.publication SET state = 'cancelled'
          WHERE id = $1 AND organization_id = $2
-             AND state IN ('awaiting_approval', 'scheduled', 'preparing')
+             AND (state = 'awaiting_approval' OR (NOT $3 AND state IN ('scheduled', 'preparing')))
          RETURNING ",
         columns!()
     ))
     .bind(&publication_id)
     .bind(organization_id)
+    .bind(by_key)
     .fetch_optional(&state.db)
     .await?;
     match cancelled {
         Some(publication) => Ok(Json(publication)),
-        None => Err(refusal(&state.db, organization_id, &publication_id).await),
+        None => match refusal(&state.db, organization_id, &publication_id).await {
+            ApiError::StateConflict if by_key => Err(ApiError::Forbidden),
+            refused => Err(refused),
+        },
     }
 }
 
