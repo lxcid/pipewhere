@@ -52,9 +52,12 @@ export function Publications({ organizationId }: { organizationId: string }) {
   const shownThrough = useRef<string | null | undefined>(undefined);
   // Counts the answers that changed the list outside a refresh.
   const changes = useRef(0);
-  // Counts the refreshes started. Returning to the page can start two at once,
-  // and only the latest may replace the list.
-  const refreshes = useRef(0);
+  // One refresh runs at a time. A refresh asked for while one runs, by the
+  // timer or by returning to the page, loads again once it ends. An older
+  // answer then never replaces a newer one, and a slow refresh is never thrown
+  // away.
+  const refreshing = useRef(false);
+  const again = useRef(false);
   const [problem, setProblem] = useState<string | null>(null);
 
   const fetchPage = useCallback(
@@ -65,20 +68,18 @@ export function Publications({ organizationId }: { organizationId: string }) {
     [api, organizationId],
   );
 
-  const refresh = useCallback(async () => {
-    const run = ++refreshes.current;
+  const load = useCallback(async () => {
     const seen = changes.current;
     try {
       const [loaded, list] = await Promise.all([
         loadThrough(fetchPage, shownThrough.current),
         api<{ channels: Channel[] }>(`/v1/orgs/${organizationId}/channels`),
       ]);
-      if (refreshes.current !== run) return;
       // A create, a cancel, or "Show older" was answered while this refresh
       // ran. Its answer may predate that change, and replacing the list with it
       // would undo the change, so load again.
       if (changes.current !== seen) {
-        await refresh();
+        again.current = true;
         return;
       }
       setChannels(list.channels);
@@ -87,12 +88,27 @@ export function Publications({ organizationId }: { organizationId: string }) {
       setOlder(loaded.older);
       setProblem(null);
     } catch (caught) {
-      if (refreshes.current !== run) return;
       setProblem(
         `The list could not be loaded: ${caught instanceof Error ? caught.message : String(caught)}`,
       );
     }
   }, [api, fetchPage, organizationId]);
+
+  const refresh = useCallback(async () => {
+    if (refreshing.current) {
+      again.current = true;
+      return;
+    }
+    refreshing.current = true;
+    try {
+      do {
+        again.current = false;
+        await load();
+      } while (again.current);
+    } finally {
+      refreshing.current = false;
+    }
+  }, [load]);
 
   useEffect(() => {
     refresh();
