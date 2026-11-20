@@ -52,12 +52,6 @@ export function Publications({ organizationId }: { organizationId: string }) {
   const shownThrough = useRef<string | null | undefined>(undefined);
   // Counts the answers that changed the list outside a refresh.
   const changes = useRef(0);
-  // One refresh runs at a time. A refresh asked for while one runs, by the
-  // timer or by returning to the page, loads again once it ends. An older
-  // answer then never replaces a newer one, and a slow refresh is never thrown
-  // away.
-  const refreshing = useRef(false);
-  const again = useRef(false);
   const [problem, setProblem] = useState<string | null>(null);
 
   const fetchPage = useCallback(
@@ -68,7 +62,7 @@ export function Publications({ organizationId }: { organizationId: string }) {
     [api, organizationId],
   );
 
-  const load = useCallback(async () => {
+  const refresh = useCallback(async () => {
     const seen = changes.current;
     try {
       const [loaded, list] = await Promise.all([
@@ -79,7 +73,7 @@ export function Publications({ organizationId }: { organizationId: string }) {
       // ran. Its answer may predate that change, and replacing the list with it
       // would undo the change, so load again.
       if (changes.current !== seen) {
-        again.current = true;
+        await refresh();
         return;
       }
       setChannels(list.channels);
@@ -94,22 +88,6 @@ export function Publications({ organizationId }: { organizationId: string }) {
     }
   }, [api, fetchPage, organizationId]);
 
-  const refresh = useCallback(async () => {
-    if (refreshing.current) {
-      again.current = true;
-      return;
-    }
-    refreshing.current = true;
-    try {
-      do {
-        again.current = false;
-        await load();
-      } while (again.current);
-    } finally {
-      refreshing.current = false;
-    }
-  }, [load]);
-
   useEffect(() => {
     refresh();
   }, [refresh]);
@@ -122,17 +100,15 @@ export function Publications({ organizationId }: { organizationId: string }) {
   }, [waiting, refresh]);
 
   // With nothing waiting, no timer runs, so an agent's first draft would stay
-  // hidden until a reload. Returning to the page loads it instead.
+  // hidden until a reload. Returning to the page loads it instead. Only
+  // visibilitychange is heard: adding focus would start a second refresh on
+  // the same return, and the two could answer out of order.
   useEffect(() => {
     const onReturn = () => {
       if (document.visibilityState === "visible") refresh();
     };
-    window.addEventListener("focus", onReturn);
     document.addEventListener("visibilitychange", onReturn);
-    return () => {
-      window.removeEventListener("focus", onReturn);
-      document.removeEventListener("visibilitychange", onReturn);
-    };
+    return () => document.removeEventListener("visibilitychange", onReturn);
   }, [refresh]);
 
   async function loadOlder() {
