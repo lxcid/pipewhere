@@ -25,7 +25,14 @@ import {
 // its outcome within one or two refreshes.
 const REFRESH_MS = 10_000;
 
-const WAITING: Publication["state"][] = ["scheduled", "preparing", "publishing"];
+// A waiting draft changes only when a person acts, but the list refreshes for it
+// too, so an agent's new drafts appear and the late-approval warning stays current.
+const WAITING: Publication["state"][] = [
+  "awaiting_approval",
+  "scheduled",
+  "preparing",
+  "publishing",
+];
 
 const CANNOT_PUBLISH: Record<Exclude<Channel["status"], "active">, string> = {
   disconnected: "Its channel is not connected.",
@@ -372,10 +379,12 @@ function PublicationItem({
   }
 
   const blocked =
-    (publication.state === "scheduled" || publication.state === "awaiting_approval") &&
-    channel &&
-    channel.status !== "active"
-      ? `${CANNOT_PUBLISH[channel.status]} It fails at its planned time unless the account is connected again.`
+    channel && channel.status !== "active"
+      ? publication.state === "scheduled"
+        ? `${CANNOT_PUBLISH[channel.status]} It fails at its planned time unless the account is connected again.`
+        : publication.state === "awaiting_approval"
+          ? `${CANNOT_PUBLISH[channel.status]} Approved before the account is connected again, it fails.`
+          : null
       : null;
 
   return (

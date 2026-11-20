@@ -308,6 +308,18 @@ describe("describeState", () => {
     assert.match(view.detail ?? "", /only after/);
   });
 
+  test("says an agent's publication past its time goes out as soon as it is approved", () => {
+    const view = describeState(
+      publication({
+        state: "awaiting_approval",
+        planned_at: "2026-11-18T11:50:00Z",
+        deadline: "2026-11-18T12:20:00Z",
+      }),
+      now,
+    );
+    assert.match(view.detail ?? "", /as soon as you approve/);
+  });
+
   test("warns that approving a publication past its deadline does not post it", () => {
     const view = describeState(
       publication({

@@ -526,6 +526,15 @@ async fn refusal(db: &PgPool, organization_id: &str, publication_id: &str) -> Ap
     }
 }
 
+// 00010 D4: a key may create, read, and cancel. Any other change could put text
+// in front of Worker that no member approved.
+fn member_only(caller: &OrgCaller) -> Result<(), ApiError> {
+    match caller.actor {
+        Actor::User { .. } => Ok(()),
+        Actor::ApiKey { .. } => Err(ApiError::Forbidden),
+    }
+}
+
 // A field the edit does not define, such as `channel_id`, would otherwise be
 // dropped without changing anything.
 #[derive(Deserialize, ToSchema)]
@@ -556,6 +565,7 @@ pub struct PublicationEdit {
         (status = 200, body = Publication, description = "The edited publication"),
         (status = 400, body = ErrorBody, description = "The request body is not JSON"),
         (status = 401, body = ErrorBody, description = "No valid access token"),
+        (status = 403, body = ErrorBody, description = "An API key cannot take this action; only a member can"),
         (status = 404, body = ErrorBody, description = "No such publication in the organization, or the caller is not in it"),
         (status = 409, body = ErrorBody, description = "The publication is not `awaiting_approval`, `scheduled`, or `failed`"),
         (status = 413, body = ErrorBody, description = "The request body is over 2 MB"),
@@ -571,6 +581,7 @@ pub async fn update_publication(
     Path((_, publication_id)): Path<(String, String)>,
     JsonBody(input): JsonBody<PublicationEdit>,
 ) -> Result<Json<Publication>, ApiError> {
+    member_only(&caller)?;
     let body = input.body.map(checked_body).transpose()?;
     let planned_at = checked_planned_at(input.planned_at)?;
     let tolerance_seconds = input.tolerance_seconds.map(checked_tolerance).transpose()?;
@@ -659,9 +670,7 @@ pub async fn approve_publication(
     caller: OrgCaller,
     Path((_, publication_id)): Path<(String, String)>,
 ) -> Result<Json<Publication>, ApiError> {
-    if let Actor::ApiKey { .. } = caller.actor {
-        return Err(ApiError::Forbidden);
-    }
+    member_only(&caller)?;
     if holds_nul(&publication_id) {
         return Err(ApiError::NotFound);
     }
@@ -714,6 +723,7 @@ impl RetryInput {
         (status = 200, body = Publication, description = "The publication is `scheduled` again, or the key's first request retried it"),
         (status = 400, body = ErrorBody, description = "The request body is not JSON, or the Idempotency-Key is missing or not 22 to 255 visible ASCII characters"),
         (status = 401, body = ErrorBody, description = "No valid access token"),
+        (status = 403, body = ErrorBody, description = "An API key cannot take this action; only a member can"),
         (status = 404, body = ErrorBody, description = "No such publication in the organization, or the caller is not in it"),
         (status = 409, body = ErrorBody, description = "The publication is not `failed`"),
         (status = 413, body = ErrorBody, description = "The request body is over 2 MB"),
@@ -730,6 +740,7 @@ pub async fn retry_publication(
     IdempotencyKey(key): IdempotencyKey,
     JsonBody(input): JsonBody<RetryInput>,
 ) -> Result<Json<Publication>, ApiError> {
+    member_only(&caller)?;
     let planned_at = checked_planned_at(input.planned_at)?;
     if holds_nul(&publication_id) {
         return Err(ApiError::NotFound);
@@ -831,6 +842,7 @@ pub struct Resolution {
         (status = 200, body = Publication, description = "The publication is `published` or `failed`"),
         (status = 400, body = ErrorBody, description = "The request body is not JSON"),
         (status = 401, body = ErrorBody, description = "No valid access token"),
+        (status = 403, body = ErrorBody, description = "An API key cannot take this action; only a member can"),
         (status = 404, body = ErrorBody, description = "No such publication in the organization, or the caller is not in it"),
         (status = 409, body = ErrorBody, description = "The publication is not `outcome_unknown`"),
         (status = 413, body = ErrorBody, description = "The request body is over 2 MB"),
@@ -846,6 +858,7 @@ pub async fn resolve_publication(
     Path((_, publication_id)): Path<(String, String)>,
     JsonBody(input): JsonBody<Resolution>,
 ) -> Result<Json<Publication>, ApiError> {
+    member_only(&caller)?;
     let invalid = ApiError::InvalidBody(StatusCode::UNPROCESSABLE_ENTITY);
     let (outcome, remote_id, remote_url) = match (input.outcome, input.remote_id, input.remote_url)
     {

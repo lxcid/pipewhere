@@ -218,7 +218,9 @@ function describe(publication: Publication, now: Date): Omit<StateView, "approva
         detail:
           Date.parse(publication.deadline) <= now.getTime()
             ? "Its time has passed, so approving it now fails without posting. Cancel it, and ask the agent for it again with a new time."
-            : "An API key created this. It goes out at its time only after you approve it.",
+            : Date.parse(publication.planned_at) <= now.getTime()
+              ? "An API key created this. Its time has passed, so it goes out as soon as you approve it."
+              : "An API key created this. It goes out at its time only after you approve it.",
         cancellable: true,
       };
     case "scheduled":

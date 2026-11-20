@@ -131,3 +131,124 @@ async fn any_member_may_approve() {
     assert_eq!(approved["state"], "scheduled");
     instance.close().await;
 }
+
+async fn insert_publication(
+    db: &PgPool,
+    organization_id: &str,
+    channel_id: &str,
+    state: &str,
+) -> String {
+    let content_id = new_id("content");
+    let id = new_id("publication");
+    sqlx::query(
+        "INSERT INTO pipewhere.content (id, organization_id, body) VALUES ($1, $2, 'Source')",
+    )
+    .bind(&content_id)
+    .bind(organization_id)
+    .execute(db)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO pipewhere.publication
+             (id, organization_id, channel_id, content_id, body, state, planned_at, tolerance_seconds)
+         VALUES ($1, $2, $3, $4, 'Approved', $5, '2026-12-01T09:00:00Z', 600)",
+    )
+    .bind(&id)
+    .bind(organization_id)
+    .bind(channel_id)
+    .bind(&content_id)
+    .bind(state)
+    .execute(db)
+    .await
+    .unwrap();
+    id
+}
+
+// A key could otherwise change text a member approved, or send a failed
+// publication out again, without a member seeing it.
+#[tokio::test]
+async fn a_key_cannot_edit_retry_or_resolve() {
+    let instance = Instance::start().await;
+    let owner = instance.sign_up("owner@example.com").await;
+    let organization_id = instance.create_organization(&owner, "personal").await;
+    let token = instance.session_token(&owner).await;
+    let key = instance.create_key(&owner, &organization_id).await;
+    let key_token = instance.key_token(&key).await;
+    let channel_id = insert_channel(&instance.api_db, &organization_id).await;
+    let forbidden = (StatusCode::FORBIDDEN, "forbidden".to_owned());
+    let path = |id: &str| format!("/v1/orgs/{organization_id}/publications/{id}");
+
+    for (state, method, action, body) in [
+        (
+            "awaiting_approval",
+            Method::PATCH,
+            "",
+            json!({ "body": "Changed" }),
+        ),
+        ("scheduled", Method::PATCH, "", json!({ "body": "Changed" })),
+        ("failed", Method::PATCH, "", json!({ "body": "Changed" })),
+        ("failed", Method::POST, "/retry", json!({})),
+        (
+            "outcome_unknown",
+            Method::POST,
+            "/resolve",
+            json!({ "outcome": "failed" }),
+        ),
+    ] {
+        let id = insert_publication(&instance.api_db, &organization_id, &channel_id, state).await;
+        let before = ok_json(instance.get(&path(&id), Some(&token)).await).await;
+        let response = instance
+            .request(
+                method.clone(),
+                &format!("{}{action}", path(&id)),
+                Some(&key_token),
+            )
+            .header("idempotency-key", uuid::Uuid::now_v7().simple().to_string())
+            .json(&body)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(
+            refusal(response).await,
+            forbidden,
+            "{method} {action} from {state}"
+        );
+        assert_eq!(
+            ok_json(instance.get(&path(&id), Some(&token)).await).await,
+            before,
+            "{method} {action} from {state} changes nothing"
+        );
+    }
+    instance.close().await;
+}
+
+#[tokio::test]
+async fn a_key_may_withdraw_its_waiting_publication() {
+    let instance = Instance::start().await;
+    let owner = instance.sign_up("owner@example.com").await;
+    let organization_id = instance.create_organization(&owner, "personal").await;
+    let key = instance.create_key(&owner, &organization_id).await;
+    let key_token = instance.key_token(&key).await;
+    let channel_id = insert_channel(&instance.api_db, &organization_id).await;
+
+    let waiting = create(
+        &instance,
+        &organization_id,
+        &key_token,
+        json!({ "channel_id": channel_id, "body": "Drafted" }),
+    )
+    .await;
+    let id = waiting["id"].as_str().unwrap();
+    let cancelled = ok_json(
+        instance
+            .post(
+                &format!("/v1/orgs/{organization_id}/publications/{id}/cancel"),
+                Some(&key_token),
+                json!({}),
+            )
+            .await,
+    )
+    .await;
+    assert_eq!(cancelled["state"], "cancelled");
+    instance.close().await;
+}

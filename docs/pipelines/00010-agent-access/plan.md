@@ -12,16 +12,17 @@ The operator chose to ship 00010 as three PRs, in order. Each one is usable on i
 - [x] `PublicationState::AwaitingApproval`. A create picks the state from the caller's actor.
 - [x] Edit and cancel accept `awaiting_approval`.
 - [x] `POST …/approve`, refusing a key with 403 `forbidden` and any other state with 409 `state_conflict`.
-- [x] Web: the state's label and warning, and an Approve button beside Cancel. A waiting publication on a channel that cannot publish says so.
+- [x] Edit, retry, and resolve refuse a key with 403 `forbidden`, so a key cannot change text after approval or send a failed publication out again.
+- [x] Web: the state's label and warning, and an Approve button beside Cancel. A waiting publication on a channel that cannot publish says so. The list refreshes while a draft waits.
 - [x] README: a key's publications wait for approval.
 
 ### Verified
 
-- `cargo test -p pipewhere-api --test publication_approval`: a key's publication waits, a key cannot approve, a member approves once, and a second approval conflicts. Any member role may approve.
+- `cargo test -p pipewhere-api --test publication_approval`: a key's publication waits, a key cannot approve, a member approves once, and a second approval conflicts. Any member role may approve. A key gets 403 and changes nothing when it edits a waiting, scheduled, or failed publication, retries a failed one, or resolves an unknown outcome. A key may cancel its waiting publication.
 - `cargo test -p pipewhere-api --test publication_transitions`: the transition table now includes `awaiting_approval` and `approve`, for every state.
 - `cargo test -p pipewhere-api --lib`: the schema lists the approve endpoint, the `forbidden` code, and the state.
 - `cargo test -p pipewhere-worker`: the poller leaves an `awaiting_approval` publication whose time has passed untouched, with no attempt.
-- `pnpm --filter @pipewhere/web test` and `typecheck`: the state's description, its approve and cancel offers, and the late-approval warning.
+- `pnpm --filter @pipewhere/web test` and `typecheck`: the state's description before, at, and past its time and deadline, its approve and cancel offers, and the late-approval warning.
 - `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --check`: clean.
 
 ### Failures outside this change
