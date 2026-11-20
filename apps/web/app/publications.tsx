@@ -99,6 +99,20 @@ export function Publications({ organizationId }: { organizationId: string }) {
     return () => clearInterval(timer);
   }, [waiting, refresh]);
 
+  // With nothing waiting, no timer runs, so an agent's first draft would stay
+  // hidden until a reload. Returning to the page loads it instead.
+  useEffect(() => {
+    const onReturn = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    window.addEventListener("focus", onReturn);
+    document.addEventListener("visibilitychange", onReturn);
+    return () => {
+      window.removeEventListener("focus", onReturn);
+      document.removeEventListener("visibilitychange", onReturn);
+    };
+  }, [refresh]);
+
   async function loadOlder() {
     const cursor = shownThrough.current;
     if (!cursor) return;

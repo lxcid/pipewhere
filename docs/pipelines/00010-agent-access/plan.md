@@ -13,7 +13,7 @@ The operator chose to ship 00010 as three PRs, in order. Each one is usable on i
 - [x] Edit and cancel accept `awaiting_approval`.
 - [x] `POST …/approve`, refusing a key with 403 `forbidden` and any other state with 409 `state_conflict`.
 - [x] Edit, retry, and resolve refuse a key with 403 `forbidden`, so a key cannot change text after approval or send a failed publication out again. Cancel refuses a key unless the publication is still waiting.
-- [x] Web: the state's label and warning, and an Approve button beside Cancel. A waiting publication on a channel that cannot publish says so. The list refreshes while a draft waits, and Approve checks the deadline again when clicked.
+- [x] Web: the state's label and warning, and an Approve button beside Cancel. A waiting publication on a channel that cannot publish says so. The list refreshes while a draft waits and when the operator returns to the page, and Approve checks the deadline again when clicked.
 - [x] README: a key's publications wait for approval.
 
 ### Verified
