@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
 import {
-  INVITATION_ROWS,
   assignableRoles,
   canChange,
   invitationLink,
@@ -59,26 +58,5 @@ describe("invitations", () => {
       pendingInvitations(invitations, now).map((invitation) => invitation.id),
       ["a"],
     );
-  });
-
-  test("at Better Auth's cap, the invitation just created is shown even if the list omits it", () => {
-    const now = new Date("2026-11-21T12:00:00Z");
-    const created = { id: "new", status: "pending", expiresAt: "2026-11-22T12:00:00Z" };
-    const history = Array.from({ length: INVITATION_ROWS }, (_, n) => ({
-      id: `old-${n}`,
-      status: "canceled",
-      expiresAt: "2026-11-22T12:00:00Z",
-    }));
-    assert.deepEqual(
-      pendingInvitations(history, now, created).map((invitation) => invitation.id),
-      ["new"],
-    );
-  });
-
-  test("below the cap, the list is trusted, so an invitation answered since is not shown again", () => {
-    const now = new Date("2026-11-21T12:00:00Z");
-    const created = { id: "new", status: "pending", expiresAt: "2026-11-22T12:00:00Z" };
-    const listed = [{ ...created, status: "accepted" }];
-    assert.deepEqual(pendingInvitations(listed, now, created), []);
   });
 });

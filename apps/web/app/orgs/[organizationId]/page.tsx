@@ -35,9 +35,9 @@ export default function OrganizationPage() {
   // Better Auth refuses with 400 or 403 when the organization does not exist
   // or the user is not a member. Any other failure keeps what the page shows.
   const load = useCallback(async () => {
-    const { data, error } = await client.organization.getFullOrganization({
-      query: { organizationId },
-    });
+    const { data, error } = await client.organization
+      .getFullOrganization({ query: { organizationId } })
+      .catch(() => ({ data: null, error: null }));
     if (shown.current !== organizationId) return;
     if (data) {
       setOrganization(data as unknown as Organization);

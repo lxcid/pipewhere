@@ -232,10 +232,9 @@ function MemberRow({
 function Invitations({ organization, reload }: Omit<Props, "me">) {
   const { client } = useAuth();
   const [email, setEmail] = useState("");
-  const [created, setCreated] = useState<Invitation | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const { pending, error, run } = useAction();
-  const waiting = pendingInvitations(organization.invitations, new Date(), created);
+  const waiting = pendingInvitations(organization.invitations, new Date());
 
   function invite(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -246,7 +245,6 @@ function Invitations({ organization, reload }: Omit<Props, "me">) {
         role: "member",
       });
       if (result.error) return result;
-      setCreated(result.data as unknown as Invitation);
       setEmail("");
       await reload();
     });

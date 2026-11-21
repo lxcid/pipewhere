@@ -56,18 +56,27 @@ function Answer({ invitationId, email }: { invitationId: string; email: string }
 
   useEffect(() => {
     let current = true;
-    client.organization.getInvitation({ query: { id: invitationId } }).then(({ data, error }) => {
-      if (!current) return;
-      if (data) setLookup({ kind: "found", invitation: data as Invitation });
-      // Better Auth answers 403 when the invitation is for another address,
-      // and 400 when it was used, cancelled, or has expired, or when its
-      // inviter has left the organization.
-      else if (error?.status === 403) setLookup({ kind: "other-address" });
-      else if (error?.code === "INVITER_IS_NO_LONGER_A_MEMBER_OF_THE_ORGANIZATION") {
-        setLookup({ kind: "inviter-left" });
-      } else if (error?.status === 400) setLookup({ kind: "gone" });
-      else setLookup({ kind: "failed", message: error?.message ?? "Auth did not answer." });
-    });
+    client.organization.getInvitation({ query: { id: invitationId } }).then(
+      ({ data, error }) => {
+        if (!current) return;
+        if (data) setLookup({ kind: "found", invitation: data as Invitation });
+        // Better Auth answers 403 when the invitation is for another address,
+        // and 400 when it was used, cancelled, or has expired, or when its
+        // inviter has left the organization.
+        else if (error?.status === 403) setLookup({ kind: "other-address" });
+        else if (error?.code === "INVITER_IS_NO_LONGER_A_MEMBER_OF_THE_ORGANIZATION") {
+          setLookup({ kind: "inviter-left" });
+        } else if (error?.status === 400) setLookup({ kind: "gone" });
+        else setLookup({ kind: "failed", message: error?.message ?? "Auth did not answer." });
+      },
+      () => {
+        if (current)
+          setLookup({
+            kind: "failed",
+            message: "Pipewhere could not reach Auth. Reload the page.",
+          });
+      },
+    );
     return () => {
       current = false;
     };
