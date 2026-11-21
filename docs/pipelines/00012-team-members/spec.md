@@ -13,11 +13,15 @@ The operator chose on 2026-11-21 to invite through links rather than email. Auth
 What still guards an invitation:
 
 - Better Auth accepts an invitation only from a signed-in user whose email matches the invited address.
-- The link carries the invitation's id. That id is a UUIDv7, per 00001 D6, with 74 random bits, so it cannot be guessed.
+- The link carries the invitation's id. That id is a UUIDv7, per 00001 D6, made by `uuid` 10.0.0 through `typeid-js`. It has 74 random bits when no other id was made in the same millisecond, and at least 43 when one was, because its 31-bit counter then increments instead of being drawn again. Either is beyond guessing within the 48 hours an invitation lasts.
 - Better Auth lists a user's invitations only to a user whose email is verified, whatever this setting says. An unverified user cannot find an invitation's id that way.
 - An invitation expires after Better Auth's default of 48 hours. An owner or admin can cancel it sooner.
 
-What it gives up: an email address no longer proves who owns it. Someone who holds the link, and signs up with the invited address before the invitee does, joins in the invitee's place. The link can leak where 00001 D6 allows ids to appear, such as logs. If it happens, an owner or admin sees the member and removes them.
+What it gives up: an email address no longer proves who owns it. Someone who holds the link, and signs up with the invited address before the invitee does, joins in the invitee's place. The link can leak where 00001 D6 allows ids to appear, such as logs. Every member can also read it, per D2.
+
+So an invitation carries only the member role, as the operator chose on 2026-11-21. Whoever claims one gains no more than any member already holds. An owner or admin gives a higher role after the person joins, once they can see who joined. Auth refuses an invitation for any other role, through Better Auth's `beforeCreateInvitation` hook. That also closes a gap in Better Auth's own check: it looks for the owner role among the untrimmed parts of a comma-separated role, so `member, owner` would pass it and then count as owner.
+
+If someone joins in the invitee's place, an owner or admin sees the member and removes them.
 
 The operator accepted that risk. Today Auth listens on `127.0.0.1` only, per the README, so only someone on the operator's machine can reach it.
 
@@ -37,12 +41,12 @@ In API:
 Better Auth enforces the rest, and Pipewhere keeps its defaults:
 
 - An owner or admin may invite, change roles, remove members, cancel invitations, and rename the organization.
-- Only an owner may make someone an owner, or change an owner's role. Inviting someone as an owner needs an owner too.
-- An organization always keeps an owner. Its only owner cannot leave or be demoted.
+- Only an owner may make someone an owner, or change an owner's role.
+- An organization always keeps an owner. Its only owner cannot leave or be demoted. Better Auth counts the owners before it removes or demotes one, without a lock. Two owners who leave or demote each other at the same moment could therefore leave none. This exists on `main` already, through Auth's API, and needs two owners acting within the same instant. It is tolerated. Recovery is an `UPDATE auth.member SET role = 'owner'` for the right member.
 - Only an owner may list, create, or revoke API keys.
 - A member may do none of these. A member may leave.
 
-Any member may list the organization's invitations, and so see their links. A member can already act in the organization, and a link admits only the invited address.
+Any member may list the organization's invitations, and so see their links. Better Auth gives them to every member, and D1 keeps that harmless: an invitation admits only as a member.
 
 ### D3 — API reads the role on each request, and refuses keys by kind
 
@@ -69,13 +73,13 @@ Proposed: awaiting operator approval.
 
 Web reads the signed-in user's role from the organization's member list. It hides each control that role cannot use. Auth and API still refuse it, so hiding is for clarity, not protection.
 
-- **Invite.** An owner or admin enters an email and a role. Web shows the invitation's link, `/invite/<invitation id>` on Web's own origin, to copy and send. Only an owner is offered the owner role.
+- **Invite.** An owner or admin enters an email. The invitation is for the member role, per D1. Web shows its link, `/invite/<invitation id>` on Web's own origin, to copy and send. Better Auth returns at most 100 of an organization's invitations, whatever their status. When the list is at that cap, Web adds the invitation it just created from its create answer, so its link still shows.
 - **Pending invitations.** Each one shows its address, role, expiry, and link, with Cancel.
-- **Accepting.** The link's page asks a signed-out visitor to sign in or create an account, then shows the organization's name and the inviter, with Join and Decline. A signed-in user whose email differs is told the invitation is for another address, and can sign out.
+- **Accepting.** The link's page asks a signed-out visitor to sign in or create an account, then shows the organization's name and the inviter, with Join and Decline. A signed-in user whose email differs is told the invitation is for another address, and can sign out. If the inviter has left, Better Auth will not show the invitation, so the page says so and asks for a new link. Owners and admins still see it as pending until they cancel it.
 - **Members.** An owner or admin changes a role or removes a member. Web offers what Better Auth allows, and shows Better Auth's refusal when it refuses anyway, such as removing the only owner.
 - **Leaving.** Any member may leave. Web asks to confirm, then returns to the organization list.
 - **Renaming.** An owner or admin changes the name and the slug.
 - **Channels.** A member sees the channels and their status, without the form that connects one.
 - **API keys.** Only an owner sees the organization's keys. Anyone else is told that only an owner manages them.
 
-Web reloads the member list after each change it makes. It does not watch for changes made elsewhere. A person whose role changes in another tab sees it after a reload, and API refuses what the new role cannot do meanwhile.
+Web reloads the organization after each change it makes. Only Better Auth's answer that the organization does not exist, or that the user is not a member, shows as such. Any other failed reload keeps the page as it was. Web does not watch for changes made elsewhere. A person whose role changes in another tab sees it after a reload, and API refuses what the new role cannot do meanwhile.

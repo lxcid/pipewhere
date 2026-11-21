@@ -118,7 +118,7 @@ Before the auth boundary is considered verified, Pipewhere must exercise:
 - a request naming an organization the user is not a member of, or one that does not own the key, reported as not found
 - a member whose role does not permit an action, and a key whose permissions do not, each reported as forbidden
 - after a user creates an organization or accepts an invitation, a call to Better Auth that names no organization acting on neither
-- an invitee whose email is not verified being refused when accepting an invitation
+- an invitee whose email is not verified being refused when accepting an invitation. [00012 D1](../00012-team-members/spec.md) overturns this: such an invitee now joins.
 - deleting an organization through Auth being refused
 - removing a member, changing a role, revoking a key, and changing a key's permissions while a token is still valid, each taking effect on the next request
 - a key created by a removed member still working on the next request

@@ -19,7 +19,7 @@ Draft [intent 00006](../00006-team-review/intent.md) describes team permissions 
 
 From an organization's page in Web:
 
-- An owner or admin invites someone by email, with a role, and copies an invitation link to send them. They see pending invitations and can cancel one.
+- An owner or admin invites someone by email and copies an invitation link to send them. The invited person joins as a member, and gets any other role afterwards. They see pending invitations and can cancel one.
 - The invited person opens the link, signs up or signs in with the invited address, and joins. No email is sent and none needs verifying.
 - An owner or admin changes a member's role or removes a member, within Better Auth's rules: only an owner makes someone an owner, and an organization always keeps an owner.
 - A member leaves an organization, unless they are its only owner.
