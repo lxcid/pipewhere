@@ -133,6 +133,28 @@ test("an invitation carries only the member role", async () => {
   assert.match((await invite(organization.id, "new@example.com")).id, /^inv_/);
 });
 
+// An invitation for another role, stored before Auth refused creating one, is
+// refused when accepted too.
+test("an invitation stored with another role cannot be accepted", async () => {
+  const organization = await createOrganization(owner, "stored-role");
+  const invitee = await signUp(instance, "stored@example.com");
+  const invitation = await invite(organization.id, "stored@example.com");
+  await instance.authPool.query(`UPDATE invitation SET role = 'owner' WHERE id = $1`, [
+    invitation.id,
+  ]);
+
+  const refused = await invitee.request("/api/auth/organization/accept-invitation", {
+    method: "POST",
+    body: JSON.stringify({ invitationId: invitation.id }),
+  });
+  assert.equal(refused.status, 400);
+  const { rowCount } = await instance.authPool.query(
+    `SELECT 1 FROM member WHERE "organizationId" = $1 AND "userId" = $2`,
+    [organization.id, invitee.userId],
+  );
+  assert.equal(rowCount, 0);
+});
+
 test("deleting an organization is refused", async () => {
   const organization = await createOrganization(owner, "kept");
   const response = await owner.request("/api/auth/organization/delete", {
