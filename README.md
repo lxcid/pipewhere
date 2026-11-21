@@ -66,7 +66,7 @@ Worker runs each publication when its time comes:
 - It posts to a connected Mastodon account. A Threads channel cannot publish yet, so its publication becomes `failed`, with the reason `Pipewhere cannot publish to Threads yet.`
 - If the instance no longer accepts Pipewhere's access, the publication fails and the channel shows its access as revoked. Connect the account again, then retry.
 
-`GET /v1/orgs/{organization_id}/scheduler` shows `last_completed_at` (null until the first successful tick) and `stalled`. A tick counts only when its query and every send succeed, including when no work is due. No completion for 60 seconds means stalled. This is the installation's scheduler status, available to any member or key of the named organization. It does not prove that Restate can execute accepted work; use the overdue publication list as well.
+`GET /v1/orgs/{organization_id}/scheduler` shows `last_completed_at` (null until the first successful tick) and `stalled`. A tick counts only when its query and every send succeed, including when no work is due. No completion for 60 seconds means stalled. This is the installation's scheduler status, available to any member or key of the named organization. It does not prove that Restate can execute accepted work; use the overdue publication list as well. Web's publications card warns while the scheduler is stalled.
 
 API serves its OpenAPI schema at `http://localhost:3002/openapi.json`.
 

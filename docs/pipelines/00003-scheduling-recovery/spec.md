@@ -362,3 +362,22 @@ A limit narrows this case and does not close it. A provider can still act on a r
 A later pipeline is in violation if its adapter can hold a provider call open with no time limit.
 
 What would overturn this: a commit guard, such as an idempotency key a retry shares with the old call, shown to leave one post when an old call and a retry both reach the provider.
+
+### D20 — Web warns on the publications card when the scheduler has stalled
+
+Proposed: awaiting operator approval.
+
+The operator chose on 2026-11-22 to see D10's stall in Web, where they schedule publications, and not only through API.
+
+The publications card reads `GET .../scheduler` together with the list and the channels, so it refreshes when the list does:
+
+- on load, and on Refresh;
+- on returning to the page;
+- every 10 seconds while a publication waits.
+
+When `stalled` is true, the card says scheduled publications are not going out. It names the last completed tick, or says there has been none, and asks the operator to check that Worker is running.
+
+Tolerated:
+
+- With nothing waiting, the card does not poll. A stall that starts while the page stays open shows on the next return or Refresh. Nothing is due then, so nothing is missed yet.
+- A failed scheduler read fails the card's refresh, as a failed channel read does. Both come from API, so one failing usually means the other would too.
