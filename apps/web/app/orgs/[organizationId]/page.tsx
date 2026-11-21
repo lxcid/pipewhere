@@ -23,6 +23,7 @@ export default function OrganizationPage() {
   const session = client.useSession();
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [missing, setMissing] = useState<string | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
 
   const shown = useRef(organizationId);
   useEffect(() => {
@@ -31,11 +32,19 @@ export default function OrganizationPage() {
 
   // An answer for an organization the page has moved on from is dropped, and
   // the page shows only the organization its address names.
+  // Better Auth refuses with 400 or 403 when the organization does not exist
+  // or the user is not a member. Any other failure keeps what the page shows.
   const load = useCallback(async () => {
-    const { data } = await client.organization.getFullOrganization({ query: { organizationId } });
+    const { data, error } = await client.organization.getFullOrganization({
+      query: { organizationId },
+    });
     if (shown.current !== organizationId) return;
-    if (data) setOrganization(data as unknown as Organization);
-    else setMissing(organizationId);
+    if (data) {
+      setOrganization(data as unknown as Organization);
+      setMissing(null);
+      setFailed(null);
+    } else if (error?.status === 400 || error?.status === 403) setMissing(organizationId);
+    else setFailed(organizationId);
   }, [client, organizationId]);
 
   // Better Auth refetches the session when the window regains focus, so a role
@@ -64,6 +73,13 @@ export default function OrganizationPage() {
     return (
       <Shell>
         <p>This organization does not exist, or you are not a member.</p>
+      </Shell>
+    );
+  }
+  if (failed === organizationId && organization?.id !== organizationId) {
+    return (
+      <Shell>
+        <p>Pipewhere could not load this organization. Reload the page.</p>
       </Shell>
     );
   }

@@ -21,18 +21,20 @@ export interface Member {
   user: { name: string; email: string };
 }
 
+interface Invitation {
+  id: string;
+  email: string;
+  role: string;
+  status: string;
+  expiresAt: string | Date;
+}
+
 export interface Organization {
   id: string;
   name: string;
   slug: string;
   members: Member[];
-  invitations: {
-    id: string;
-    email: string;
-    role: string;
-    status: string;
-    expiresAt: string | Date;
-  }[];
+  invitations: Invitation[];
 }
 
 interface Props {
@@ -64,7 +66,7 @@ export function OrganizationCard({ organization, me, reload }: Props) {
           />
         ))}
       </ul>
-      {manages(me.role) && <Invitations organization={organization} me={me} reload={reload} />}
+      {manages(me.role) && <Invitations organization={organization} reload={reload} />}
     </section>
   );
 }
@@ -227,13 +229,13 @@ function MemberRow({
   );
 }
 
-function Invitations({ organization, me, reload }: Props) {
+function Invitations({ organization, reload }: Omit<Props, "me">) {
   const { client } = useAuth();
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState<Role>("member");
+  const [created, setCreated] = useState<Invitation | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const { pending, error, run } = useAction();
-  const waiting = pendingInvitations(organization.invitations, new Date());
+  const waiting = pendingInvitations(organization.invitations, new Date(), created);
 
   function invite(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -241,11 +243,11 @@ function Invitations({ organization, me, reload }: Props) {
       const result = await client.organization.inviteMember({
         organizationId: organization.id,
         email,
-        role,
+        role: "member",
       });
       if (result.error) return result;
+      setCreated(result.data as unknown as Invitation);
       setEmail("");
-      setRole("member");
       await reload();
     });
   }
@@ -270,8 +272,8 @@ function Invitations({ organization, me, reload }: Props) {
       <h2>Invite</h2>
       <p className="muted">
         Pipewhere sends no email. Copy the invitation&apos;s link and send it yourself. Whoever
-        opens it joins after signing in with the invited address, so send it only to them. It
-        expires after 48 hours.
+        opens it joins as a member after signing in with the invited address, so send it only to
+        them. It expires after 48 hours. Change their role once they have joined.
       </p>
       <form onSubmit={invite} className="row">
         <input
@@ -282,17 +284,6 @@ function Invitations({ organization, me, reload }: Props) {
           required
           onChange={(event) => setEmail(event.target.value)}
         />
-        <select
-          aria-label="Role"
-          value={role}
-          onChange={(event) => setRole(event.target.value as Role)}
-        >
-          {assignableRoles(me.role).map((option) => (
-            <option key={option} value={option}>
-              {option}
-            </option>
-          ))}
-        </select>
         <button type="submit" disabled={pending}>
           Invite
         </button>

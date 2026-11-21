@@ -19,6 +19,7 @@ type Lookup =
   | { kind: "found"; invitation: Invitation }
   | { kind: "other-address" }
   | { kind: "gone" }
+  | { kind: "inviter-left" }
   | { kind: "failed"; message: string };
 
 export default function InvitationPage() {
@@ -59,9 +60,12 @@ function Answer({ invitationId, email }: { invitationId: string; email: string }
       if (!current) return;
       if (data) setLookup({ kind: "found", invitation: data as Invitation });
       // Better Auth answers 403 when the invitation is for another address,
-      // and 400 when it was used, cancelled, or has expired.
+      // and 400 when it was used, cancelled, or has expired, or when its
+      // inviter has left the organization.
       else if (error?.status === 403) setLookup({ kind: "other-address" });
-      else if (error?.status === 400) setLookup({ kind: "gone" });
+      else if (error?.code === "INVITER_IS_NO_LONGER_A_MEMBER_OF_THE_ORGANIZATION") {
+        setLookup({ kind: "inviter-left" });
+      } else if (error?.status === 400) setLookup({ kind: "gone" });
       else setLookup({ kind: "failed", message: error?.message ?? "Auth did not answer." });
     });
     return () => {
@@ -105,6 +109,17 @@ function Answer({ invitationId, email }: { invitationId: string; email: string }
         <p>
           This invitation was already answered, was cancelled, or has expired. Ask whoever invited
           you for a new link.
+        </p>
+      </section>
+    );
+  }
+  if (lookup.kind === "inviter-left") {
+    return (
+      <section className="card narrow">
+        <h1>Invitation</h1>
+        <p>
+          Whoever sent this invitation has left the organization, so it no longer works. Ask an
+          owner or admin of the organization for a new link.
         </p>
       </section>
     );

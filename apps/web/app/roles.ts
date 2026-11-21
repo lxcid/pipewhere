@@ -32,11 +32,25 @@ export function invitationLink(origin: string, invitationId: string) {
   return `${origin}/invite/${invitationId}`;
 }
 
-export function pendingInvitations<T extends { status: string; expiresAt: string | Date }>(
-  invitations: T[],
-  now: Date,
-) {
-  return invitations.filter(
+// Better Auth returns at most this many of an organization's invitations,
+// whatever their status.
+export const INVITATION_ROWS = 100;
+
+/**
+ * The pending invitations to show. Below the cap the list is complete. At the
+ * cap, the one just created may be missing, so it is added from its create
+ * answer.
+ */
+export function pendingInvitations<
+  T extends { id: string; status: string; expiresAt: string | Date },
+>(invitations: T[], now: Date, created?: T | null) {
+  const listed =
+    created &&
+    invitations.length >= INVITATION_ROWS &&
+    !invitations.some((i) => i.id === created.id)
+      ? [created, ...invitations]
+      : invitations;
+  return listed.filter(
     (invitation) =>
       invitation.status === "pending" && new Date(invitation.expiresAt).getTime() > now.getTime(),
   );
