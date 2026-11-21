@@ -18,7 +18,7 @@ Built in one PR, #53, for #52.
 
 ### Commands
 
-Run at `0a850f6`, from the repository root, unless a line names another commit:
+Run at `0a850f6`, from the repository root, unless a line names another commit. Only the invitation page changed in `f391d15`, and Web's tests and typecheck were run again there:
 
 - `pnpm --filter @pipewhere/auth test`: 22 pass.
   - An invitee whose email is not verified joins through the invitation.
@@ -36,7 +36,7 @@ Run at `0a850f6`, from the repository root, unless a line names another commit:
   - the invitation link;
   - which invitations count as pending.
 - `pnpm --filter @pipewhere/web typecheck`: clean.
-- `pnpm --filter @pipewhere/web build`: passed at `abf69ca`, and the check stack's Web image built at `0a850f6`. As in 00011, Next.js 16.4.2 first stops with a notice about a known security advisory, and passes when run again.
+- `pnpm --filter @pipewhere/web build`: passed at `abf69ca`, and the check stack's Web image built at `f391d15`. As in 00011, Next.js 16.4.2 first stops with a notice about a known security advisory, and passes when run again.
 
 ### Failures outside this change
 
@@ -47,9 +47,9 @@ These were seen on the builder's machine, macOS on Darwin 27, as in 00010:
 
 ### Browser checks against a local stack
 
-Verified at `0a850f6`. The stack ran under Compose project `pipewhere-check` on the builder's machine, with its own volumes. It ran PostgreSQL, the migrations, Auth, API, and Web. Worker did not run: its image was still compiling after 30 minutes, and nothing checked here reaches it. A script drove headless Chrome 157 through the DevTools protocol, with one browser context per person. Every address was on a per-run `example.com` subdomain. The script waits 11 seconds between sign-ups, because Better Auth allows 3 sign-ups from one address until 10 seconds pass without one.
+Verified at `f391d15`. The stack ran under Compose project `pipewhere-check` on the builder's machine, with its own volumes. It ran PostgreSQL, the migrations, Auth, API, and Web. Worker did not run: its image was still compiling after 30 minutes, and nothing checked here reaches it. A script drove headless Chrome 157 through the DevTools protocol, with one browser context per person. Every address was on a per-run `example.com` subdomain. The script waits 11 seconds between sign-ups, because Better Auth allows 3 sign-ups from one address until 10 seconds pass without one.
 
-All 49 checks passed:
+All 51 checks passed:
 
 - An owner sees Rename, the invite form without a role, the connect form, the API key form, and Leave on their own row.
 - An invitation's link is on Web's own origin. The pending row shows its address, role, and expiry.
@@ -66,7 +66,10 @@ All 49 checks passed:
 - A member who leaves returns to the organization list, without the organization. The owner sees them gone.
 - An owner removes a member, who then sees "This organization does not exist, or you are not a member."
 - An invitation sent by the removed admin tells its invitee that the inviter has left. The owner still sees it pending, to cancel.
-- No sideways scroll at 390 pixels wide. No console errors for any of the six people.
+- An invitation whose stored role was set to owner in `auth.invitation` asks its invitee for a new link, without Join.
+- No sideways scroll at 390 pixels wide. No console errors for any of the seven people.
+
+An earlier run at the same commit timed out at Carol's check that a cancelled link no longer works. The script did not capture her page, so the cause is unknown. The next run passed it.
 
 Screenshots from that run, all of fixture data. Headless Chrome followed the machine's colour scheme, which was light for this run and dark for the run at `abf69ca`:
 
