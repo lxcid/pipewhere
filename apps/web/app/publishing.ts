@@ -158,6 +158,20 @@ export function formatTime(iso: string): string {
   return TIME.format(new Date(iso));
 }
 
+export interface Scheduler {
+  last_completed_at: string | null;
+  stalled: boolean;
+}
+
+/** What to tell the operator when the scheduler has stalled, per 00003 D20. */
+export function schedulerWarning(scheduler: Scheduler): string | null {
+  if (!scheduler.stalled) return null;
+  const since = scheduler.last_completed_at
+    ? `has not looked for due work since ${formatTime(scheduler.last_completed_at)}.`
+    : "has not looked for due work yet.";
+  return `Scheduled publications are not going out. Pipewhere's Worker ${since} Check that Worker is running.`;
+}
+
 /** Latest planned time first, per 00011 D3. Of two at one time, the newer. */
 export function chronological(publications: Publication[]): Publication[] {
   return publications.toSorted(

@@ -6,11 +6,13 @@ import {
   approvalTooLate,
   chronological,
   describeState,
+  formatTime,
   loadThrough,
   merged,
   newIdempotencyKey,
   plannedAt,
   problemOf,
+  schedulerWarning,
   type Page,
   type Publication,
   type Sent,
@@ -374,5 +376,25 @@ describe("problemOf", () => {
     const message = problemOf({ kind: "unconfirmed", reason: "Failed to fetch" });
     assert.match(message, /not confirm/);
     assert.match(message, /Failed to fetch/);
+  });
+});
+
+describe("schedulerWarning", () => {
+  test("says nothing while the scheduler runs", () => {
+    assert.equal(
+      schedulerWarning({ last_completed_at: "2026-11-22T15:00:00Z", stalled: false }),
+      null,
+    );
+  });
+
+  test("names the last tick of a stalled scheduler", () => {
+    const warning = schedulerWarning({ last_completed_at: "2026-11-22T15:00:00Z", stalled: true });
+    assert.match(warning ?? "", /^Scheduled publications are not going out\./);
+    assert.ok(warning?.includes(`since ${formatTime("2026-11-22T15:00:00Z")}.`));
+  });
+
+  test("says when the scheduler has never run", () => {
+    const warning = schedulerWarning({ last_completed_at: null, stalled: true });
+    assert.match(warning ?? "", /has not looked for due work yet\./);
   });
 });
