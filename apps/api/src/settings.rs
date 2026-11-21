@@ -90,6 +90,7 @@ pub async fn get_settings(
         (status = 200, body = OrganizationSettings, description = "The edited settings"),
         (status = 400, body = ErrorBody, description = "The request body is not JSON"),
         (status = 401, body = ErrorBody, description = "No valid access token"),
+        (status = 403, body = ErrorBody, description = "Only an owner or admin may take this action. A member or an API key cannot"),
         (status = 404, body = ErrorBody, description = "No such organization, or the caller is not in it"),
         (status = 413, body = ErrorBody, description = "The request body is over 2 MB"),
         (status = 415, body = ErrorBody, description = "The request body is not sent as application/json"),
@@ -103,6 +104,7 @@ pub async fn update_settings(
     caller: OrgCaller,
     JsonBody(input): JsonBody<OrganizationSettingsEdit>,
 ) -> Result<Json<OrganizationSettings>, ApiError> {
+    caller.require_manager()?;
     let tolerance_seconds = sqlx::query_scalar(
         "INSERT INTO pipewhere.organization_setting (organization_id, tolerance_seconds)
          VALUES ($1, $2)

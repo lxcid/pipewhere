@@ -40,8 +40,8 @@ async fn a_member_lists_and_reads_the_organizations_channels() {
     assert_eq!(
         body,
         json!({ "channels": [
-            { "id": mastodon, "organization_id": organization_id, "provider": "mastodon" },
-            { "id": threads, "organization_id": organization_id, "provider": "threads" },
+            { "id": mastodon, "organization_id": organization_id, "provider": "mastodon", "handle": null, "status": "disconnected" },
+            { "id": threads, "organization_id": organization_id, "provider": "threads", "handle": null, "status": "disconnected" },
         ] })
     );
 
@@ -53,7 +53,7 @@ async fn a_member_lists_and_reads_the_organizations_channels() {
     .await;
     assert_eq!(
         body,
-        json!({ "id": threads, "organization_id": organization_id, "provider": "threads" })
+        json!({ "id": threads, "organization_id": organization_id, "provider": "threads", "handle": null, "status": "disconnected" })
     );
     instance.close().await;
 }

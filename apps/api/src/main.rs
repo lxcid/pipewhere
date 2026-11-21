@@ -2,8 +2,11 @@ use std::io::IsTerminal;
 use std::process::ExitCode;
 use std::sync::Arc;
 
+use pipewhere_api::credentials::Credentials;
+use pipewhere_api::mastodon::Mastodon;
 use pipewhere_api::tokens::TokenVerifier;
 use pipewhere_api::{AppState, migrate, router};
+use reqwest::Url;
 use sqlx::postgres::PgPoolOptions;
 use tokio::net::TcpListener;
 use tokio::signal::unix::{SignalKind, signal};
@@ -15,6 +18,11 @@ async fn main() -> ExitCode {
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
         .with_ansi(std::io::stdout().is_terminal())
         .init();
+    // reqwest is built without a TLS provider, so the image does not compile
+    // aws-lc.
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("no other TLS provider is installed");
 
     let result = match std::env::args().nth(1).as_deref() {
         None | Some("serve") => serve().await,
@@ -37,12 +45,18 @@ async fn serve() -> Result<(), Error> {
         .connect(&required("DATABASE_URL")?)
         .await?;
     let tokens = TokenVerifier::new(&required("AUTH_URL")?, required("AUTH_JWKS_URL")?);
+    let credentials = Credentials::from_hex(&required("CREDENTIALS_KEY")?)?;
+    let web_url = Url::parse(&required("WEB_URL")?)
+        .map_err(|error| format!("WEB_URL is not a URL: {error}"))?;
     let port = std::env::var("PORT").unwrap_or_else(|_| "3002".into());
     let listener = TcpListener::bind(("0.0.0.0", port.parse::<u16>()?)).await?;
     tracing::info!("api listening on {port}");
     let app = router(AppState {
         db,
         tokens: Arc::new(tokens),
+        credentials: Arc::new(credentials),
+        mastodon: Arc::new(Mastodon::https()),
+        web_url,
     });
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown())

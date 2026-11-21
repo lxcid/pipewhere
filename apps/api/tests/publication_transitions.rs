@@ -13,7 +13,8 @@ use serde_json::{Value, json};
 use sqlx::PgPool;
 use support::{Instance, ok_json, refusal};
 
-const STATES: [&str; 7] = [
+const STATES: [&str; 8] = [
+    "awaiting_approval",
     "scheduled",
     "preparing",
     "publishing",
@@ -23,10 +24,11 @@ const STATES: [&str; 7] = [
     "cancelled",
 ];
 
-const ACTIONS: [&str; 6] = [
+const ACTIONS: [&str; 7] = [
     "edit",
     "edit tolerance",
     "cancel",
+    "approve",
     "retry",
     "resolve as published",
     "resolve as failed",
@@ -155,6 +157,7 @@ fn action_request(
             .request(Method::PATCH, &path, Some(token))
             .json(&json!({ "tolerance_seconds": 300 })),
         "cancel" => instance.request(Method::POST, &format!("{path}/cancel"), Some(token)),
+        "approve" => instance.request(Method::POST, &format!("{path}/approve"), Some(token)),
         "retry" => retry_request(
             instance,
             organization_id,
@@ -229,8 +232,17 @@ async fn each_action_is_allowed_only_in_the_states_d3_lists() {
 
     for action in ACTIONS {
         let allowed: &[(&str, &str)] = match action {
-            "edit" | "edit tolerance" => &[("scheduled", "scheduled"), ("failed", "failed")],
-            "cancel" => &[("scheduled", "cancelled"), ("preparing", "cancelled")],
+            "edit" | "edit tolerance" => &[
+                ("awaiting_approval", "awaiting_approval"),
+                ("scheduled", "scheduled"),
+                ("failed", "failed"),
+            ],
+            "cancel" => &[
+                ("awaiting_approval", "cancelled"),
+                ("scheduled", "cancelled"),
+                ("preparing", "cancelled"),
+            ],
+            "approve" => &[("awaiting_approval", "scheduled")],
             "retry" => &[("failed", "scheduled")],
             "resolve as published" => &[("outcome_unknown", "published")],
             "resolve as failed" => &[("outcome_unknown", "failed")],
@@ -888,6 +900,7 @@ async fn another_organizations_publication_is_not_found() {
         // A state that allows the action, so only the organization refuses it.
         let state = match action {
             "edit" | "edit tolerance" | "cancel" => "scheduled",
+            "approve" => "awaiting_approval",
             "retry" => "failed",
             _ => "outcome_unknown",
         };

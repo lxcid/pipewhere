@@ -1,5 +1,5 @@
 ---
-status: approved
+status: in-progress
 ---
 
 # Intent 00004 — Provider delivery and Mastodon

@@ -11,7 +11,17 @@ You need Docker with Compose v2.
    for name in POSTGRES_PASSWORD AUTH_DB_PASSWORD API_DB_PASSWORD BETTER_AUTH_SECRET RUSTFS_ACCESS_KEY RUSTFS_SECRET_KEY; do
      sed -i.bak "s|^$name=\$|$name=$(openssl rand -hex 24)|" .env
    done
+   sed -i.bak "s|^CREDENTIALS_KEY=\$|CREDENTIALS_KEY=$(openssl rand -hex 32)|" .env
    rm .env.bak
+   ```
+
+   `CREDENTIALS_KEY` encrypts the access Pipewhere stores for each channel. API and Worker both read it. Back it up with your database. If it is lost or changed, Pipewhere cannot read what it stored. Publications to every channel fail until each one is connected again.
+
+   An `.env` made before Mastodon channels existed lacks `CREDENTIALS_KEY` and `API_URL`, and Compose refuses to start without them. Add each one only if it is missing, so a key already in use is never replaced:
+
+   ```sh
+   grep -q '^CREDENTIALS_KEY=.' .env || echo "CREDENTIALS_KEY=$(openssl rand -hex 32)" >> .env
+   grep -q '^API_URL=.' .env || echo "API_URL=http://localhost:3002" >> .env
    ```
 
 2. Start everything:
@@ -23,6 +33,16 @@ You need Docker with Compose v2.
 3. Open <http://localhost:3000>, create an account, and create an organization.
 
    Compose publishes Web, Auth, and API on `127.0.0.1` only. If another server listens on port 3000, 3001, or 3002 on `::1`, such as a Node dev server, Compose does not report it, and `localhost` may reach that server instead. Stop it first.
+
+4. On the organization's page, connect a Mastodon account: enter its instance's address, such as `mastodon.social`, and approve Pipewhere at the instance. Pipewhere registers itself with the instance, so there is no app to create first.
+
+To add someone to an organization, invite their email address on its page, and send them the invitation's link yourself. Pipewhere sends no email. Whoever opens the link joins as a member after signing in with the invited address, so send it only to them. It expires after 48 hours. Once they have joined, confirm with them outside Pipewhere that it was them, then change their role if they need more.
+
+Each member has one of three roles:
+
+- A **member** writes, schedules, edits, cancels, retries, resolves, and approves publications.
+- An **admin** also connects channels, changes the organization's settings, invites people, changes roles, removes members, and renames the organization.
+- An **owner** also manages API keys, and is the only role that can make someone an owner. An organization always keeps an owner.
 
 Compose starts PostgreSQL, RustFS, and Restate, then Auth, Worker, API, and Web. Before them, three one-off steps run in order and exit:
 
@@ -43,7 +63,8 @@ Web listens on port 3000, Auth on port 3001, and API on port 3002, all on `127.0
 Worker runs each publication when its time comes:
 
 - Every 5 seconds it looks in PostgreSQL for `scheduled` publications whose planned time has passed, and sends up to 100 of them to Restate, oldest first. A failed tick is logged, and the next one tries again.
-- No provider can publish yet. A publication that reaches its time becomes `failed`, with the reason `Pipewhere cannot publish to Mastodon yet.`
+- It posts to a connected Mastodon account. A Threads channel cannot publish yet, so its publication becomes `failed`, with the reason `Pipewhere cannot publish to Threads yet.`
+- If the instance no longer accepts Pipewhere's access, the publication fails and the channel shows its access as revoked. Connect the account again, then retry.
 
 `GET /v1/orgs/{organization_id}/scheduler` shows `last_completed_at` (null until the first successful tick) and `stalled`. A tick counts only when its query and every send succeed, including when no work is due. No completion for 60 seconds means stalled. This is the installation's scheduler status, available to any member or key of the named organization. It does not prove that Restate can execute accepted work; use the overdue publication list as well.
 
@@ -59,6 +80,8 @@ curl -H "authorization: Bearer $TOKEN" http://localhost:3002/v1/orgs/$ORGANIZATI
 ```
 
 A token expires after 15 minutes. Exchange the key again for a new one.
+
+A publication created with a key waits as `awaiting_approval`. It goes out only after a member approves it on the organization's page in Web. Cancelling it there rejects it. A key may create and read publications, and cancel one that still awaits approval. It cannot approve, edit, retry, or resolve them, or cancel one a member scheduled or approved.
 
 Stop the stack with `docker compose down`. Your data stays in Docker volumes; `docker compose down --volumes` deletes it.
 

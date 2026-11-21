@@ -7,6 +7,8 @@
   --accent: #2f5bd3;
   --accent-text: #ffffff;
   --error: #b42318;
+  --warning: #9a5b00;
+  --success: #1a7f37;
   --notice: #fff8e6;
   color-scheme: light;
 }
@@ -21,6 +23,8 @@
     --accent: #7c9cf0;
     --accent-text: #0f1424;
     --error: #f97066;
+    --warning: #f5b74e;
+    --success: #4ac26b;
     --notice: #2a2516;
     color-scheme: dark;
   }
@@ -124,6 +128,19 @@ h2 {
   flex: 1 1 160px;
 }
 
+.row.tight {
+  margin-top: 0;
+  align-items: center;
+}
+
+.heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 label {
   display: grid;
   gap: 4px;
@@ -131,7 +148,9 @@ label {
   color: var(--muted);
 }
 
-input {
+input,
+textarea,
+select {
   font: inherit;
   color: var(--text);
   background: var(--bg);
@@ -253,4 +272,104 @@ th {
     Menlo,
     monospace;
   overflow-x: auto;
+}
+
+textarea {
+  resize: vertical;
+}
+
+fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+h3 {
+  font-size: 15px;
+  margin: 0;
+}
+
+.compose {
+  margin: 12px 0 24px;
+}
+
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.choices label,
+.value {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 15px;
+  color: var(--text);
+}
+
+.spread {
+  justify-content: space-between;
+  align-items: center;
+}
+
+.list li.publication {
+  display: grid;
+  justify-content: stretch;
+  gap: 6px;
+}
+
+.publication p {
+  margin: 0;
+}
+
+.publication .head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.publication .body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.state {
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 1px 8px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  color: var(--accent);
+}
+
+.state.published {
+  color: var(--success);
+}
+
+.state.failed {
+  color: var(--error);
+}
+
+.state.unknown {
+  color: var(--warning);
+}
+
+.state.cancelled {
+  color: var(--muted);
+}
+
+.reason {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--bg);
+  overflow-wrap: anywhere;
+}
+
+.older {
+  margin-top: 12px;
 }
