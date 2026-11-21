@@ -315,7 +315,8 @@ impl Instance {
     }
 
     /// Makes `invitee` a member with `role`, the way Auth allows: an invitation
-    /// accepted by the invited address.
+    /// accepted by the invited address, which joins as a member, then a role
+    /// change.
     pub async fn add_member(
         &self,
         owner: &User,
@@ -324,13 +325,23 @@ impl Instance {
         email: &str,
         role: &str,
     ) {
-        let body = json!({ "organizationId": organization_id, "email": email, "role": role });
+        let body = json!({ "organizationId": organization_id, "email": email, "role": "member" });
         let invitation = self
             .auth_post(owner, "/organization/invite-member", body)
             .await;
         let body = json!({ "invitationId": invitation["id"] });
-        self.auth_post(invitee, "/organization/accept-invitation", body)
+        let joined = self
+            .auth_post(invitee, "/organization/accept-invitation", body)
             .await;
+        if role != "member" {
+            let body = json!({
+                "organizationId": organization_id,
+                "memberId": joined["member"]["id"],
+                "role": role,
+            });
+            self.auth_post(owner, "/organization/update-member-role", body)
+                .await;
+        }
     }
 
     /// Signs a token with Auth's current signing key and an arbitrary payload,

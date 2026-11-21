@@ -1,5 +1,6 @@
 import { apiKey } from "@better-auth/api-key";
 import { betterAuth, type BetterAuthOptions } from "better-auth";
+import { APIError } from "better-auth/api";
 import { jwt, organization } from "better-auth/plugins";
 import type { Pool } from "pg";
 
@@ -38,6 +39,18 @@ export function authOptions(pool: Pool, env: AuthEnv) {
         // address (00012 D1). Set explicitly because Better Auth's default
         // depends on the id generator.
         requireEmailVerificationOnInvitation: false,
+        organizationHooks: {
+          // Any member can read an invitation's id, and anyone can sign up as
+          // an address without an account, so an invitation must grant no
+          // more than a member holds. A promotion follows the join (00012 D1).
+          beforeCreateInvitation: async ({ invitation }) => {
+            if (invitation.role !== "member") {
+              throw new APIError("BAD_REQUEST", {
+                message: "An invitation is for the member role. Change the role after they join.",
+              });
+            }
+          },
+        },
       }),
       apiKey({
         references: "organization",

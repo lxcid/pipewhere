@@ -104,13 +104,19 @@ test("a key keeps working after the member who created it is removed", async () 
   const invitation = await json<{ id: string }>(
     await owner.request("/api/auth/organization/invite-member", {
       method: "POST",
-      body: JSON.stringify({ organizationId, email: "co-owner@example.com", role: "owner" }),
+      body: JSON.stringify({ organizationId, email: "co-owner@example.com", role: "member" }),
     }),
   );
-  await json(
+  const joined = await json<{ member: { id: string } }>(
     await coOwner.request("/api/auth/organization/accept-invitation", {
       method: "POST",
       body: JSON.stringify({ invitationId: invitation.id }),
+    }),
+  );
+  await json(
+    await owner.request("/api/auth/organization/update-member-role", {
+      method: "POST",
+      body: JSON.stringify({ organizationId, memberId: joined.member.id, role: "owner" }),
     }),
   );
 

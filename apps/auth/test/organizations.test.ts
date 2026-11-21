@@ -112,6 +112,27 @@ test("an invitee joins through the link without a verified email; joining leaves
   assert.deepEqual(await activeOrganizations(invitee.userId), [null]);
 });
 
+// 00012 D1: any member can read an invitation's id, and any address without
+// an account can be signed up, so a claimed invitation must grant no more than
+// a member already holds. A role with a comma would also slip past Better
+// Auth's owner check, which compares the untrimmed parts.
+test("an invitation carries only the member role", async () => {
+  const organization = await createOrganization(owner, "member-only");
+  for (const role of ["admin", "owner", "member, owner", "member,admin"]) {
+    const refused = await owner.request("/api/auth/organization/invite-member", {
+      method: "POST",
+      body: JSON.stringify({ organizationId: organization.id, email: "new@example.com", role }),
+    });
+    assert.equal(refused.status, 400, role);
+  }
+  const { rowCount } = await instance.authPool.query(
+    `SELECT 1 FROM invitation WHERE "organizationId" = $1`,
+    [organization.id],
+  );
+  assert.equal(rowCount, 0);
+  assert.match((await invite(organization.id, "new@example.com")).id, /^inv_/);
+});
+
 test("deleting an organization is refused", async () => {
   const organization = await createOrganization(owner, "kept");
   const response = await owner.request("/api/auth/organization/delete", {
