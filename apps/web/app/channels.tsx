@@ -23,7 +23,13 @@ export function pendingConnection(authorizationId: string) {
   return `pipewhere:mastodon:${authorizationId}`;
 }
 
-export function Channels({ organizationId }: { organizationId: string }) {
+export function Channels({
+  organizationId,
+  canConnect,
+}: {
+  organizationId: string;
+  canConnect: boolean;
+}) {
   const api = useApi();
   const [channels, setChannels] = useState<Channel[] | null>(null);
   const [instance, setInstance] = useState("");
@@ -80,20 +86,26 @@ export function Channels({ organizationId }: { organizationId: string }) {
       ) : (
         channels && <p>No channels yet.</p>
       )}
-      <form onSubmit={connect} className="row">
-        <input
-          placeholder="Mastodon instance, such as mastodon.social"
-          value={instance}
-          required
-          onChange={(event) => setInstance(event.target.value)}
-        />
-        <button type="submit" disabled={pending}>
-          Connect Mastodon
-        </button>
-      </form>
-      <p className="muted">
-        Connecting an account the organization already has reconnects its channel.
-      </p>
+      {canConnect ? (
+        <>
+          <form onSubmit={connect} className="row">
+            <input
+              placeholder="Mastodon instance, such as mastodon.social"
+              value={instance}
+              required
+              onChange={(event) => setInstance(event.target.value)}
+            />
+            <button type="submit" disabled={pending}>
+              Connect Mastodon
+            </button>
+          </form>
+          <p className="muted">
+            Connecting an account the organization already has reconnects its channel.
+          </p>
+        </>
+      ) : (
+        <p className="muted">Only an owner or admin connects or reconnects a channel.</p>
+      )}
       <ErrorText error={error} />
     </section>
   );

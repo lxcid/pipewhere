@@ -81,6 +81,8 @@ Joining an organization needs a verified email. The operator chose this over let
 
 A team deployment therefore needs email delivery, or a sign-in provider that reports the email as verified, before a teammate can join. A single operator needs neither.
 
+[00012 D1](../00012-team-members/spec.md) overturns this rule. An invited person now joins without a verified email.
+
 Organization deletion is off, through Better Auth's `disableOrganizationDeletion`. Better Auth's delete would leave the organization's API keys behind, since a key's owner is an unconstrained reference, and the organization's `pipewhere` rows would block it. A pipeline that needs deletion defines one lifecycle for business rows and keys.
 
 API owns resource-level authorization. On every request it checks, in Auth's tables, that the caller may act in the organization the request names:
@@ -116,7 +118,7 @@ Before the auth boundary is considered verified, Pipewhere must exercise:
 - a request naming an organization the user is not a member of, or one that does not own the key, reported as not found
 - a member whose role does not permit an action, and a key whose permissions do not, each reported as forbidden
 - after a user creates an organization or accepts an invitation, a call to Better Auth that names no organization acting on neither
-- an invitee whose email is not verified being refused when accepting an invitation
+- an invitee whose email is not verified being refused when accepting an invitation. [00012 D1](../00012-team-members/spec.md) overturns this: such an invitee now joins.
 - deleting an organization through Auth being refused
 - removing a member, changing a role, revoking a key, and changing a key's permissions while a token is still valid, each taking effect on the next request
 - a key created by a removed member still working on the next request
