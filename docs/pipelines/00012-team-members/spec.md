@@ -51,8 +51,6 @@ Any member may list the organization's invitations, and so see their links. Bett
 
 ### D3 — API reads the role on each request, and refuses keys by kind
 
-Proposed: awaiting operator approval.
-
 API already reads the caller's role from `auth.member` on every request, per 00001 D2. The check for D2's actions runs inside the handler, after the membership check, so 00001 D10's order holds:
 
 - unauthorized, then not found, then forbidden.
@@ -69,8 +67,6 @@ An API key gets 403 `forbidden` for D2's actions too. Every key is treated the s
 - a role change, while a token is still valid, taking effect on the next request
 
 ### D4 — Web offers each person only what their role allows
-
-Proposed: awaiting operator approval.
 
 Web reads the signed-in user's role from the organization's member list. It hides each control that role cannot use. Auth and API still refuse it, so hiding is for clarity, not protection.
 
