@@ -22,7 +22,7 @@ async fn stored_rows(instance: &Instance) -> Vec<(String, i32)> {
 }
 
 #[tokio::test]
-async fn a_member_reads_and_changes_the_default_tolerance() {
+async fn an_owner_reads_and_changes_the_default_tolerance() {
     let instance = Instance::start().await;
     let owner = instance.sign_up("owner@example.com").await;
     let organization_id = instance.create_organization(&owner, "personal").await;
@@ -54,9 +54,10 @@ async fn a_member_reads_and_changes_the_default_tolerance() {
     instance.close().await;
 }
 
-// 00003 D11: changing the default is open to every member and key.
+// 00012 D2: an owner or admin changes the default. organization_roles.rs
+// covers a member and a key being refused.
 #[tokio::test]
-async fn any_member_or_key_changes_the_default_tolerance() {
+async fn an_admin_changes_the_default_tolerance() {
     let instance = Instance::start().await;
     let owner = instance.sign_up("owner@example.com").await;
     let organization_id = instance.create_organization(&owner, "company").await;
@@ -69,25 +70,19 @@ async fn any_member_or_key_changes_the_default_tolerance() {
             &organization_id,
             &teammate,
             "teammate@example.com",
-            "member",
+            "admin",
         )
         .await;
-    let key = instance.create_key(&owner, &organization_id).await;
-    let callers = [
-        (instance.session_token(&teammate).await, 600),
-        (instance.key_token(&key).await, 900),
-    ];
-    for (token, tolerance) in callers {
-        let expected = json!({ "tolerance_seconds": tolerance });
-        assert_eq!(
-            ok_json(instance.patch(&path, Some(&token), expected.clone()).await).await,
-            expected
-        );
-        assert_eq!(
-            ok_json(instance.get(&path, Some(&token)).await).await,
-            expected
-        );
-    }
+    let token = instance.session_token(&teammate).await;
+    let expected = json!({ "tolerance_seconds": 600 });
+    assert_eq!(
+        ok_json(instance.patch(&path, Some(&token), expected.clone()).await).await,
+        expected
+    );
+    assert_eq!(
+        ok_json(instance.get(&path, Some(&token)).await).await,
+        expected
+    );
     instance.close().await;
 }
 

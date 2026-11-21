@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { useAuth } from "./auth-client";
 
@@ -65,4 +65,17 @@ export function useAction() {
     }
   }
   return { pending, error, run };
+}
+
+// While signed out, Better Auth marks every refetch as pending, such as the
+// one on window focus. Waiting only for the first answer keeps a sign-in form
+// mounted, with what the user typed.
+export function useAnsweredSession() {
+  const { client } = useAuth();
+  const session = client.useSession();
+  const [answered, setAnswered] = useState(false);
+  useEffect(() => {
+    if (!session.isPending) setAnswered(true);
+  }, [session.isPending]);
+  return { session, answered };
 }

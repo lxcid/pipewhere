@@ -254,6 +254,7 @@ pub struct MastodonAuthorization {
         (status = 201, body = MastodonAuthorization, description = "Where to send the operator to approve Pipewhere"),
         (status = 400, body = ErrorBody, description = "The request body is not JSON"),
         (status = 401, body = ErrorBody, description = "No valid access token"),
+        (status = 403, body = ErrorBody, description = "Only an owner or admin may take this action. A member or an API key cannot"),
         (status = 404, body = ErrorBody, description = "No such organization, or the caller is not in it"),
         (status = 413, body = ErrorBody, description = "The request body is over 2 MB"),
         (status = 415, body = ErrorBody, description = "The request body is not sent as application/json"),
@@ -268,6 +269,7 @@ pub async fn authorize(
     caller: OrgCaller,
     JsonBody(input): JsonBody<MastodonAuthorizationRequest>,
 ) -> Result<(StatusCode, Json<MastodonAuthorization>), ApiError> {
+    caller.require_manager()?;
     let host = instance_host(&input.instance)
         .ok_or(ApiError::InvalidBody(StatusCode::UNPROCESSABLE_ENTITY))?;
     let redirect_uri = redirect_uri(&state.web_url);
@@ -393,6 +395,7 @@ pub struct MastodonConnection {
         (status = 201, body = Channel, description = "The new channel"),
         (status = 400, body = ErrorBody, description = "The request body is not JSON"),
         (status = 401, body = ErrorBody, description = "No valid access token"),
+        (status = 403, body = ErrorBody, description = "Only an owner or admin may take this action. A member or an API key cannot"),
         (status = 404, body = ErrorBody, description = "No such organization, or the caller is not in it"),
         (status = 413, body = ErrorBody, description = "The request body is over 2 MB"),
         (status = 415, body = ErrorBody, description = "The request body is not sent as application/json"),
@@ -407,6 +410,7 @@ pub async fn connect(
     caller: OrgCaller,
     JsonBody(input): JsonBody<MastodonConnection>,
 ) -> Result<(StatusCode, Json<Channel>), ApiError> {
+    caller.require_manager()?;
     if input.code.trim().is_empty() {
         return Err(ApiError::InvalidBody(StatusCode::UNPROCESSABLE_ENTITY));
     }

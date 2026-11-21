@@ -83,21 +83,25 @@ test("setting an active organization explicitly is overridden", async () => {
   assert.deepEqual(await activeOrganizations(owner.userId), [null]);
 });
 
-test("an invitee with an unverified email cannot join; once verified, joining leaves no active organization", async () => {
+// 00012 D1: the link's unguessable id and the invited address are what admit
+// someone, so another address is refused, and an unverified user cannot list
+// the ids.
+test("an invitee joins through the link without a verified email; joining leaves no active organization", async () => {
   const organization = await createOrganization(owner, "team");
   const invitee = await signUp(instance, "invitee@example.com");
+  const stranger = await signUp(instance, "stranger@example.com");
   const invitation = await invite(organization.id, "invitee@example.com");
   assert.match(invitation.id, /^inv_/);
 
-  const refused = await invitee.request("/api/auth/organization/accept-invitation", {
+  const listed = await invitee.request("/api/auth/organization/list-user-invitations");
+  assert.equal(listed.status, 403);
+
+  const wrongAddress = await stranger.request("/api/auth/organization/accept-invitation", {
     method: "POST",
     body: JSON.stringify({ invitationId: invitation.id }),
   });
-  assert.equal(refused.status, 403);
+  assert.equal(wrongAddress.status, 403);
 
-  await instance.authPool.query(`UPDATE "user" SET "emailVerified" = true WHERE id = $1`, [
-    invitee.userId,
-  ]);
   const accepted = await json<{ member: { id: string } }>(
     await invitee.request("/api/auth/organization/accept-invitation", {
       method: "POST",
@@ -106,6 +110,49 @@ test("an invitee with an unverified email cannot join; once verified, joining le
   );
   assert.match(accepted.member.id, /^mem_/);
   assert.deepEqual(await activeOrganizations(invitee.userId), [null]);
+});
+
+// 00012 D1: any member can read an invitation's id, and any address without
+// an account can be signed up, so a claimed invitation must grant no more than
+// a member already holds. A role with a comma would also slip past Better
+// Auth's owner check, which compares the untrimmed parts.
+test("an invitation carries only the member role", async () => {
+  const organization = await createOrganization(owner, "member-only");
+  for (const role of ["admin", "owner", "member, owner", "member,admin"]) {
+    const refused = await owner.request("/api/auth/organization/invite-member", {
+      method: "POST",
+      body: JSON.stringify({ organizationId: organization.id, email: "new@example.com", role }),
+    });
+    assert.equal(refused.status, 400, role);
+  }
+  const { rowCount } = await instance.authPool.query(
+    `SELECT 1 FROM invitation WHERE "organizationId" = $1`,
+    [organization.id],
+  );
+  assert.equal(rowCount, 0);
+  assert.match((await invite(organization.id, "new@example.com")).id, /^inv_/);
+});
+
+// An invitation for another role, stored before Auth refused creating one, is
+// refused when accepted too.
+test("an invitation stored with another role cannot be accepted", async () => {
+  const organization = await createOrganization(owner, "stored-role");
+  const invitee = await signUp(instance, "stored@example.com");
+  const invitation = await invite(organization.id, "stored@example.com");
+  await instance.authPool.query(`UPDATE invitation SET role = 'owner' WHERE id = $1`, [
+    invitation.id,
+  ]);
+
+  const refused = await invitee.request("/api/auth/organization/accept-invitation", {
+    method: "POST",
+    body: JSON.stringify({ invitationId: invitation.id }),
+  });
+  assert.equal(refused.status, 400);
+  const { rowCount } = await instance.authPool.query(
+    `SELECT 1 FROM member WHERE "organizationId" = $1 AND "userId" = $2`,
+    [organization.id, invitee.userId],
+  );
+  assert.equal(rowCount, 0);
 });
 
 test("deleting an organization is refused", async () => {

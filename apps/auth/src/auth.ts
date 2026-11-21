@@ -1,5 +1,6 @@
 import { apiKey } from "@better-auth/api-key";
 import { betterAuth, type BetterAuthOptions } from "better-auth";
+import { APIError } from "better-auth/api";
 import { jwt, organization } from "better-auth/plugins";
 import type { Pool } from "pg";
 
@@ -7,6 +8,14 @@ import type { AuthEnv } from "./env.ts";
 import { generateAuthId } from "./ids.ts";
 
 export const accessTokenAudience = "pipewhere-api";
+
+function memberOnly(role: string) {
+  if (role !== "member") {
+    throw new APIError("BAD_REQUEST", {
+      message: "An invitation is for the member role. Change the role after they join.",
+    });
+  }
+}
 
 export function authOptions(pool: Pool, env: AuthEnv) {
   return {
@@ -34,9 +43,18 @@ export function authOptions(pool: Pool, env: AuthEnv) {
     plugins: [
       organization({
         disableOrganizationDeletion: true,
-        // A verified email proves the invitee owns the invited address. Set
-        // explicitly because Better Auth's default depends on the id generator.
-        requireEmailVerificationOnInvitation: true,
+        // Auth sends no email, so the invitation's link admits the invited
+        // address (00012 D1). Set explicitly because Better Auth's default
+        // depends on the id generator.
+        requireEmailVerificationOnInvitation: false,
+        // Any member can read an invitation's id, and anyone can sign up as an
+        // address without an account, so an invitation must grant no more than
+        // a member holds. A promotion follows the join (00012 D1). Accepting
+        // checks too, for an invitation stored before this rule.
+        organizationHooks: {
+          beforeCreateInvitation: async ({ invitation }) => memberOnly(invitation.role),
+          beforeAcceptInvitation: async ({ invitation }) => memberOnly(invitation.role),
+        },
       }),
       apiKey({
         references: "organization",

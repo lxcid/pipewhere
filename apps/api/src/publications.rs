@@ -526,15 +526,6 @@ async fn refusal(db: &PgPool, organization_id: &str, publication_id: &str) -> Ap
     }
 }
 
-// 00010 D4: a key may create, read, and cancel. Any other change could put text
-// in front of Worker that no member approved.
-fn member_only(caller: &OrgCaller) -> Result<(), ApiError> {
-    match caller.actor {
-        Actor::User { .. } => Ok(()),
-        Actor::ApiKey { .. } => Err(ApiError::Forbidden),
-    }
-}
-
 // A field the edit does not define, such as `channel_id`, would otherwise be
 // dropped without changing anything.
 #[derive(Deserialize, ToSchema)]
@@ -581,7 +572,7 @@ pub async fn update_publication(
     Path((_, publication_id)): Path<(String, String)>,
     JsonBody(input): JsonBody<PublicationEdit>,
 ) -> Result<Json<Publication>, ApiError> {
-    member_only(&caller)?;
+    caller.require_member()?;
     let body = input.body.map(checked_body).transpose()?;
     let planned_at = checked_planned_at(input.planned_at)?;
     let tolerance_seconds = input.tolerance_seconds.map(checked_tolerance).transpose()?;
@@ -691,7 +682,7 @@ pub async fn approve_publication(
     caller: OrgCaller,
     Path((_, publication_id)): Path<(String, String)>,
 ) -> Result<Json<Publication>, ApiError> {
-    member_only(&caller)?;
+    caller.require_member()?;
     if holds_nul(&publication_id) {
         return Err(ApiError::NotFound);
     }
@@ -761,7 +752,7 @@ pub async fn retry_publication(
     IdempotencyKey(key): IdempotencyKey,
     JsonBody(input): JsonBody<RetryInput>,
 ) -> Result<Json<Publication>, ApiError> {
-    member_only(&caller)?;
+    caller.require_member()?;
     let planned_at = checked_planned_at(input.planned_at)?;
     if holds_nul(&publication_id) {
         return Err(ApiError::NotFound);
@@ -879,7 +870,7 @@ pub async fn resolve_publication(
     Path((_, publication_id)): Path<(String, String)>,
     JsonBody(input): JsonBody<Resolution>,
 ) -> Result<Json<Publication>, ApiError> {
-    member_only(&caller)?;
+    caller.require_member()?;
     let invalid = ApiError::InvalidBody(StatusCode::UNPROCESSABLE_ENTITY);
     let (outcome, remote_id, remote_url) = match (input.outcome, input.remote_id, input.remote_url)
     {

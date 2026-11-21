@@ -1,21 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 
 import { useAuth } from "./auth-client";
-import { Claims, ErrorText, Shell, useAction } from "./ui";
+import { SignIn } from "./sign-in";
+import { Claims, ErrorText, Shell, useAction, useAnsweredSession } from "./ui";
 
 export default function Home() {
-  const { client } = useAuth();
-  const session = client.useSession();
-  // While signed out, Better Auth marks every refetch as pending, such as the
-  // one on window focus. Waiting only for the first answer keeps the sign-in
-  // form mounted, with what the user typed.
-  const [answered, setAnswered] = useState(false);
-  useEffect(() => {
-    if (!session.isPending) setAnswered(true);
-  }, [session.isPending]);
+  const { session, answered } = useAnsweredSession();
   if (!answered) {
     return (
       <Shell>
@@ -24,65 +17,6 @@ export default function Home() {
     );
   }
   return <Shell>{session.data ? <Dashboard /> : <SignIn />}</Shell>;
-}
-
-function SignIn() {
-  const { client } = useAuth();
-  const [mode, setMode] = useState<"sign-in" | "sign-up">("sign-in");
-  const { pending, error, run } = useAction();
-
-  function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const email = String(form.get("email"));
-    const password = String(form.get("password"));
-    run(() =>
-      mode === "sign-in"
-        ? client.signIn.email({ email, password })
-        : client.signUp.email({ email, password, name: String(form.get("name")) }),
-    );
-  }
-
-  return (
-    <section className="card narrow">
-      <h1>{mode === "sign-in" ? "Sign in" : "Create an account"}</h1>
-      <form onSubmit={submit} className="stack">
-        {mode === "sign-up" && (
-          <label>
-            Name
-            <input name="name" required autoComplete="name" />
-          </label>
-        )}
-        <label>
-          Email
-          <input name="email" type="email" required autoComplete="email" />
-        </label>
-        <label>
-          Password
-          <input
-            name="password"
-            type="password"
-            required
-            minLength={8}
-            autoComplete={mode === "sign-in" ? "current-password" : "new-password"}
-          />
-        </label>
-        <ErrorText error={error} />
-        <button type="submit" disabled={pending}>
-          {mode === "sign-in" ? "Sign in" : "Create account"}
-        </button>
-      </form>
-      <p className="muted">
-        {mode === "sign-in" ? "No account yet? " : "Already have an account? "}
-        <button
-          className="link"
-          onClick={() => setMode(mode === "sign-in" ? "sign-up" : "sign-in")}
-        >
-          {mode === "sign-in" ? "Create one" : "Sign in"}
-        </button>
-      </p>
-    </section>
-  );
 }
 
 function slugify(name: string) {
