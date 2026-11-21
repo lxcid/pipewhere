@@ -143,6 +143,19 @@ function Answer({ invitationId, email }: { invitationId: string; email: string }
   }
 
   const { invitation } = lookup;
+  // Auth refuses to accept any other role (00012 D1). Such an invitation was
+  // made before that rule.
+  if (invitation.role !== "member") {
+    return (
+      <section className="card narrow">
+        <h1>Invitation</h1>
+        <p>
+          This invitation is for the {invitation.role} role, and invitations now admit only as a
+          member. Ask an owner or admin of {invitation.organizationName} for a new link.
+        </p>
+      </section>
+    );
+  }
   return (
     <section className="card narrow">
       <h1>Join {invitation.organizationName}</h1>
