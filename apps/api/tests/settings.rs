@@ -22,7 +22,7 @@ async fn stored_rows(instance: &Instance) -> Vec<(String, i32)> {
 }
 
 #[tokio::test]
-async fn a_member_reads_and_changes_the_default_tolerance() {
+async fn an_owner_reads_and_changes_the_default_tolerance() {
     let instance = Instance::start().await;
     let owner = instance.sign_up("owner@example.com").await;
     let organization_id = instance.create_organization(&owner, "personal").await;
