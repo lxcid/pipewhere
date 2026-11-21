@@ -36,7 +36,7 @@ You need Docker with Compose v2.
 
 4. On the organization's page, connect a Mastodon account: enter its instance's address, such as `mastodon.social`, and approve Pipewhere at the instance. Pipewhere registers itself with the instance, so there is no app to create first.
 
-To add someone to an organization, invite their email address on its page, and send them the invitation's link yourself. Pipewhere sends no email. Whoever opens the link joins as a member after signing in with the invited address, so send it only to them. It expires after 48 hours. Once they have joined, change their role if they need more.
+To add someone to an organization, invite their email address on its page, and send them the invitation's link yourself. Pipewhere sends no email. Whoever opens the link joins as a member after signing in with the invited address, so send it only to them. It expires after 48 hours. Once they have joined, confirm with them outside Pipewhere that it was them, then change their role if they need more.
 
 Each member has one of three roles:
 
