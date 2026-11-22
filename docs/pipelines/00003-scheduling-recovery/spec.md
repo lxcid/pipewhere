@@ -365,8 +365,6 @@ What would overturn this: a commit guard, such as an idempotency key a retry sha
 
 ### D20 — Web warns on the publications card when the scheduler has stalled
 
-Proposed: awaiting operator approval.
-
 The operator chose on 2026-11-22 to see D10's stall in Web, where they schedule publications, and not only through API.
 
 The publications card reads `GET .../scheduler` together with the list and the channels, so it refreshes when the list does:
