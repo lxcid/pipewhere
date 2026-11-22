@@ -405,13 +405,13 @@ Verification, after merging `main` into the branch, with Rust 1.95.0 and Node 26
   The one failure is `mastodon_publishing::an_instance_that_never_answers_the_connection_refuses`, which also fails on `main` on macOS.
 
 - `cargo test -p pipewhere-worker --locked --no-fail-fast`: 12 of 12 pass through Restate 1.7.13. The tick tests cover empty and successful batches, a failed query or send, and a batch whose second send fails.
-- `pnpm test` in `apps/web`: 42 of 42 pass, including three for `schedulerWarning`. `pnpm typecheck` is clean.
+- `pnpm test` in `apps/web`: 43 of 43 pass, including four for `schedulerWarning`. `pnpm typecheck` is clean.
 - `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo fmt --all --check` and `git diff --check` pass.
 - Browser checks: headless Chrome against a local Compose stack started without Worker, with ticks written by hand in `pipewhere.scheduler_tick`. All 5 pass:
-  - with no tick, the card warns that Worker has not looked for due work yet;
+  - with no tick, the card says no check for due work has finished yet;
   - the warning is an alert;
   - a tick written just now shows no warning;
-  - a tick 2 minutes old names its time;
+  - a tick 2 minutes old names when the last check finished;
   - no console errors.
 
   Screenshots of the stale-tick warning were checked in the light and dark schemes.

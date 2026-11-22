@@ -387,14 +387,29 @@ describe("schedulerWarning", () => {
     );
   });
 
-  test("names the last tick of a stalled scheduler", () => {
+  test("names the last completed check of a stalled scheduler", () => {
     const warning = schedulerWarning({ last_completed_at: "2026-11-22T15:00:00Z", stalled: true });
-    assert.match(warning ?? "", /^Scheduled publications are not going out\./);
-    assert.ok(warning?.includes(`since ${formatTime("2026-11-22T15:00:00Z")}.`));
+    assert.ok(
+      warning?.startsWith(
+        `Pipewhere's scheduler has not finished a check for due work since ${formatTime("2026-11-22T15:00:00Z")}.`,
+      ),
+    );
   });
 
-  test("says when the scheduler has never run", () => {
+  // A stall means a query or a send failed, not that nothing goes out: a tick
+  // can send one run and fail on the next, per 00003 D10.
+  test("says scheduled publications may not go out, and where to look", () => {
+    const warning = schedulerWarning({ last_completed_at: "2026-11-22T15:00:00Z", stalled: true });
+    assert.match(warning ?? "", /Scheduled publications may not go out\./);
+    assert.match(warning ?? "", /Check that Worker and Restate are running/);
+    assert.match(warning ?? "", /"a poller tick failed"/);
+  });
+
+  test("says when the scheduler has never finished a check", () => {
     const warning = schedulerWarning({ last_completed_at: null, stalled: true });
-    assert.match(warning ?? "", /has not looked for due work yet\./);
+    assert.match(
+      warning ?? "",
+      /^Pipewhere's scheduler has not finished a check for due work yet\./,
+    );
   });
 });

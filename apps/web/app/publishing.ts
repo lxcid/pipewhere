@@ -167,9 +167,9 @@ export interface Scheduler {
 export function schedulerWarning(scheduler: Scheduler): string | null {
   if (!scheduler.stalled) return null;
   const since = scheduler.last_completed_at
-    ? `has not looked for due work since ${formatTime(scheduler.last_completed_at)}.`
-    : "has not looked for due work yet.";
-  return `Scheduled publications are not going out. Pipewhere's Worker ${since} Check that Worker is running.`;
+    ? `since ${formatTime(scheduler.last_completed_at)}`
+    : "yet";
+  return `Pipewhere's scheduler has not finished a check for due work ${since}. Scheduled publications may not go out. Check that Worker and Restate are running, and look in Worker's logs for "a poller tick failed".`;
 }
 
 /** Latest planned time first, per 00011 D3. Of two at one time, the newer. */
