@@ -158,6 +158,20 @@ export function formatTime(iso: string): string {
   return TIME.format(new Date(iso));
 }
 
+export interface Scheduler {
+  last_completed_at: string | null;
+  stalled: boolean;
+}
+
+/** What to tell the operator when the scheduler has stalled, per 00003 D20. */
+export function schedulerWarning(scheduler: Scheduler): string | null {
+  if (!scheduler.stalled) return null;
+  const since = scheduler.last_completed_at
+    ? `since ${formatTime(scheduler.last_completed_at)}`
+    : "yet";
+  return `Pipewhere's scheduler has not finished a check for due work ${since}. Scheduled publications may not go out. Check that Worker and Restate are running, and look in Worker's logs for "a poller tick failed".`;
+}
+
 /** Latest planned time first, per 00011 D3. Of two at one time, the newer. */
 export function chronological(publications: Publication[]): Publication[] {
   return publications.toSorted(

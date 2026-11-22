@@ -362,3 +362,25 @@ A limit narrows this case and does not close it. A provider can still act on a r
 A later pipeline is in violation if its adapter can hold a provider call open with no time limit.
 
 What would overturn this: a commit guard, such as an idempotency key a retry shares with the old call, shown to leave one post when an old call and a retry both reach the provider.
+
+### D20 — Web warns on the publications card when the scheduler has stalled
+
+The operator chose on 2026-11-22 to see D10's stall in Web, where they schedule publications, and not only through API.
+
+The publications card reads `GET .../scheduler` together with the list and the channels, so it refreshes when the list does:
+
+- on load, and on Refresh;
+- on returning to the page;
+- every 10 seconds while a publication on the page waits.
+
+When `stalled` is true, the card warns that scheduled publications may not go out. It says no check for due work has finished since the last completed tick, or that none has finished yet. It asks the operator to check that Worker and Restate are running, and to look in Worker's logs for `a poller tick failed`.
+
+The warning claims no more than D10 measures. A stall means no check has finished in 60 seconds. Several causes look the same: Worker stopped, a check is still running, or a check's query, one of its sends, or its timestamp write failed. Worker may still be running, and a check can send one run before a later send fails. So the warning says "may not go out", not "are not going out", and it does not say Worker stopped.
+
+Tolerated:
+
+- With nothing waiting, the card does not poll. A stall that starts while the page stays open shows on the next return or Refresh. Nothing is due then, so nothing is missed yet.
+- Each refresh makes a third API call, and Web fetches a token from Auth for each. A tab left open with a publication waiting makes about 52,000 requests a day, up from 00011 D4's 35,000. Tolerated for one operator.
+- The timer sees only the publications loaded on the page, per [00011 D4](../00011-web-publishing-one-account/spec.md). If every loaded publication has settled, a waiting publication on an older page does not start it. Refresh and returning to the page still read the status. "Show older" starts the timer once it loads the waiting publication.
+- A failed scheduler read fails the card's refresh, as a failed channel read does. Both come from API, so one failing usually means the other would too. The exception is an API older than its Web, such as a stale build (#54), which answers 404 for the scheduler alone. The card then shows no list until API is rebuilt. Reading the status separately would hide the warning silently instead.
+- Two overlapping refreshes can answer out of order, as 00011 D4 and [00010 D4](../00010-agent-access/spec.md) tolerate for the list. A stale answer can bring back a warning after a newer one cleared it, until the next refresh.

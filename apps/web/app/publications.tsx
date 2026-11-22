@@ -20,6 +20,8 @@ import {
   type Publication,
   type PublicationAttempt,
   type PublicationRequest,
+  type Scheduler,
+  schedulerWarning,
   sendCreate,
 } from "./publishing";
 
@@ -53,6 +55,7 @@ export function Publications({ organizationId }: { organizationId: string }) {
   // Counts the answers that changed the list outside a refresh.
   const changes = useRef(0);
   const [problem, setProblem] = useState<string | null>(null);
+  const [scheduler, setScheduler] = useState<Scheduler | null>(null);
 
   const fetchPage = useCallback(
     (cursor: string | null) =>
@@ -65,9 +68,10 @@ export function Publications({ organizationId }: { organizationId: string }) {
   const refresh = useCallback(async () => {
     const seen = changes.current;
     try {
-      const [loaded, list] = await Promise.all([
+      const [loaded, list, health] = await Promise.all([
         loadThrough(fetchPage, shownThrough.current),
         api<{ channels: Channel[] }>(`/v1/orgs/${organizationId}/channels`),
+        api<Scheduler>(`/v1/orgs/${organizationId}/scheduler`),
       ]);
       // A create, a cancel, or "Show older" was answered while this refresh
       // ran. Its answer may predate that change, and replacing the list with it
@@ -77,6 +81,7 @@ export function Publications({ organizationId }: { organizationId: string }) {
         return;
       }
       setChannels(list.channels);
+      setScheduler(health);
       setPublications(loaded.publications);
       shownThrough.current = loaded.older;
       setOlder(loaded.older);
@@ -134,10 +139,16 @@ export function Publications({ organizationId }: { organizationId: string }) {
 
   const handles = new Map(channels?.map((channel) => [channel.id, channel]));
   const active = channels?.filter((channel) => channel.status === "active") ?? [];
+  const warning = scheduler && schedulerWarning(scheduler);
 
   return (
     <section className="card">
       <h2>Publications</h2>
+      {warning && (
+        <div className="notice" role="alert">
+          <p>{warning}</p>
+        </div>
+      )}
       {/* Kept mounted when no channel can publish, so a draft and an unconfirmed submission survive a refresh. */}
       {channels && <Compose organizationId={organizationId} channels={active} onCreated={show} />}
       <div className="row spread">

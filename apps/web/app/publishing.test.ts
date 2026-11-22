@@ -6,11 +6,13 @@ import {
   approvalTooLate,
   chronological,
   describeState,
+  formatTime,
   loadThrough,
   merged,
   newIdempotencyKey,
   plannedAt,
   problemOf,
+  schedulerWarning,
   type Page,
   type Publication,
   type Sent,
@@ -374,5 +376,40 @@ describe("problemOf", () => {
     const message = problemOf({ kind: "unconfirmed", reason: "Failed to fetch" });
     assert.match(message, /not confirm/);
     assert.match(message, /Failed to fetch/);
+  });
+});
+
+describe("schedulerWarning", () => {
+  test("says nothing while the scheduler runs", () => {
+    assert.equal(
+      schedulerWarning({ last_completed_at: "2026-11-22T15:00:00Z", stalled: false }),
+      null,
+    );
+  });
+
+  test("names the last completed check of a stalled scheduler", () => {
+    const warning = schedulerWarning({ last_completed_at: "2026-11-22T15:00:00Z", stalled: true });
+    assert.ok(
+      warning?.startsWith(
+        `Pipewhere's scheduler has not finished a check for due work since ${formatTime("2026-11-22T15:00:00Z")}.`,
+      ),
+    );
+  });
+
+  // A stall means only that no check finished in time, per 00003 D10. Worker
+  // may still be running, and a check can send one run and fail on the next.
+  test("says scheduled publications may not go out, and where to look", () => {
+    const warning = schedulerWarning({ last_completed_at: "2026-11-22T15:00:00Z", stalled: true });
+    assert.match(warning ?? "", /Scheduled publications may not go out\./);
+    assert.match(warning ?? "", /Check that Worker and Restate are running/);
+    assert.match(warning ?? "", /"a poller tick failed"/);
+  });
+
+  test("says when the scheduler has never finished a check", () => {
+    const warning = schedulerWarning({ last_completed_at: null, stalled: true });
+    assert.match(
+      warning ?? "",
+      /^Pipewhere's scheduler has not finished a check for due work yet\./,
+    );
   });
 });

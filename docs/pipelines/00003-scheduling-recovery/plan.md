@@ -17,7 +17,7 @@ The build runs as one small PR per issue, as 00002's did. Each issue carries its
 3. **#28 The overdue list.** `?overdue=true` on the publication list. D10, D15. Depends on #26 only for the response shape. Built in PR #37.
 4. **#29 The run's steps in API's library.** The claim with its attempt, the commit claim with its deadline check, the adapter seam with no adapter, result recording, and the `cancelled` attempt result. Tested against PostgreSQL without Restate. D7, D8. Depends on #26. Built in PR #38.
 5. **#30 Worker's first handler and the poller.** The `Publication` virtual object, Worker's database connection, the poller and its partial index, Compose changes, and a Restate test harness. Carries infrastructure D14's upgrade test and D15's dependency. D5, D6. Depends on #29. Built in PR #39.
-6. **#31 The scheduler's stall.** `pipewhere.scheduler_tick`, written by the poller, and `GET .../scheduler`. D10. Depends on #30.
+6. **#31 The scheduler's stall.** `pipewhere.scheduler_tick`, written by the poller, `GET .../scheduler`, and Web's warning. D10, D20. Depends on #30.
 7. **#32 `worker recover`.** Tested after losing Restate, and while the original invocation is live. README runbook. D9. Depends on #30.
 8. **#33 Channel status at the claim, and on a waiting publication.** D3 and D4, and the intent's fourth outcome. Blocked until 00004 gives a channel a readable status, per D12.
 
@@ -379,6 +379,49 @@ Not verified:
 - Losing Restate's volume. #32 tests this.
 - The tests' setup through a real `psql` on the host, which this machine does not have. They ran with a script that runs `psql` 18.6 in the test server's container.
 
+## #31 — scheduler visibility
+
+PR [#40](https://github.com/lxcid/pipewhere/pull/40), for approved D10 and proposed D20.
+
+- API's migration adds `pipewhere.scheduler_tick`, initially empty. A boolean primary key and check permit only one row, and its completion time cannot be null.
+- `scheduler::record_tick` in API's library records PostgreSQL's clock after the poller's query and every send succeed. An empty tick counts. A failed or partially sent tick leaves the last completion unchanged. A failure to record the tick fails the tick.
+- `GET /v1/orgs/{organization_id}/scheduler` uses the existing membership/key authorization. It returns `last_completed_at` and `stalled`. Before the first completion it returns null and true. At 60 seconds without a completion it reports stalled. The clock and the comparison both come from PostgreSQL.
+- The status is installation-wide, as D10 requires. A healthy tick does not establish that Restate can execute accepted work; the overdue publication list remains necessary.
+- The generated OpenAPI includes the endpoint, response and bearer authentication. No handler journal, publication state or provider call changes.
+- The migration is dated `20261122120000`, after the migrations `main` gained while the PR waited, so it sorts after them.
+- Web's publications card reads the status with its list and shows a warning while `stalled` is true, per D20. `schedulerWarning` in `publishing.ts` words it.
+
+Verification, after merging `main` into the branch, with Rust 1.95.0 and Node 26.10.0:
+
+- When the slice was first built, the generated-route test and the first API behavior test failed before implementation. The behavior test got 404.
+- `cargo test -p pipewhere-api --locked --no-fail-fast`: 134 of 135 pass, against real Auth and a disposable PostgreSQL 18.6. The four scheduler tests cover these cases:
+  - no tick, a recent tick, and a stale tick;
+  - timestamp serialization;
+  - member and key reads;
+  - wrong-organization and anonymous refusals;
+  - removed membership;
+  - the table's constraints.
+
+  The one failure is `mastodon_publishing::an_instance_that_never_answers_the_connection_refuses`, which also fails on `main` on macOS.
+
+- `cargo test -p pipewhere-worker --locked --no-fail-fast`: 12 of 12 pass through Restate 1.7.13. The tick tests cover empty and successful batches, a failed query or send, and a batch whose second send fails.
+- `pnpm test` in `apps/web`: 43 of 43 pass, including four for `schedulerWarning`. `pnpm typecheck` is clean.
+- `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo fmt --all --check` and `git diff --check` pass.
+- Browser checks: headless Chrome against a local Compose stack started without Worker, with ticks written by hand in `pipewhere.scheduler_tick`. All 5 pass:
+  - with no tick, the card says no check for due work has finished yet;
+  - the warning is an alert;
+  - a tick written just now shows no warning;
+  - a tick 2 minutes old names when the last check finished;
+  - no console errors.
+
+  Screenshots of the stale-tick warning were checked in the light and dark schemes.
+
+Not verified:
+
+- Upgrading a running installation with the new migration, then restarting it.
+- A Worker stopped mid-run going stale on its own. The browser checks wrote stale ticks by hand instead.
+- Auth's tests, since Auth did not change.
+
 ## Not yet built
 
-#31–#33. #33 is blocked on 00004, per D12.
+#32–#33. #33 is blocked on 00004, per D12.
