@@ -377,7 +377,7 @@ The publications card reads `GET .../scheduler` together with the list and the c
 
 When `stalled` is true, the card warns that scheduled publications may not go out. It says no check for due work has finished since the last completed tick, or that none has finished yet. It asks the operator to check that Worker and Restate are running, and to look in Worker's logs for `a poller tick failed`.
 
-The warning claims no more than D10 measures. A stalled tick means its query or one of its sends failed. Worker may still be running, and a tick can send one run before a later send fails. So the warning says "may not go out", not "are not going out", and it does not say Worker stopped.
+The warning claims no more than D10 measures. A stall means no check has finished in 60 seconds. Several causes look the same: Worker stopped, a check is still running, or a check's query, one of its sends, or its timestamp write failed. Worker may still be running, and a check can send one run before a later send fails. So the warning says "may not go out", not "are not going out", and it does not say Worker stopped.
 
 Tolerated:
 

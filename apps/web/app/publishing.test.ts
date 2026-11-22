@@ -396,8 +396,8 @@ describe("schedulerWarning", () => {
     );
   });
 
-  // A stall means a query or a send failed, not that nothing goes out: a tick
-  // can send one run and fail on the next, per 00003 D10.
+  // A stall means only that no check finished in time, per 00003 D10. Worker
+  // may still be running, and a check can send one run and fail on the next.
   test("says scheduled publications may not go out, and where to look", () => {
     const warning = schedulerWarning({ last_completed_at: "2026-11-22T15:00:00Z", stalled: true });
     assert.match(warning ?? "", /Scheduled publications may not go out\./);
