@@ -8,9 +8,11 @@ COPY apps/worker apps/worker
 # with an older timestamp, such as one from another checkout, would ship the
 # cached binary. Cleaning the workspace's own crates rebuilds them every time;
 # their dependencies stay cached.
+# Without --locked, the clean would rewrite a Cargo.lock that no longer
+# matches the manifests, and the locked build would then accept it.
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/app/target,sharing=locked \
-    cargo clean --release -p pipewhere-api -p pipewhere-worker \
+    cargo clean --release --locked --workspace \
     && cargo build --release --locked --bin worker \
     && cp target/release/worker /usr/local/bin/worker
 
